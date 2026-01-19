@@ -196,25 +196,41 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
 void SingleDiffusiveField::CalcKPar(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
-    double Z    = m_ions[f].charge;
-    int ni_idx  = m_ions[f].fields.at(field_to_index.at("n"));
+    if (m_session->DefinesParameter("k_par"))
+    {
+        double k = m_session->GetParameter("k_par");
+        Vmath::Fill(npoints, k, m_kpar, 1);
+    }
+    else
+    {
+        double Z   = m_ions[f].charge;
+        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-    Vmath::Fill(npoints, this->k_par / (Z * Z), m_kpar, 1);
-    Vmath::Vdiv(npoints, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1, m_kpar,
-                1);
+        Vmath::Fill(npoints, this->k_par / (Z * Z), m_kpar, 1);
+        Vmath::Vdiv(npoints, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1,
+                    m_kpar, 1);
+    }
 }
 
 void SingleDiffusiveField::CalcKPerp(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
-    double Z    = m_ions[f].charge;
-    double A    = m_ions[f].mass;
-    int ni_idx  = m_ions[f].fields.at(field_to_index.at("n"));
+    if (m_session->DefinesParameter("k_perp"))
+    {
+        double k = m_session->GetParameter("k_perp");
+        Vmath::Fill(npoints, k, m_kperp, 1);
+    }
+    else
+    {
+        double Z   = m_ions[f].charge;
+        double A   = m_ions[f].mass;
+        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-    Vmath::Fill(npoints, this->k_perp * Z * Z * std::sqrt(A), m_kperp, 1);
-    Vmath::Vmul(npoints, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1, m_kperp,
-                1);
-    Vmath::Vdiv(npoints, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
+        Vmath::Fill(npoints, this->k_perp * Z * Z * std::sqrt(A), m_kperp, 1);
+        Vmath::Vmul(npoints, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1,
+                    m_kperp, 1);
+        Vmath::Vdiv(npoints, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
+    }
 }
 
 void SingleDiffusiveField::CalcKPerpAnomalous(int f)
@@ -230,8 +246,10 @@ void SingleDiffusiveField::CalcKPerpAnomalous(int f)
 void SingleDiffusiveField::CalcDiffTensor(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
+
     CalcKPar(f);
     CalcKPerp(f);
+
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 3; j++)

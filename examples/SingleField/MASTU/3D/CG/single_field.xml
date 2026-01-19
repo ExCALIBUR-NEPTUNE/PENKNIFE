@@ -15,37 +15,41 @@
             <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
             <I PROPERTY="Projection"                   VALUE="Continuous" />
             <I PROPERTY="TimeIntegrationMethod"        VALUE="IMEXOrder2"    />
+            <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
+            <I PROPERTY="Preconditioner"               VALUE="Diagonal"/>
             <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
         </SOLVERINFO>
 
         <PARAMETERS>
-            <!-- Timestepping and output options -->
-            <P> TimeStep      = 0.01            </P>
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 1</P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1</P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18</P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0</P>
+            <!-- Time step in cyclotron units -->
+            <P> TimeStep       = 0.01               </P>
             <P> NumSteps      = 100              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_InfoSteps  = 1     </P>
-            <P> IO_CheckSteps = 1     </P>
-            <P> particle_output_freq = 1          </P>
-
-            <P> epsilon         = 1.0   </P>
-            <!-- Anisotropic diffusion -->
-            <P> k_par           = 1e6   </P>
-            <P> k_perp          = 1   </P>
-            <P> TCore           = 300.0 </P>
-            <P> T_bnd            = 1.0 </P>
-            <P> k_B             = 1.0 </P>
-            <P> m_i             = 1.0 </P>
+            <P> IO_CheckSteps  = 1                </P>
+            <P> IO_InfoSteps   = 1                </P>
+            <!-- Coulomb logarithm -->
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <!-- <P> k_par       = 100000        </P> -->
+            <!-- <P> k_perp       = 1        </P> -->
+            <!-- Background temperature in Tnorm eV -->
+            <P> T_bg      = 10         </P>
 
             <!-- Scaling factor for ICs -->
-            <P> rc = 800 </P>
+            <P> rc = 0.800 </P>
             <P> yc = 0 </P>           
-            <P> rs = 0 </P>
+            <P> rs = 0.100 </P>
             <P> ys = 0 </P>
-            <P> sy = 600 </P>
-            <P> sr = 400 </P>
-
-            <!-- No particles when num_particles_total = 0-->
-            <P> num_particles_total = 1 </P>
+            <P> sy = 0.250 </P>
+            <P> sr = 0.250 </P>
             
             <!-- Implicit solve params -->
             <P> IterativeSolverTolerance  = 1.0E-6  </P>
@@ -65,52 +69,26 @@
 
         <BOUNDARYCONDITIONS>
             <REGION REF="0">
-                <N VAR="n" USERDEFINEDTYPE="Oblique" VALUE="0.0" />
+                <N VAR="n" VALUE="0.0" />
             </REGION>
         </BOUNDARYCONDITIONS>
         <FUNCTION NAME="InitialConditions">
-            <E VAR="n"  DOMAIN="0" VALUE="0.1" />
-            <!-- <E VAR="n"  DOMAIN="0" VALUE="1+exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
+            <E VAR="n"  DOMAIN="0" VALUE="1" />
         </FUNCTION>
         <FUNCTION NAME="MagneticMeanField">
-            <F VAR="Bx,By,Bz"  FILE="B.pts"  />
+            <F VAR="Bx,By,Bz"  FILE="B copy.pts"  />
         </FUNCTION>
     </CONDITIONS>
 
-    <PARTICLES>
-        <INFO>
-            <I PROPERTY="PARTTYPE" VALUE="ParticleSystem"/>
-        </INFO>
-
-        <PARAMETERS>
-            <!-- No particles when num_particles_total = 0-->
-            <P> num_particles_total = 1 </P>
-            <!-- Scaling coefficient when adding particle drift velocities. -->
-            <P> particle_v_drift_scaling = 1.0 </P>
-            <!-- Scaling coefficient applied to B for particles, -->
-            <!-- i.e. if 0 particles ignore B. -->
-            <P> particle_B_scaling = 1.0 </P>
-            <!-- Add to initial particle velocity a contribution: -->
-            <!-- particle_velocity_B_scaling * unit(B) -->
-            <P> particle_velocity_B_scaling = 1 </P>
-            <!-- Add to initial particle velocity a contribution: -->
-            <!-- using particle_thermal_velocity. -->
-            <!-- Purtubation is sampled from N(0, particle_thermal_velocity) -->
-            <P> particle_thermal_velocity = 1000 </P>
-        </PARAMETERS>
-
+    <NESO>
         <SPECIES>
-            <S ID="0" NAME="Argon">
-                <P> Mass = 1.0 </P>
-                <P> Charge = 1 </P>
-                <P> Number = 1 </P>
-            </S>
-        </SPECIES>
-
-        <BOUNDARYINTERACTION>
-            <REGION REF="0">
-                <C SPECIES="0"  VALUE="0.0" />
-            </REGION>
-        </BOUNDARYINTERACTION>
-    </PARTICLES>
+            <I NAME="D" FIELDS="n">
+                <P> Mass = 2.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />  
+                </FUNCTION>
+            </I>
+        </SPECIES>    
+    </NESO>
 </NEKTAR>
