@@ -5,15 +5,14 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - neso-tokamak%gcc ^adaptivecpp ^neso+libonly ^neso-particles~build_tests
-  - neso-tokamak%oneapi ^dpcpp ^neso+libonly ^neso-particles~build_tests ^neso-rng-toolkit%oneapi ^intel-oneapi-mkl@2025%oneapi ^intel-tbb@master%oneapi
+  - nt.neso-tokamak ^neso.adaptivecpp compilationflow=omplibraryonly ^neso+libonly ^neso-particles~build_tests
   view:
-    gcc-adaptivecpp:
-      root: views/gcc-adaptivecpp
+    adaptivecpp:
+      root: views/adaptivecpp
       select: ['%gcc']
       link_type: symlink
     oneapi:
-      root: views/oneapi
+      root: views/oneapi-dpcpp
       select: ['%oneapi']
       link_type: symlink
   concretizer:
@@ -21,11 +20,17 @@ spack:
   repos:
   - ./repo
   - ../NESO/NESO-Spack
-  - ../Reactions/Reactions-repo
-  - $spack/var/spack/repos/builtin
+  - ../VANTAGE-Reactions/Reactions-repo
   packages:
+    c:
+      require:
+        - gcc
+    cxx:
+      require:
+        - gcc
     all:
       providers:
+        sycl: [adaptivecpp]
         mpi: [mpich, openmpi]
   develop:
     nektar:
@@ -38,7 +43,7 @@ spack:
       path: ../NESO/neso-particles
       spec: neso-particles@working
     reactions:
-      path: ../Reactions
+      path: ../VANTAGE-Reactions
       spec: reactions@working
     neso-tokamak:
       path: ../

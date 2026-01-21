@@ -4,9 +4,8 @@
 #include "AMJUEL.hpp"
 #include "ParticleSystem.hpp"
 #include <neso_rng_toolkit.hpp>
-#include <reactions.hpp>
 
-using namespace Reactions;
+using namespace VANTAGE::Reactions;
 
 namespace NESO::Solvers::tokamak
 {
@@ -462,7 +461,7 @@ public:
                     get_particle_group(particle_sub_group)->position_dat->sym,
                     this->time_step_prop_sym,
                     this->composite_intersection->previous_position_sym);
-                this->reaction_controllers[id]->apply_reactions(
+                this->reaction_controllers[id]->apply(
                     sg, dt, ControllerMode::surface_mode);
             }
         }
@@ -501,14 +500,14 @@ public:
     {
         ParticleSystem::integrate_inner_ion(sg, dt_inner);
         if (this->config->get_reactions().size())
-            reaction_controller->apply_reactions(sg, dt_inner);
+            reaction_controller->apply(sg, dt_inner);
     }
     inline void integrate_inner_neutral(ParticleSubGroupSharedPtr sg,
                                         const double dt_inner) override
     {
         ParticleSystem::integrate_inner_neutral(sg, dt_inner);
         if (this->config->get_reactions().size())
-            reaction_controller->apply_reactions(sg, dt_inner);
+            reaction_controller->apply(sg, dt_inner);
     }
 
     inline void finish_setup(

@@ -6,12 +6,12 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "reactions.hpp"
+#include <reactions/reactions.hpp>
 #include "../Misc/Constants.hpp"
 
 namespace NESO::Solvers::tokamak
 {
-using namespace Reactions;
+using namespace VANTAGE::Reactions;
 struct norm
 {
     static constexpr double time        = 1.0E-4;

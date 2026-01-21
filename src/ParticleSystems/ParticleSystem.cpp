@@ -373,6 +373,31 @@ void ParticleSystem::add_sources(double time, double dt)
                                           std::log(u(this->rng_phasespace)));
                         }
                     }
+                    else if (auto v = vmap.find(std::pair("Vin", 0));
+                             v != vmap.end()) // Specific to EIRENE example
+                    {
+                        for (int d = 0; d < 3; ++d)
+                        {
+                            velocities.emplace_back(std::vector<double>(N));
+                        }
+                        double speed = v->second.m_expression->Evaluate()/
+                                     (mesh_length * omega_c);;
+
+                        std::uniform_real_distribution u(0.0, 1.0);
+
+                        for (int p = 0; p < N; ++p)
+                        {
+                            // inverse transform sampling
+                            double sintheta =
+                                std::sqrt(u(this->rng_phasespace));
+                            double phi = 2 * M_PI * u(this->rng_phasespace);
+                            velocities[1][p] = speed * sintheta * cos(phi);
+                            velocities[2][p] = speed * sintheta * sin(phi);
+
+                            velocities[0][p] =
+                                -speed * std::sqrt(1 - sintheta * sintheta);
+                        }
+                    }
 
                     else // Explicit velocities
                     {
