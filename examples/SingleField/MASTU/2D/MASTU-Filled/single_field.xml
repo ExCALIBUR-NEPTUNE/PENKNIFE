@@ -26,12 +26,12 @@
             <!-- Normalised magnetic field in T -->
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
-            <P> TimeStep       = 957.883316               </P>
-            <P> NumSteps      = 1000              </P>
+            <P> TimeStep       = 95.7883316               </P>
+            <P> NumSteps      = 10000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
-            <P> IO_CheckSteps  = 10                </P>
-            <P> IO_InfoSteps   = 10                </P>
+            <P> IO_CheckSteps  = 100                </P>
+            <P> IO_InfoSteps   = 100                </P>
             <P> epsilon        = 1.0               </P>
 
             <!-- Coulomb logarithm -->
@@ -56,7 +56,7 @@
             <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
             <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
 
-            <P> particle_output_freq = 1              </P>
+            <P> particle_output_freq = 10              </P>
         </PARAMETERS>
 
         <VARIABLES>
@@ -100,12 +100,12 @@
                     <E VAR="Y" VALUE="0"/>
                 </INITIAL>
                 <SOURCES>
-                    <P N="1000">
+                    <P N="100">
                         <E VAR="W" VALUE="0.00005"/>
                         <E VAR="X" VALUE="199.9999"/>
                         <E VAR="Y" VALUE="0"/>
-                        <E VAR="Vin" VALUE="1573.5"/>
-                        <!-- <E VAR="Tin" VALUE="0.02585"/> -->
+                        <!-- <E VAR="Vin" VALUE="1573.5"/> -->
+                        <E VAR="Tin" VALUE="0.02585"/>
                     </P>
                 </SOURCES>
             </KN>

@@ -359,8 +359,8 @@ void ParticleSystem::add_sources(double time, double dt)
                         std::normal_distribution norm(0.0, 1.0);
 
                         double vth = constants::c *
-                                     std::sqrt(Tnorm * T / constants::m_p *
-                                               particle_mass) /
+                                     std::sqrt(Tnorm * T / (constants::m_p *
+                                               particle_mass)) /
                                      (mesh_length * omega_c);
 
                         for (int p = 0; p < N; ++p)
