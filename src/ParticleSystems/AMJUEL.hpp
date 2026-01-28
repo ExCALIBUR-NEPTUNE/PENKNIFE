@@ -14,7 +14,7 @@ namespace NESO::Solvers::tokamak
 using namespace VANTAGE::Reactions;
 struct norm
 {
-    static constexpr double time        = 1.0E-4;
+    static constexpr double time        = 1.0E-8;
     static constexpr double length      = -1;
     static constexpr double temp        = 1.0;
     static constexpr double dens        = 1e18;

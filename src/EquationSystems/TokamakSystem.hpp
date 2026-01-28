@@ -108,6 +108,9 @@ protected:
     NekDouble cs;          // Reference ion sound speed
     NekDouble me;          // Electron mass
 
+    std::map<int, std::map<int, CompositeSharedPtr>> m_domains;
+    std::map<int, int> m_dom_to_offset;
+
     bool transient_field;
 
     std::shared_ptr<MagneticField> mag_field;

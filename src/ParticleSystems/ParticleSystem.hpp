@@ -658,12 +658,12 @@ protected:
         {
             if (v.charge == 0)
             {
-                apply_neutral_timestep(static_particle_sub_group(v.sub_group),
+                apply_neutral_timestep(particle_sub_group(v.sub_group),
                                        dt);
             }
             else
             {
-                apply_ion_timestep(static_particle_sub_group(v.sub_group), dt);
+                apply_ion_timestep(particle_sub_group(v.sub_group), dt);
             }
         }
     }

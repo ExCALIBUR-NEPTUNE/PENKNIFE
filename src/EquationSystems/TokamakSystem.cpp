@@ -220,6 +220,36 @@ void TokamakSystem::v_InitObject(bool create_field)
 {
     TimeEvoEqnSysBase::v_InitObject(create_field);
 
+    m_domains          = m_graph->GetDomain();
+    m_dom_to_offset[0] = 0;
+    int size           = 0;
+
+    for (size_t d = 0; d < m_domains.size(); ++d)
+    {
+        std::vector<int> global;
+        std::vector<int> local;
+        std::vector<int> phys_offset;
+        std::vector<int> coeff_offset;
+
+        for (auto &compIter : m_domains[d])
+        {
+            for (auto &x : compIter.second->m_geomVec)
+            {
+
+                global.push_back(x->GetGlobalID());
+
+                local.push_back(
+                    m_fields[0]->GetElmtToExpId().at(global.back()));
+
+                phys_offset.push_back(
+                    m_fields[0]->GetPhys_Offset(local.back()));
+
+                size += m_fields[0]->GetExp(local.back())->GetTotPoints();
+            }
+        }
+        m_dom_to_offset[d + 1] = size;
+    }
+
     // Store FieldSharedPtr casts of fields in a map, indexed by name
 
     this->E = Array<OneD, MR::DisContFieldSharedPtr>(3);
@@ -661,13 +691,35 @@ NESOSessionFunctionSharedPtr TokamakSystem::get_species_function(
  * @brief After reading ICs, calculate phi and grad(phi)
  */
 void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                           const int domain)
+                                           [[maybe_unused]] const int domain)
 {
     if (m_session->DefinesFunction("InitialConditions"))
     {
-        GetFunction("InitialConditions")
-            ->Evaluate(m_session->GetVariables(), m_fields, m_time, domain);
-        // Enforce C0 Continutiy of initial condiiton
+        for (int i = 0; i < m_fields.size(); ++i)
+        {
+            Array<OneD, NekDouble> phys = m_fields[i]->UpdatePhys();
+            Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
+            for (size_t d = 0; d < m_domains.size(); ++d)
+            {
+                GetFunction("InitialConditions")
+                    ->Evaluate(m_session->GetVariables()[i], tmpphys, m_time,
+                               d);
+                Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
+                             tmpphys.data() + m_dom_to_offset[d], 1,
+                             phys.data() + m_dom_to_offset[d], 1);
+            }
+
+            if (m_fields[i]->GetWaveSpace())
+            {
+                m_fields[i]->HomogeneousFwdTrans(m_fields[i]->GetTotPoints(),
+                                                 m_fields[i]->GetPhys(),
+                                                 m_fields[i]->UpdatePhys());
+            }
+            m_fields[i]->FwdTransLocalElmt(m_fields[i]->GetPhys(),
+                                           m_fields[i]->UpdateCoeffs());
+        }
+
+        // Enforce C0 Continuity of initial condiiton
         if ((m_projectionType == MultiRegions::eGalerkin) ||
             (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
         {
@@ -682,13 +734,18 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
 
         if (m_session->GetComm()->GetRank() == 0)
         {
+            std::cout << "Initial Conditions:" << std::endl;
             for (int i = 0; i < m_fields.size(); ++i)
             {
                 std::string varName = m_session->GetVariable(i);
-                std::cout << "  - Field " << varName << ": "
-                          << GetFunction("InitialConditions")
-                                 ->Describe(varName, domain)
-                          << std::endl;
+                std::cout << "  - Field " << varName << std::endl;
+                for (size_t d = 0; d < m_domains.size(); ++d)
+                {
+                    std::cout << "\tDomain " << d << ": "
+                              << GetFunction("InitialConditions")
+                                     ->Describe(varName, d)
+                              << std::endl;
+                }
             }
         }
     }
@@ -703,6 +760,7 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                         1);
             if (m_session->GetComm()->GetRank() == 0)
             {
+                std::cout << "Initial Conditions:" << std::endl;
                 std::cout << "  - Field " << m_session->GetVariable(i)
                           << ": 0 (default)" << std::endl;
             }
@@ -717,8 +775,16 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
             auto fn = this->get_species_function(v.name, "InitialConditions");
             for (const auto &[f, fi] : v.fields)
             {
-                fn->Evaluate(m_session->GetVariables()[f],
-                             m_indfields[fi]->UpdatePhys(), m_time, domain);
+                Array<OneD, NekDouble> phys = m_indfields[fi]->UpdatePhys();
+                Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
+                for (size_t d = 0; d < m_domains.size(); ++d)
+                {
+                    fn->Evaluate(m_session->GetVariables()[f], tmpphys, m_time,
+                                 d);
+                    Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
+                                 tmpphys.data() + m_dom_to_offset[d], 1,
+                                 phys.data() + m_dom_to_offset[d], 1);
+                }
                 if (m_indfields[fi]->GetWaveSpace())
                 {
                     m_indfields[fi]->HomogeneousFwdTrans(
@@ -739,9 +805,21 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                     m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
                                               m_indfields[fi]->UpdatePhys());
                 }
+                if (m_session->GetComm()->GetRank() == 0)
+                {
+                    std::string varName = m_session->GetVariable(f);
+                    std::cout << "  - Species " << v.name << " Field "
+                              << varName << std::endl;
+                    for (size_t d = 0; d < m_domains.size(); ++d)
+                    {
+                        std::cout << "\tDomain " << d << ": "
+                                  << this->get_species_function(
+                                             v.name, "InitialConditions")
+                                         ->Describe(varName, d)
+                                  << std::endl;
+                    }
+                }
             }
-
-            // Enforce C0 Continutiy of initial condiiton
         }
         else
         {
@@ -752,11 +830,24 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                 m_indfields[fi]->SetPhysState(true);
                 Vmath::Zero(m_indfields[fi]->GetNcoeffs(),
                             m_indfields[fi]->UpdateCoeffs(), 1);
+                if (m_session->GetComm()->GetRank() == 0)
+                {
+                    std::cout << "Initial Conditions:" << std::endl;
+                    std::cout << "  - Field " << m_session->GetVariable(f)
+                              << ": 0 (default)" << std::endl;
+                }
             }
         }
         s++;
     }
-
+    if (m_session->GetComm()->GetRank() == 0)
+    {
+        std::cout << "============================================="
+                     "================"
+                     "=========="
+                  << std::endl
+                  << std::endl;
+    }
     if (dump_ICs && m_checksteps && m_nchk == 0 && !m_comm->IsParallelInTime())
     {
         Checkpoint_Output(m_nchk);

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<NEKTAR>
+    <COLLECTIONS DEFAULT="auto" />
+    <EXPANSIONS>
+        <E COMPOSITE="C[2]" NUMMODES="4" TYPE="MODIFIED" FIELDS="n" />
+    </EXPANSIONS>
+
+    <CONDITIONS>
+        <SOLVERINFO>      
+            <I PROPERTY="EQTYPE"                        VALUE="SingleDiffusiveField" />
+            <I PROPERTY="PARTTYPE"                      VALUE="ReactionSystem"/>
+            <I PROPERTY="Projection"                    VALUE="Continuous" />
+            <I PROPERTY="TimeIntegrationMethod"         VALUE="IMEXOrder2" />
+            <I PROPERTY="LinSysIterSolverTypeInNonlin"  VALUE="GMRES"/>
+            <I PROPERTY="Preconditioner"                VALUE="Diagonal"/>
+            <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
+        </SOLVERINFO>
+
+        <PARAMETERS>        
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 0.01</P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1</P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18</P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0</P>
+            <!-- Time step in cyclotron units -->
+            <P> TimeStep       = 95.7883316               </P>
+            <P> NumSteps      = 10000              </P>
+            <P> TFinal        = NumSteps*TimeStep </P>
+            <!-- ~957883.316 -->
+            <P> IO_CheckSteps  = 100                </P>
+            <P> IO_InfoSteps   = 100                </P>
+            <P> epsilon        = 1.0               </P>
+
+            <!-- Coulomb logarithm -->
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <!-- Background temperature in Tnorm eV -->
+            <P> T_bg      = 10         </P>
+
+            <!-- Scaling factor for ICs -->
+            <P> sx        = 0.3 </P>
+            <P> sy        = 0.6 </P>
+            <P> xc         = 0.93      </P>
+            <P> yc         = 0.0      </P>
+            <P> xs         = 0.0      </P>
+            <P> ys         = 0        </P>
+
+
+            <!-- Implicit solve params -->
+            <P> IterativeSolverTolerance  = 1.0E-3  </P>
+            <P> NekNonlinSysMaxIterations = 10       </P>
+            <P> NewtonRelativeIteTol      = 1.0E-4  </P>
+            <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
+            <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
+
+            <P> particle_output_freq = 10              </P>
+        </PARAMETERS>
+
+        <VARIABLES>
+            <V ID="0"> n </V>
+        </VARIABLES>
+
+        <BOUNDARYREGIONS>
+            <B ID="3"> C[3] </B>
+        </BOUNDARYREGIONS>
+        <BOUNDARYCONDITIONS>
+            <!--Wall -->
+            <REGION REF="3">
+                <N VAR="n" VALUE="0"/>
+            </REGION>         
+        </BOUNDARYCONDITIONS>
+        
+        <FUNCTION NAME="InitialConditions">
+            <E VAR="n"  DOMAIN="0" VALUE="2" />
+        </FUNCTION>
+        
+        <FUNCTION NAME="MagneticMeanField">
+            <F VAR="Bx,By,Bz"  FILE="B.pts"  />
+        </FUNCTION>
+
+    </CONDITIONS>
+
+    <NESO>
+        <SPECIES>
+            <I NAME="D+" FIELDS="n">
+                <P> Mass = 2.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="2" />
+                </FUNCTION>
+            </I>
+            <KN NAME="D">
+                <P> Mass = 2.0 </P>
+                <INITIAL N="1">
+                    <E VAR="W" VALUE="0.000000001"/>
+                    <E VAR="X" VALUE="199.9999"/>
+                    <E VAR="Y" VALUE="0"/>
+                </INITIAL>
+                <SOURCES>
+                    <P N="100">
+                        <E VAR="W" VALUE="0.00005"/>
+                        <E VAR="X" VALUE="199.9999"/>
+                        <E VAR="Y" VALUE="0"/>
+                        <!-- <E VAR="Vin" VALUE="1573.5"/> -->
+                        <E VAR="Tin" VALUE="0.02585"/>
+                    </P>
+                </SOURCES>
+            </KN>
+        </SPECIES>
+
+        <VANTAGE>
+            <S TYPE="Specular" SPECIES="D">
+                <REGION REF="3"/>
+                <RATE TYPE="Constant" VALUE="1.0"/>
+            </S>           
+        </VANTAGE>
+
+    </NESO>
+</NEKTAR>

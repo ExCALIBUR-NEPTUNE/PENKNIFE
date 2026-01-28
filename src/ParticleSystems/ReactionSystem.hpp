@@ -80,8 +80,8 @@ public:
 
                 if (std::get<2>(v).first == "Fixed")
                 {
-                    auto ionise_data        = FixedRateData(1.0);
-                    auto ionise_energy_data = FixedRateData(1.0);
+                    auto ionise_data        = FixedRateData(std::get<2>(v).second);
+                    auto ionise_energy_data = FixedRateData(std::get<2>(v).second);
                     if (this->ndim == 2)
                     {
                         reaction = std::make_shared<ElectronImpactIonisation<
@@ -553,7 +553,7 @@ public:
         auto merge_transform_wrapper = std::make_shared<TransformationWrapper>(
             std::vector<std::shared_ptr<MarkingStrategy>>{make_marking_strategy<
                 ComparisonMarkerSingle<REAL, LessThanComp>>(Sym<REAL>("WEIGHT"),
-                                                            0.01)},
+                                                            0.0000000001)},
             merge_transform);
 
         std::vector<std::string> src_names{"ELECTRON_SOURCE_DENSITY",
@@ -577,11 +577,11 @@ public:
 
         this->reaction_controller = std::make_shared<ReactionController>(
             std::vector<std::shared_ptr<TransformationWrapper>>{
-                /*zeroer_transform_wrapper,*/ merge_transform_wrapper,
-                remove_transform_wrapper},
+                /*zeroer_transform_wrapper, merge_transform_wrapper,
+                remove_transform_wrapper*/},
             std::vector<std::shared_ptr<TransformationWrapper>>{
-                /*project_transform_wrapper,*/ merge_transform_wrapper,
-                remove_transform_wrapper});
+                /*project_transform_wrapper, merge_transform_wrapper,
+                remove_transform_wrapper*/});
 
         set_up_reactions();
         init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),

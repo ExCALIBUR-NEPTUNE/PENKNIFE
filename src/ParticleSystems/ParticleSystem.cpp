@@ -106,7 +106,6 @@ void ParticleSystem::set_up_species()
                     double T = v->second.m_expression->Evaluate();
 
                     std::uniform_real_distribution u(0.0, 1.0);
-                    std::gamma_distribution mb(1.5, T);
                     std::normal_distribution norm(0.0,
                                                   std::sqrt(T / particle_mass));
                     double vth = constants::c *
@@ -116,17 +115,6 @@ void ParticleSystem::set_up_species()
                     for (int p = 0; p < N; ++p)
                     {
                         double sintheta = std::sqrt(u(this->rng_phasespace));
-
-                        // double energy = mb(this->rng_phasespace);
-                        // double speed =
-                        //     vth * std::sqrt(2 * energy / particle_mass);
-                        // double phi       = 2 * M_PI *
-                        // u(this->rng_phasespace); velocities[1][p] = speed *
-                        // sintheta * cos(phi); velocities[2][p] = speed *
-                        // sintheta * sin(phi);
-
-                        // velocities[0][p] =
-                        //     -speed * std::sqrt(1 - sintheta * sintheta);
 
                         velocities[1][p] = vth * norm(this->rng_phasespace);
                         velocities[2][p] = vth * norm(this->rng_phasespace);
@@ -216,15 +204,15 @@ void ParticleSystem::set_up_species()
                     initial_distribution[Sym<REAL>("TOT_REACTION_RATE")][px]
                                         [0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
-                        2.0;
+                        0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")]
                                         [px][0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")]
                                         [px][0] = 0.0;
                     initial_distribution[Sym<REAL>("FLUID_DENSITY")][px][0] =
-                        2.0; // 1e18 m^-3
+                        0.0; // 1e18 m^-3
                     initial_distribution[Sym<REAL>("FLUID_TEMPERATURE")][px]
                                         [0] = 2.0; // eV
                 }
@@ -484,15 +472,15 @@ void ParticleSystem::add_sources(double time, double dt)
                         src_distribution[Sym<REAL>("TOT_REACTION_RATE")][px]
                                         [0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
-                            2.0;
+                            0.0;
                         src_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")]
                                         [px][0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")]
                                         [px][0] = 0.0;
                         src_distribution[Sym<REAL>("FLUID_DENSITY")][px][0] =
-                            2.0; // 1e18 m^-3
+                            0.0; // 1e18 m^-3
                         src_distribution[Sym<REAL>("FLUID_TEMPERATURE")][px]
                                         [0] = 2.0; // eV
                     }
