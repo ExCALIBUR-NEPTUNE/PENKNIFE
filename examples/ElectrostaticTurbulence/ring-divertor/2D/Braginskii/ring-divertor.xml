@@ -17,8 +17,7 @@
             <C ID="6"> T[7938-11228] </C>
         </COMPOSITE>
         <DOMAIN>
-            <D ID="0"> C[0] </D>
-            <D ID="1"> C[6] </D>
+            <D ID="0"> C[0,6] </D>
         </DOMAIN>
     </GEOMETRY>
     <Metadata>

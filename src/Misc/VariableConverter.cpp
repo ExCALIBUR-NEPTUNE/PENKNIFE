@@ -16,7 +16,7 @@ VariableConverter::VariableConverter(
 {
     m_eos     = GetEquationOfStateFactory().CreateInstance("IdealGas");
     omega_idx = field_to_index.get_idx("w");
-    pe_idx    = field_to_index.get_idx("p");
+    pe_idx    = field_to_index.get_idx("e");
 }
 
 void VariableConverter::GetElectronDensity(
@@ -125,7 +125,7 @@ void VariableConverter::GetIonInternalEnergy(
     int ni_idx =
         m_system.lock()->GetIons()[s].fields.at(field_to_index.at("n"));
     int pi_idx =
-        m_system.lock()->GetIons()[s].fields.at(field_to_index.at("p"));
+        m_system.lock()->GetIons()[s].fields.at(field_to_index.at("e"));
 
     // Calculate rhoe = E - rho*V^2/2
     Vmath::Vsub(nPts, physfield[pi_idx], 1, tmp, 1, energy, 1);
@@ -176,7 +176,7 @@ void VariableConverter::GetIonTemperature(
     int ni_idx =
         m_system.lock()->GetIons()[s].fields.at(field_to_index.at("n"));
     int pi_idx =
-        m_system.lock()->GetIons()[s].fields.at(field_to_index.at("p"));
+        m_system.lock()->GetIons()[s].fields.at(field_to_index.at("e"));
 
     // GetIonInternalEnergy(s, mass, physfield, energy);
     for (size_t p = 0; p < nPts; ++p)
