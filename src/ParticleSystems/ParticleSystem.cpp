@@ -14,15 +14,12 @@ ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
       rank(this->sycl_target->comm_pair.rank_parent)
 {
     this->sycl_target->profile_map.enable();
-};
+}
 
 ParticleSystem::~ParticleSystem()
 {
-// Disable recording of events and regions.
-  this->sycl_target->profile_map.disable();
-  // Write the regions and events to a json file with name
-  // regions_example.rank.json.
-  this->sycl_target->profile_map.write_events_json("profile", this->rank);
+    this->sycl_target->profile_map.disable();
+    this->sycl_target->profile_map.write_events_json("profile", this->rank);
 }
 
 void ParticleSystem::set_up_species()
@@ -263,6 +260,7 @@ inline std::vector<double> gamma_distribution(const int N, const double alpha,
 
 void ParticleSystem::add_sources(double time, double dt)
 {
+    auto r = ProfileRegion("NESO", "add_sources");
     double particle_thermal_velocity;
     const long rank = this->sycl_target->comm_pair.rank_parent;
 
@@ -511,11 +509,16 @@ void ParticleSystem::add_sources(double time, double dt)
                 Access::read(Sym<INT>("INTERNAL_STATE")));
         v.sub_group = sub_group;
     }
+
+    r.end();
+    this->sycl_target->profile_map.add_region(r);
     transfer_particles();
 }
 
 void ParticleSystem::add_sinks(double time, double dt)
 {
+    auto r = ProfileRegion("NESO", "add_sinks");
+
     std::uniform_real_distribution<> rng_dist(0, 1);
 
     Array<OneD, Array<OneD, NekDouble>> posarr(3);
@@ -596,6 +599,8 @@ void ParticleSystem::add_sinks(double time, double dt)
         }
         state++;
     }
+    r.end();
+    this->sycl_target->profile_map.add_region(r);
     remove_marked_particles();
 }
 
