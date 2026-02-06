@@ -46,7 +46,7 @@ public:
     ParticleSystem(NESOReaderSharedPtr session, SD::MeshGraphSharedPtr graph,
                    MPI_Comm comm = MPI_COMM_WORLD);
 
-    virtual ~ParticleSystem() override = default;
+    virtual ~ParticleSystem() override;
 
     /// Disable (implicit) copies.
     ParticleSystem(const ParticleSystem &st) = delete;

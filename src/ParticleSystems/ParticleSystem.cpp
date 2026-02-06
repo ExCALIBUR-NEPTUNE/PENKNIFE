@@ -11,7 +11,19 @@ ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
                                SD::MeshGraphSharedPtr graph, MPI_Comm comm)
     : PartSysBase(session, graph, comm), simulation_time(0.0),
       size(this->sycl_target->comm_pair.size_parent),
-      rank(this->sycl_target->comm_pair.rank_parent) {};
+      rank(this->sycl_target->comm_pair.rank_parent)
+{
+    this->sycl_target->profile_map.enable();
+};
+
+ParticleSystem::~ParticleSystem()
+{
+// Disable recording of events and regions.
+  this->sycl_target->profile_map.disable();
+  // Write the regions and events to a json file with name
+  // regions_example.rank.json.
+  this->sycl_target->profile_map.write_events_json("profile", this->rank);
+}
 
 void ParticleSystem::set_up_species()
 {
@@ -346,10 +358,11 @@ void ParticleSystem::add_sources(double time, double dt)
                         std::uniform_real_distribution u(0.0, 1.0);
                         std::normal_distribution norm(0.0, 1.0);
 
-                        double vth = constants::c *
-                                     std::sqrt(Tnorm * T / (constants::m_p *
-                                               particle_mass)) /
-                                     (mesh_length * omega_c);
+                        double vth =
+                            constants::c *
+                            std::sqrt(Tnorm * T /
+                                      (constants::m_p * particle_mass)) /
+                            (mesh_length * omega_c);
 
                         for (int p = 0; p < N; ++p)
                         {
@@ -368,8 +381,9 @@ void ParticleSystem::add_sources(double time, double dt)
                         {
                             velocities.emplace_back(std::vector<double>(N));
                         }
-                        double speed = v->second.m_expression->Evaluate()/
-                                     (mesh_length * omega_c);;
+                        double speed = v->second.m_expression->Evaluate() /
+                                       (mesh_length * omega_c);
+                        ;
 
                         std::uniform_real_distribution u(0.0, 1.0);
 
