@@ -1,9 +1,8 @@
 #ifndef REACTIONSYSTEM_HPP
 #define REACTIONSYSTEM_HPP
 
-#include "AMJUEL.hpp"
 #include "ParticleSystem.hpp"
-#include <neso_rng_toolkit.hpp>
+#include "Reactions.hpp"
 
 using namespace VANTAGE::Reactions;
 
@@ -45,25 +44,7 @@ public:
         const int rank   = sycl_target->comm_pair.rank_parent;
 
         std::uint64_t root_seed = 141351;
-        std::uint64_t seed      = NESO::RNGToolkit::create_seeds(
-            sycl_target->comm_pair.size_parent, rank, root_seed);
-
-        // Create a Uniform distribution
-        auto rng_normal = NESO::RNGToolkit::create_rng<REAL>(
-            NESO::RNGToolkit::Distribution::Uniform<REAL>{
-                NESO::RNGToolkit::Distribution::next_value(0.0), 1.0},
-            seed, sycl_target->device, sycl_target->device_index);
-
-        // Create an interface between NESO-RNG-Toolkit and NESO-Particles
-        // KernelRNG
-        auto rng_interface =
-            make_rng_generation_function<GenericDeviceRNGGenerationFunction,
-                                         REAL>(
-                [=](REAL *d_ptr, const std::size_t num_samples) -> int
-                { return rng_normal->get_samples(d_ptr, num_samples); });
-
-        auto rng_kernel =
-            host_atomic_block_kernel_rng<REAL>(rng_interface, 4 * 10);
+        auto rng_kernel = get_uniform_rng_kernel(sycl_target, 40, root_seed);
 
         for (const auto &v : this->config->get_reactions())
         {
@@ -80,47 +61,34 @@ public:
 
                 if (std::get<2>(v).first == "Fixed")
                 {
-                    auto ionise_data        = FixedRateData(std::get<2>(v).second);
-                    auto ionise_energy_data = FixedRateData(std::get<2>(v).second);
+                    auto rate        = std::get<2>(v).second;
+                    auto energy_rate = std::get<2>(v).second;
                     if (this->ndim == 2)
                     {
-                        reaction = std::make_shared<ElectronImpactIonisation<
-                            decltype(ionise_data), decltype(ionise_energy_data),
-                            2>>(this->particle_group->sycl_target, ionise_data,
-                                ionise_energy_data, target_species,
-                                electron_species);
+                        reaction = ionise_reaction_fixed<2>(
+                            this->sycl_target, target_species, electron_species,
+                            rate, energy_rate);
                     }
                     else if (this->ndim == 3)
                     {
-                        reaction = std::make_shared<ElectronImpactIonisation<
-                            decltype(ionise_data), decltype(ionise_energy_data),
-                            3>>(this->particle_group->sycl_target, ionise_data,
-                                ionise_energy_data, target_species,
-                                electron_species);
+                        reaction = ionise_reaction_fixed<3>(
+                            this->sycl_target, target_species, electron_species,
+                            rate, energy_rate);
                     }
                 }
                 else if (std::get<2>(v).first == "AMJUEL")
                 {
-                    auto ionise_rate_data   = AMJUEL::ionise_rate_data();
-                    auto ionise_energy_data = AMJUEL::ionise_energy_data();
-
                     if (this->ndim == 2)
                     {
-                        reaction = std::make_shared<ElectronImpactIonisation<
-                            decltype(ionise_rate_data),
-                            decltype(ionise_energy_data), 2>>(
-                            this->particle_group->sycl_target, ionise_rate_data,
-                            ionise_energy_data, target_species,
-                            electron_species);
+                        reaction = ionise_reaction_amjuel<2>(this->sycl_target,
+                                                             target_species,
+                                                             electron_species);
                     }
                     else if (this->ndim == 3)
                     {
-                        reaction = std::make_shared<ElectronImpactIonisation<
-                            decltype(ionise_rate_data),
-                            decltype(ionise_energy_data), 3>>(
-                            this->particle_group->sycl_target, ionise_rate_data,
-                            ionise_energy_data, target_species,
-                            electron_species);
+                        reaction = ionise_reaction_amjuel<3>(this->sycl_target,
+                                                             target_species,
+                                                             electron_species);
                     }
                 }
             }
@@ -141,94 +109,37 @@ public:
 
                 if (std::get<2>(v).first == "Fixed")
                 {
-                    auto recomb_data = FixedRateData(1.0);
-                    auto data1       = FixedRateData(1.0);
-                    auto data2       = FixedRateData(1.0);
-                    auto data_calculator =
-                        DataCalculator<FixedRateData, FixedRateData,
-                                       FixedRateData>(data1, data1, data2);
+                    auto rate        = std::get<2>(v).second;
+                    auto energy_rate = std::get<2>(v).second;
+
                     if (this->ndim == 2)
                     {
-                        auto recomb_reaction_kernel = RecombReactionKernels<2>(
-                            marker_species, electron_species,
-                            norm::potential_energy);
-                        reaction = std::make_shared<
-                            LinearReactionBase<1, decltype(recomb_data),
-                                               decltype(recomb_reaction_kernel),
-                                               decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            marker_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(neutral_species.get_id())},
-                            recomb_data, recomb_reaction_kernel,
-                            data_calculator);
+                        reaction = recombination_reaction_fixed<2>(
+                            this->sycl_target, rng_kernel, marker_species,
+                            electron_species, neutral_species, rate,
+                            energy_rate);
                     }
                     else if (this->ndim == 3)
                     {
-                        auto recomb_reaction_kernel = RecombReactionKernels<3>(
-                            marker_species, electron_species,
-                            norm::potential_energy);
-                        reaction = std::make_shared<
-                            LinearReactionBase<1, decltype(recomb_data),
-                                               decltype(recomb_reaction_kernel),
-                                               decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            marker_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(neutral_species.get_id())},
-                            recomb_data, recomb_reaction_kernel,
-                            data_calculator);
+                        reaction = recombination_reaction_fixed<3>(
+                            this->sycl_target, rng_kernel, marker_species,
+                            electron_species, neutral_species, rate,
+                            energy_rate);
                     }
                 }
                 else if (std::get<2>(v).first == "AMJUEL")
                 {
-                    auto recomb_rate_data   = AMJUEL::recomb_rate_data();
-                    auto recomb_energy_data = AMJUEL::recomb_energy_data();
-
-                    auto constant_rate_cross_section =
-                        ConstantRateCrossSection(1.0);
-                    auto recomb_data_calc_sampler = FilteredMaxwellianSampler<
-                        2, decltype(constant_rate_cross_section)>(
-                        (constants::temp_SI * constants::k_B) /
-                            (marker_species.get_mass() * norm::mass_amu_SI *
-                             norm::vel * norm::vel),
-                        constant_rate_cross_section, rng_kernel);
-                    auto data_calculator =
-                        DataCalculator<decltype(recomb_energy_data),
-                                       decltype(recomb_data_calc_sampler)>(
-                            recomb_energy_data, recomb_data_calc_sampler);
-
                     if (this->ndim == 2)
                     {
-                        auto recomb_reaction_kernel = RecombReactionKernels<2>(
-                            marker_species, electron_species,
-                            norm::potential_energy);
-                        reaction = std::make_shared<
-                            LinearReactionBase<1, decltype(recomb_rate_data),
-                                               decltype(recomb_reaction_kernel),
-                                               decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            marker_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(neutral_species.get_id())},
-                            recomb_rate_data, recomb_reaction_kernel,
-                            data_calculator);
+                        reaction = recombination_reaction_amjuel<2>(
+                            this->sycl_target, rng_kernel, marker_species,
+                            electron_species, neutral_species);
                     }
                     else if (this->ndim == 3)
                     {
-                        auto recomb_reaction_kernel = RecombReactionKernels<3>(
-                            marker_species, electron_species,
-                            norm::potential_energy);
-                        reaction = std::make_shared<
-                            LinearReactionBase<1, decltype(recomb_rate_data),
-                                               decltype(recomb_reaction_kernel),
-                                               decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            marker_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(neutral_species.get_id())},
-                            recomb_rate_data, recomb_reaction_kernel,
-                            data_calculator);
+                        reaction = recombination_reaction_amjuel<3>(
+                            this->sycl_target, rng_kernel, marker_species,
+                            electron_species, neutral_species);
                     }
                 }
             }
@@ -245,95 +156,37 @@ public:
                             this->species_map[std::get<1>(v)[1]].mass,
                             this->species_map[std::get<1>(v)[1]].charge,
                             this->species_map[std::get<1>(v)[1]].id);
-                auto parent_mass = target_species.get_mass();
-                auto child_mass  = projectile_species.get_mass();
-                auto reduced_mass =
-                    (parent_mass * child_mass) / (parent_mass + child_mass);
 
                 if (std::get<2>(v).first == "Fixed")
                 {
-                    auto rate_data              = FixedRateData(1.0);
-                    auto constant_cross_section = ConstantRateCrossSection(1.0);
-
-                    auto data_calc_sampler = FilteredMaxwellianSampler<
-                        2, decltype(constant_cross_section)>(
-                        (constants::temp_SI * constants::k_B) /
-                            (child_mass * norm::mass_amu_SI * norm::vel *
-                             norm::vel),
-                        constant_cross_section, rng_kernel);
-                    auto data_calculator =
-                        DataCalculator<decltype(data_calc_sampler)>(
-                            data_calc_sampler);
+                    auto rate          = std::get<2>(v).second;
+                    auto cross_section = std::get<3>(v).second;
                     if (this->ndim == 2)
                     {
-                        auto cx_kernel = CXReactionKernels<2>(
-                            target_species, projectile_species, prop_map);
-                        reaction = std::make_shared<LinearReactionBase<
-                            1, decltype(rate_data), decltype(cx_kernel),
-                            decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            projectile_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(target_species.get_id())},
-                            rate_data, cx_kernel, data_calculator);
+                        reaction = cx_reaction_fixed<2>(
+                            this->sycl_target, rng_kernel, target_species,
+                            projectile_species, rate, cross_section);
                     }
                     else if (this->ndim == 3)
                     {
-                        auto cx_kernel = CXReactionKernels<3>(
-                            target_species, projectile_species, prop_map);
-                        reaction = std::make_shared<LinearReactionBase<
-                            1, decltype(rate_data), decltype(cx_kernel),
-                            decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            projectile_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(target_species.get_id())},
-                            rate_data, cx_kernel, data_calculator);
+                        reaction = cx_reaction_fixed<3>(
+                            this->sycl_target, rng_kernel, target_species,
+                            projectile_species, rate, cross_section);
                     }
                 }
                 else if (std::get<2>(v).first == "AMJUEL")
                 {
-                    auto rate_data =
-                        AMJUEL::cx_rate_data(parent_mass, child_mass);
-                    auto cross_section =
-                        AMJUEL::amjuel_fit_cross_section(reduced_mass);
-
-                    auto data_calc_sampler =
-                        FilteredMaxwellianSampler<2, decltype(cross_section)>(
-                            (constants::temp_SI * constants::k_B) /
-                                (child_mass * norm::mass_amu_SI * norm::vel *
-                                 norm::vel),
-                            cross_section, rng_kernel);
-
-                    auto data_calculator =
-                        DataCalculator<decltype(data_calc_sampler)>(
-                            data_calc_sampler);
-
                     if (this->ndim == 2)
                     {
-                        auto cx_kernel = CXReactionKernels<2>(
-                            target_species, projectile_species, prop_map);
-                        reaction = std::make_shared<LinearReactionBase<
-                            1, decltype(rate_data), decltype(cx_kernel),
-                            decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            projectile_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(target_species.get_id())},
-                            rate_data, cx_kernel, data_calculator);
+                        reaction = cx_reaction_amjuel<2>(
+                            this->sycl_target, rng_kernel, target_species,
+                            projectile_species);
                     }
                     else if (this->ndim == 3)
                     {
-                        auto cx_kernel = CXReactionKernels<3>(
-                            target_species, projectile_species, prop_map);
-                        reaction = std::make_shared<LinearReactionBase<
-                            1, decltype(rate_data), decltype(cx_kernel),
-                            decltype(data_calculator)>>(
-                            this->particle_group->sycl_target,
-                            projectile_species.get_id(),
-                            std::array<int, 1>{
-                                static_cast<int>(target_species.get_id())},
-                            rate_data, cx_kernel, data_calculator);
+                        reaction = cx_reaction_amjuel<3>(
+                            this->sycl_target, rng_kernel, target_species,
+                            projectile_species);
                     }
                 }
             }
@@ -383,37 +236,81 @@ public:
                     {
                         for (const auto &s : std::get<1>(v))
                         {
-                            int s_id       = species[s].id;
-                            auto rate_data = FixedRateData(1.0);
+                            auto reflected_species =
+                                Species(s, species[s].mass, species[s].charge,
+                                        species[s].id);
+                            auto rate = std::get<3>(v).second;
                             if (this->ndim == 2)
                             {
-                                auto reflection_kernels =
-                                    SpecularReflectionKernels<2>();
-
-                                auto reflection_reaction =
-                                    std::make_shared<LinearReactionBase<
-                                        0, FixedRateData,
-                                        SpecularReflectionKernels<2>>>(
-                                        sycl_target, s_id, std::array<int, 0>{},
-                                        rate_data, reflection_kernels);
+                                auto reaction = specular_reflection<2>(
+                                    this->sycl_target, reflected_species, rate);
 
                                 this->reaction_controllers[b_id]->add_reaction(
-                                    reflection_reaction);
+                                    reaction);
                             }
                             else if (this->ndim == 3)
                             {
-                                auto reflection_kernels =
-                                    SpecularReflectionKernels<3>();
-
-                                auto reflection_reaction =
-                                    std::make_shared<LinearReactionBase<
-                                        0, FixedRateData,
-                                        SpecularReflectionKernels<3>>>(
-                                        sycl_target, s_id, std::array<int, 0>{},
-                                        rate_data, reflection_kernels);
+                                auto reaction = specular_reflection<3>(
+                                    this->sycl_target, reflected_species, rate);
 
                                 this->reaction_controllers[b_id]->add_reaction(
-                                    reflection_reaction);
+                                    reaction);
+                            }
+                        }
+                    }
+                    else if (std::get<0>(v) == "Thermal")
+                    {
+                        for (const auto &s : std::get<1>(v))
+                        {
+                            double T = 1.0;
+                            auto thermal_species =
+                                Species(s, species[s].mass, species[s].charge,
+                                        species[s].id);
+                            auto rate = std::get<3>(v).second;
+
+                            if (this->ndim == 2)
+                            {
+                                auto reaction = thermal_reflection<2>(
+                                    this->sycl_target, thermal_species, rate,
+                                    T);
+
+                                this->reaction_controllers[b_id]->add_reaction(
+                                    reaction);
+                            }
+                            else if (this->ndim == 3)
+                            {
+                                auto reaction = thermal_reflection<3>(
+                                    this->sycl_target, thermal_species, rate,
+                                    T);
+                                this->reaction_controllers[b_id]->add_reaction(
+                                    reaction);
+                            }
+                        }
+                    }
+                    else if (std::get<0>(v) == "Absorption")
+                    {
+                        for (const auto &s : std::get<1>(v))
+                        {
+                            auto absorbed_species =
+                                Species(s, species[s].mass, species[s].charge,
+                                        species[s].id);
+                            auto rate = std::get<3>(v).second;
+
+                            if (this->ndim == 2)
+                            {
+                                auto reaction = surface_absorption<2>(
+                                    this->sycl_target, absorbed_species, rate);
+
+                                this->reaction_controllers[b_id]->add_reaction(
+                                    reaction);
+                            }
+                            else if (this->ndim == 3)
+                            {
+                                auto reaction = surface_absorption<3>(
+                                    this->sycl_target, absorbed_species, rate);
+
+                                this->reaction_controllers[b_id]->add_reaction(
+                                    reaction);
                             }
                         }
                     }
