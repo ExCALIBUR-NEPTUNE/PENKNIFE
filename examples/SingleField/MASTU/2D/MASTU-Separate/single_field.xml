@@ -69,7 +69,6 @@
             <B ID="3"> C[3] </B>
         </BOUNDARYREGIONS>
         <BOUNDARYCONDITIONS>
-            <!--Wall -->
             <REGION REF="3">
                 <N VAR="n" VALUE="0"/>
             </REGION>         
