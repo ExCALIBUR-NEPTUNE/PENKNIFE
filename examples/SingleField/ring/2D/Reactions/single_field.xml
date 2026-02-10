@@ -13,16 +13,20 @@
     <CONDITIONS>
         <SOLVERINFO>
             <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
+            <I PROPERTY="PARTTYPE"                      VALUE="ReactionSystem"/>
             <I PROPERTY="Projection"                   VALUE="Continuous" />
-            <I PROPERTY="TimeIntegrationMethod"        VALUE="IMEXOrder2"    />
             <!-- <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         /> -->
             <!-- <I PROPERTY="UpwindType"                   VALUE="Upwind"        /> -->
             <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
         </SOLVERINFO>
+        <TIMEINTEGRATIONSCHEME>
+            <METHOD> IMEX </METHOD>
+            <ORDER> 2 </ORDER>
+        </TIMEINTEGRATIONSCHEME>
 
         <PARAMETERS>
             <!-- Timestepping and output options -->
-            <P> TimeStep      = 0.0005            </P>
+            <P> TimeStep      = 5            </P>
             <P> NumSteps      = 300              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 10     </P>
@@ -31,6 +35,10 @@
 
             <P> epsilon         = 1.0   </P>
             <!-- Anisotropic diffusion -->
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <P> T_bg      = 10         </P>
+
             <P> k_par           = 1e-3   </P>
             <P> k_perp          = 1e-6   </P>
             <P> TCore           = 300.0 </P>
@@ -71,125 +79,99 @@
             </REGION>
         </BOUNDARYCONDITIONS>
 
-        <!-- <FUNCTION NAME="InitialConditions"> -->
-            <!-- <E VAR="n"  DOMAIN="0" VALUE="0.1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
-        <!-- </FUNCTION> -->
+        <FUNCTION NAME="InitialConditions">
+            <E VAR="n"  DOMAIN="0" VALUE="0.1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+        </FUNCTION>
         <FUNCTION NAME="MagneticField">
             <E VAR="Bx" VALUE="(y-yc)/sqrt((x-rc)*(x-rc)+(y-yc)*(y-yc))" />
             <E VAR="By" VALUE="-(x-rc)/sqrt((x-rc)*(x-rc)+(y-yc)*(y-yc))" />
             <E VAR="Bz" VALUE="0" />
         </FUNCTION>
     </CONDITIONS>
-
     <NESO>
         <SPECIES>
-            <S ID="0" NAME="D">
+            <I NAME="D+" FIELDS="n">
+                <P> Mass = 1.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                </FUNCTION>
+            </I>
+            <I NAME="T+" FIELDS="n">
+                <P> Mass = 1.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                </FUNCTION>
+            </I>
+            <KN NAME="D">
                 <P> Mass = 2.0 </P>
-                <P> Charge = 1.0 </P>
-                <FUNCTION NAME="InitialConditions">
-                    <E VAR="n"  DOMAIN="0" VALUE="0.1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
-                </FUNCTION>
-            </S>
-            <S ID="1" NAME="T">
-                <P> Mass = 3.0 </P>
-                <P> Charge = 1.0 </P>
-                <FUNCTION NAME="InitialConditions">
-                    <E VAR="n"  DOMAIN="0" VALUE="0.1+0.1*exp((-(x-rc+rs)*(x-rc+rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
-                </FUNCTION>
-            </S>
-        </SPECIES> 
-        <PARTICLES>
-            <INFO>
-                <I PROPERTY="PARTTYPE" VALUE="ReactionSystem"/>
-            </INFO>
-            <PARAMETERS>
-                <P> particle_output_freq = 1          </P>
-                <P> particle_v_drift_scaling = 1.0 </P>
-                <P> particle_B_scaling = 1.0 </P>
-                <P> particle_velocity_B_scaling = 0.0 </P>
-                <P> particle_thermal_velocity = 10  </P>
-            </PARAMETERS>   
-
-            <SPECIES>
-                <S ID="0" NAME="D">
-                    <P> Mass = 2.0 </P>
-                    <P> Charge = 1.0 </P>
-                    <INITIAL N="1000">
-                        <E VAR="n" VALUE="sin(4*x)*sin(4*x)"/>
-                    </INITIAL>
-                    <!-- <SOURCE N="10">
+                <INITIAL N="1000">
+                    <E VAR="W" VALUE="0.00005"/>
+                    <E VAR="X" VALUE="2.75"/>
+                    <E VAR="Y" VALUE="0"/>
+                    <!-- <E VAR="n" VALUE="sin(4*x)*sin(4*x)"/> -->
+                    <E VAR="Vin" VALUE="0.00001"/>
+                </INITIAL>
+                <!-- <SOURCES>
+                    <P N="100">
+                        <E VAR="W" VALUE="0.00005"/>
                         <E VAR="X" VALUE="2.75"/>
                         <E VAR="Y" VALUE="0"/>
-                    </SOURCE> -->
-                    <!-- <SOURCE N="100">
+                        <E VAR="Tin" VALUE="1"/>
                         <E VAR="n" VALUE="exp((-(x-2-0.75*cos(150*t))*(x-2-0.75*cos(150*t))/(0.01))+(-(y-0.75*sin(150*t))*(y-0.75*sin(150*t))/(0.01)))"/>
-                    </SOURCE>
-                    <SINK>
-                        <E VAR="n" VALUE="exp((-(x-2-0.75*sin(150*t))*(x-2-0.75*sin(150*t))/(0.01))+(-(y+0.75*cos(150*t))*(y+0.75*cos(150*t))/(0.01)))"/>
-                    </SINK> -->
-                    <BOUNDARYINTERACTION>
-                        <REGION REF="1">
-                            <C VALUE="0.0" />
-                        </REGION>   
-	                    <REGION REF="2">
-                            <C VALUE="0.0" />
-                        </REGION>
-                    </BOUNDARYINTERACTION> 
-                </S>
-                <S ID="1" NAME="T">
-                    <P> Mass = 3.0 </P>
-                    <P> Charge = 1.0 </P>
-                    <INITIAL N="1000">
-                        <E VAR="n" VALUE="cos(4*x)*cos(4*x)"/>
-                    </INITIAL>
-                    <!-- <SOURCE N="100">
-                        <E VAR="n" VALUE="exp((-(x-2+0.75*cos(150*t))*(x-2+0.75*cos(150*t))/(0.01))+(-(y+0.75*sin(150*t))*(y+0.75*sin(150*t))/(0.01)))"/>
-                    </SOURCE>
-                    <SINK>
-                        <E VAR="n" VALUE="exp((-(x-2+0.75*sin(150*t))*(x-2+0.75*sin(150*t))/(0.01))+(-(y-0.75*cos(150*t))*(y-0.75*cos(150*t))/(0.01)))"/>
-                    </SINK> -->
-                    <BOUNDARYINTERACTION>
-                        <REGION REF="1">
-                            <C VALUE="0.0" />
-                        </REGION>   
-	                    <REGION REF="2">
-                            <C VALUE="0.0" />
-                        </REGION>
-                    </BOUNDARYINTERACTION> 
-                </S>
-            </SPECIES>  
+                    </P>
+                </SOURCES> -->
+            </KN>
+            <KN NAME="T">
+                <P> Mass = 3.0 </P>
+                <INITIAL N="1000">
+                    <E VAR="W" VALUE="0.00005"/>
+                    <E VAR="X" VALUE="2.75"/>
+                    <E VAR="Y" VALUE="0"/>
+                    <E VAR="Vin" VALUE="0.00001"/>
 
-            <REACTIONS>
-                <R ID="0" TYPE="Ionisation" SPECIES="0">
-                    <RATE TYPE="AMJUEL" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R>
-                <R ID="1" TYPE="Ionisation" SPECIES="1">
-                    <RATE TYPE="AMJUEL" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R>
-                <R ID="2" TYPE="Recombination" SPECIES="0">
-                    <RATE TYPE="AMJUEL" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R>
-                <R ID="3" TYPE="Recombination" SPECIES="1">
-                    <RATE TYPE="AMJUEL" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R>
-                <!-- <R ID="4" TYPE="ChargeExchange" SPECIES="0,1">
-                    <RATE TYPE="Fixed" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R>
-                <R ID="5" TYPE="ChargeExchange" SPECIES="1,0">
-                    <RATE TYPE="Fixed" VALUE="1.0"/>
-                    <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-                </R> -->
-                <S ID="0" TYPE="Specular" SPECIES="0,1">
-                    <REGION REF="1,2"/>
-                    <RATE TYPE="Constant" VALUE="1.0"/>
-                </S>
-            </REACTIONS>    
-
-        </PARTICLES>
+                </INITIAL>
+                <!-- <SOURCES>
+                    <P N="100">
+                        <E VAR="W" VALUE="0.00005"/>
+                        <E VAR="X" VALUE="2.75"/>
+                        <E VAR="Y" VALUE="0"/>
+                        <E VAR="Tin" VALUE="1"/>
+                        <E VAR="n" VALUE="exp((-(x-2-0.75*cos(150*t))*(x-2-0.75*cos(150*t))/(0.01))+(-(y-0.75*sin(150*t))*(y-0.75*sin(150*t))/(0.01)))"/>
+                    </P>
+                </SOURCES> -->
+            </KN>
+        </SPECIES>
+        <VANTAGE>
+            <!-- <R TYPE="Ionisation" SPECIES="D">
+                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R>
+            <R TYPE="Ionisation" SPECIES="T">
+                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R> -->
+            <!-- <R TYPE="Recombination" SPECIES="0">
+                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R>
+            <R ID="3" TYPE="Recombination" SPECIES="1">
+                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R> -->
+            <!-- <R ID="4" TYPE="ChargeExchange" SPECIES="0,1">
+                <RATE TYPE="Fixed" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R>
+            <R ID="5" TYPE="ChargeExchange" SPECIES="1,0">
+                <RATE TYPE="Fixed" VALUE="1.0"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            </R> -->
+            <S TYPE="Specular" SPECIES="D,T">
+                <REGION REF="1,2"/>
+                <RATE TYPE="Constant" VALUE="1.0"/>
+            </S>
+        </VANTAGE>
     </NESO>
 </NEKTAR>

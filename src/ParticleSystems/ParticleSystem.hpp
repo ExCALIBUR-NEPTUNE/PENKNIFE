@@ -80,7 +80,6 @@ public:
      */
     inline virtual void integrate(const double time_end, const double dt)
     {
-
         // Get the current simulation time.
         NESOASSERT(time_end >= this->simulation_time,
                    "Cannot integrate backwards in time.");
@@ -115,8 +114,7 @@ public:
         std::vector<std::shared_ptr<DisContField>> &src_fields,
         std::vector<Sym<REAL>> &syms, std::vector<int> &components);
 
-    virtual void diag_setup(
-        const std::shared_ptr<DisContField> &diag_field);
+    virtual void diag_setup(const std::shared_ptr<DisContField> &diag_field);
 
     inline virtual void diag_project()
     {
@@ -427,6 +425,19 @@ protected:
         }
     }
 
+    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+                                const double dt_inner)
+    {
+        auto ions = particle_sub_group(
+            sg, [=](auto Q) { return Q.at(0) != 0.0; },
+            Access::read(Sym<REAL>("Q")));
+        integrate_inner_ion(ions, dt_inner);
+        auto neutrals = particle_sub_group(
+            sg, [=](auto Q) { return Q.at(0) == 0.0; },
+            Access::read(Sym<REAL>("Q")));
+        integrate_inner_neutral(neutrals, dt_inner);
+    }
+
     const long size;
     const long rank;
     std::mt19937 rng_phasespace;
@@ -538,20 +549,38 @@ protected:
         }
     }
 
+    inline void apply_timestep_inner(ParticleSubGroupSharedPtr sg,
+                                     const double dt)
+    {
+        pre_advection(sg);
+        integrate_inner(sg, dt);
+        apply_boundary_conditions(sg, dt);
+        sg = find_partial_moves(sg, dt);
+        while (partial_moves_remaining(sg))
+        {
+            pre_advection(sg);
+            integrate_inner(sg, dt);
+            apply_boundary_conditions(sg, dt);
+            sg = find_partial_moves(sg, dt);
+        }
+    }
+
     inline void apply_timestep(ParticleGroupSharedPtr g, const double dt)
     {
         apply_timestep_reset(g);
-        for (auto &[k, v] : this->species_map)
-        {
-            if (v.charge == 0)
-            {
-                apply_neutral_timestep(particle_sub_group(v.sub_group), dt);
-            }
-            else
-            {
-                apply_ion_timestep(particle_sub_group(v.sub_group), dt);
-            }
-        }
+
+        apply_timestep_inner(static_particle_sub_group(g), dt);
+        // for (auto &[k, v] : this->species_map)
+        // {
+        //     if (v.charge == 0)
+        //     {
+        //         apply_neutral_timestep(particle_sub_group(v.sub_group), dt);
+        //     }
+        //     else
+        //     {
+        //         apply_ion_timestep(particle_sub_group(v.sub_group), dt);
+        //     }
+        // }
     }
 
     /**

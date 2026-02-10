@@ -66,6 +66,12 @@ void ParticleSystem::init_spec()
         ParticleProp(Sym<REAL>("NESO_PARTICLES_BOUNDARY_NORMAL"), this->ndim));
     this->particle_spec.push(
         ParticleProp(Sym<INT>("NESO_PARTICLES_BOUNDARY_METADATA"), 2));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_DENSITY_SOURCE"), 1));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), this->ndim));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_ENERGY_SOURCE"), 1));
 }
 
 void ParticleSystem::init_object()

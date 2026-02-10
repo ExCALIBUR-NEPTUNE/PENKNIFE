@@ -68,28 +68,36 @@ inline auto specular_reflection(SYCLTargetSharedPtr sycl_target,
 
     auto rate_data = FixedRateData(rate);
 
-    auto properties_map = PropertiesMap();
-    properties_map[VANTAGE::Reactions::default_properties.source_momentum] =
-        "SURFACE_MOMENTUM_SOURCE";
-    properties_map[VANTAGE::Reactions::default_properties.source_energy] =
-        "SURFACE_ENERGY_SOURCE";
+    // auto properties_map = PropertiesMap();
+    // properties_map[VANTAGE::Reactions::default_properties.source_momentum] =
+    //     "SURFACE_MOMENTUM_SOURCE";
+    // properties_map[VANTAGE::Reactions::default_properties.source_energy] =
+    //     "SURFACE_ENERGY_SOURCE";
 
-    auto velocity_data = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
+    // auto velocity_data = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
 
-    auto specular_reflection = SpecularReflectionData<ndim>();
+    // auto specular_reflection = SpecularReflectionData<ndim>();
 
-    auto pipeline = PipelineData(velocity_data, specular_reflection);
+    // auto pipeline = PipelineData(velocity_data, specular_reflection);
 
-    auto reflection_kernels = LinearScatteringKernels<ndim>(
-        reflected_species, properties_map.get_map());
-    auto data_calculator = DataCalculator<decltype(pipeline)>(pipeline);
+    // auto reflection_kernels = LinearScatteringKernels<ndim>(
+    //     reflected_species, properties_map.get_map());
+    // auto data_calculator = DataCalculator<decltype(pipeline)>(pipeline);
 
-    auto reflection = std::make_shared<
-        LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
-                           decltype(data_calculator)>>(
-        sycl_target, reflected_species.get_id(),
-        std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
-        rate_data, reflection_kernels, data_calculator);
+    // auto reflection = std::make_shared<
+    //     LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
+    //                        decltype(data_calculator)>>(
+    //     sycl_target, reflected_species.get_id(),
+    //     std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
+    //     rate_data, reflection_kernels, data_calculator);
+    // return reflection;
+
+    auto reflection_kernels = SpecularReflectionKernels<ndim>();
+
+    auto reflection= std::make_shared<
+        LinearReactionBase<0, FixedRateData, SpecularReflectionKernels<ndim>>>(
+        sycl_target, reflected_species.get_id(), std::array<int, 0>{},
+        rate_data, reflection_kernels);
     return reflection;
 }
 
