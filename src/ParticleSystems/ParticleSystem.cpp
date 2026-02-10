@@ -482,11 +482,6 @@ void ParticleSystem::add_sources(double time, double dt)
                             std::sqrt(Tnorm * T /
                                       (constants::m_p * particle_mass)) /
                             (mesh_length * omega_c);
-                        double vth =
-                            constants::c *
-                            std::sqrt(Tnorm * T /
-                                      (constants::m_p * particle_mass)) /
-                            (mesh_length * omega_c);
 
                         for (int p = 0; p < N; ++p)
                         {
@@ -507,9 +502,6 @@ void ParticleSystem::add_sources(double time, double dt)
                         }
                         double speed = v->second.m_expression->Evaluate() /
                                        (mesh_length * omega_c);
-                        double speed = v->second.m_expression->Evaluate() /
-                                       (mesh_length * omega_c);
-                        ;
 
                         std::uniform_real_distribution u(0.0, 1.0);
 
