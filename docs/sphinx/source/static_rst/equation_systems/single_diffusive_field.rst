@@ -5,15 +5,16 @@ Single diffusive field with neutrals
 Solves a system of :math:`1+S` fields representing :math:`S` ion species.
 This equation system is used by specifying
 
-```xml
-<I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
-```
-in the `<SOLVERINFO>`field
+.. code-block:: xml
+
+    <I PROPERTY="EQTYPE" VALUE="SingleDiffusiveField"/>
+
+in the :code:`<SOLVERINFO>` field
 
 Electrons are always present, and at least one ion species must be present.
 Explicitly the fields are:
 
-.. math:: \left[n_e, n_i, ...]
+.. math:: \left[n_e, n_i, ...\right]
 
 The continuity equation is:
 
@@ -55,7 +56,7 @@ flux at the boundary
 where :math:`c_s` in this case is a constant (isothermal Bohm speed
 :math:`c_s = \sqrt{kT/m_i}`).
 
-.. math:: \frac{\partial n}{\partial \mathbf{n}} = \mp \frac{n}{c_s} \frac{\partial v_{\parallel i}{\partial \mathbf{n}}
+.. math:: \frac{\partial n}{\partial \mathbf{n}} = \mp \frac{n}{c_s} \frac{\partial v_{\parallel i}}{\partial \mathbf{n}}
 
 Species Bohm
 

@@ -5,10 +5,11 @@ Double diffusive field with neutrals
 Solves a system of :math:`2+2S` fields representing :math:`S` ion species.
 This equation system is used by specifying
 
-```xml
-<I PROPERTY="EQTYPE"                       VALUE="DoubleDiffusiveField"/>
-```
-in the `<SOLVERINFO>`field.
+.. code-block:: xml
+
+    <I PROPERTY="EQTYPE" VALUE="DoubleDiffusiveField"/>
+
+in the :code:`<SOLVERINFO>` field.
 
 Here the density field from the single field system is used alongside an energy field,
 from which is derived the temperature.
@@ -35,7 +36,7 @@ some heating :math:`Q` in the core being an input parameter.
 Electrons are always present, and at least one ion species must be present.
 Explicitly the fields are:
 
-.. math:: \left[n_e,  \frac{3}{2}p_e, n_i, \frac{3}{2}p_i, ...]
+.. math:: \left[n_e,  \frac{3}{2}p_e, n_i, \frac{3}{2}p_i, ...\right]
 
 The continuity equations are:
 
@@ -62,4 +63,4 @@ All ion species enter the sheath at the system sound velocity.
 
 The ion species enter the sheath at their particular sound velocity:
 
-.. math:: c_{si} = \sqrt{\frac{n_{0i} k_B T_e}{n_{0e} m_i}
+.. math:: c_{si} = \sqrt{\frac{n_{0i} k_B T_e}{n_{0e} m_i}}
