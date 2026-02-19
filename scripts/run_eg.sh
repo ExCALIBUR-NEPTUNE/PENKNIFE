@@ -163,7 +163,7 @@ validate_eg() {
 REPO_ROOT=$( cd -- "$(realpath $( dirname -- "${BASH_SOURCE[0]}" )/..)" &> /dev/null && pwd )
 
 # Default options
-solver_name="tokamak"
+solver_name="penkife"
 eq_sys='Not set'
 mesh='Not set'
 dim='Not set'

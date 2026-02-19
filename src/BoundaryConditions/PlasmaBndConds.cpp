@@ -1,15 +1,15 @@
-#include "TokamakBndConds.hpp"
-#include "../EquationSystems/TokamakSystem.hpp"
+#include "PlasmaBndConds.hpp"
+#include "../EquationSystems/PlasmaSystem.hpp"
 
 using namespace std;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
-std::set<std::string> TokamakBoundaryConditions::m_BndType = {
+std::set<std::string> PlasmaBoundaryConditions::m_BndType = {
     "Sheath", "Oblique", "ObliqueOutflow", "Bohm"};
 
-TokamakBoundaryConditions::TokamakBoundaryConditions()
+PlasmaBoundaryConditions::PlasmaBoundaryConditions()
 {
 }
 
@@ -17,9 +17,9 @@ TokamakBoundaryConditions::TokamakBoundaryConditions()
  *  Initialize the partial slip boundary conditions
  *  The total points, unit normal vector, and the slip length are assigned
  */
-void TokamakBoundaryConditions::Initialize(
+void PlasmaBoundaryConditions::Initialize(
     const LibUtilities::SessionReaderSharedPtr pSession,
-    const std::weak_ptr<TokamakSystem>& pSystem,
+    const std::weak_ptr<PlasmaSystem>& pSystem,
     Array<OneD, MultiRegions::ExpListSharedPtr> pFields,
     const Array<OneD, MR::DisContFieldSharedPtr> &pB,
     const Array<OneD, MR::DisContFieldSharedPtr> &pE, int pSpacedim)
@@ -53,14 +53,14 @@ void TokamakBoundaryConditions::Initialize(
         }
         if (bndtype.size())
         {
-            m_bounds[n] = GetTokamakBaseBndCondFactory().CreateInstance(
+            m_bounds[n] = GetPlasmaBaseBndCondFactory().CreateInstance(
                 bndtype, pSession, pSystem, pFields, pB, pE, cond, exp,
                 pSpacedim, n);
         }
     }
 }
 
-void TokamakBoundaryConditions::Update(
+void PlasmaBoundaryConditions::Update(
     const Array<OneD, const Array<OneD, NekDouble>> &physarray, NekDouble time)
 {
     for (auto &it : m_bounds)
@@ -69,4 +69,4 @@ void TokamakBoundaryConditions::Update(
     }
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

@@ -1,5 +1,5 @@
-# NESO-Tokamak
-A code for simulating edge plasma using integrated kinetic neutral and finite-element fluid plasma models.
+# PENKNIFE
+Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements
 
 ## Building
 The easiest way to build the app is to use the [Spack package manager](https://spack.readthedocs.io/en/latest/index.html).
@@ -31,13 +31,13 @@ spack compiler add `spack location -i intel-oneapi-compilers`/compiler/latest/li
 ```
 N.B. There is a known problem/conflict with the mkl libraries if the compilers come from the oneapi toolkit - it is recommended not to use this
 
-### Build and clone NESO-Tokamak:
+### Build and clone PENKNIFE:
 ```bash
 cd ..
-git clone https://github.com/ExCALIBUR-NEPTUNE/NESO-Tokamak.git
-cd NESO-Tokamak
+git clone https://github.com/ExCALIBUR-NEPTUNE/PENKNIFE.git
+cd PENKNIFE
 git submodule update --init --recursive
-spack env activate ./spack -p
+source ./scripts/activate.sh
 spack install
 ```
 N.B.
@@ -48,6 +48,11 @@ can be used to speed up compilation
 
 Note that some of the dependencies (particularly nektar++) can take some time to install and have high memory usage.
 
+To leave the spack environment at any point run:
+```bash
+deactivate
+```
+
 ## Running examples
 Configuration files for various different examples can be found in the `./examples` directory.
 An easy way to run the examples is (from the top level of the repository):
@@ -55,8 +60,7 @@ An easy way to run the examples is (from the top level of the repository):
 ```bash
 # Load the nektar spack module, which also loads mpi
 spack load nektar
-# Optionally source the tab autocomplete script
-source ./scripts/run_eg-completion.sh
+
 # Set up and run an example via the helper script
 ./scripts/run_eg.sh [EquationSystem] [Mesh] [Dimension] [Example] <-n num_MPI>
 # e.g. ./scripts/run_eg.sh SingleField MASTU 2D CG -n 16

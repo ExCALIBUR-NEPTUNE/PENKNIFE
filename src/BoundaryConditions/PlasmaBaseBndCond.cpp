@@ -1,19 +1,19 @@
-#include "TokamakBaseBndCond.hpp"
-#include "../EquationSystems/TokamakSystem.hpp"
+#include "PlasmaBaseBndCond.hpp"
+#include "../EquationSystems/PlasmaSystem.hpp"
 
 using namespace std;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-TokamakBaseBndCondFactory &GetTokamakBaseBndCondFactory()
+PlasmaBaseBndCondFactory &GetPlasmaBaseBndCondFactory()
 {
-    static TokamakBaseBndCondFactory instance;
+    static PlasmaBaseBndCondFactory instance;
     return instance;
 }
 
-TokamakBaseBndCond::TokamakBaseBndCond(
+PlasmaBaseBndCond::PlasmaBaseBndCond(
     const LU::SessionReaderSharedPtr &pSession,
-    const std::weak_ptr<TokamakSystem> &pSystem,
+    const std::weak_ptr<PlasmaSystem> &pSystem,
     const Array<OneD, MR::ExpListSharedPtr> &pFields,
     const Array<OneD, MR::DisContFieldSharedPtr> &pB,
     const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -54,7 +54,7 @@ TokamakBaseBndCond::TokamakBaseBndCond(
  * @param   physarray
  * @param   time
  */
-void TokamakBaseBndCond::Apply(
+void PlasmaBaseBndCond::Apply(
     const Array<OneD, const Array<OneD, NekDouble>> &physarray,
     const NekDouble &time)
 {
@@ -85,9 +85,9 @@ void TokamakBaseBndCond::Apply(
  * if some average Fwd and Bwd/value in m_bndCondExpansions
  * is the target value like WallViscousBC weight should be 0.5.
  */
-void TokamakBaseBndCond::v_ApplyBwdWeight()
+void PlasmaBaseBndCond::v_ApplyBwdWeight()
 {
     m_fields[0]->SetBndCondBwdWeight(m_bcRegion, m_diffusionAveWeight);
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

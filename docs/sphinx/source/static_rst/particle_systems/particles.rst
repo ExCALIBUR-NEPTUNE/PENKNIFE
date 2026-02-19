@@ -2,7 +2,7 @@
 Particle Specification
 ======================
 
-NESO-Tokamak can use the NESO-Particles and NESO frameworks to allow users to use computational particles which interact with the fluid solver.
+PENKNIFE can use the NESO-Particles and NESO frameworks to allow users to use computational particles which interact with the fluid solver.
 
 A Particle system is enabled using the `<PARTICLES>`field in the XML config file.
 

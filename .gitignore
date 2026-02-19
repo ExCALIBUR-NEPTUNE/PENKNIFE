@@ -53,9 +53,8 @@ runs
 spack-build-*/
 spack-build-*.txt
 spack-configure-args.txt
-spack/.spack-env
-spack/spack.lock
-spack/views
+.spack-env/
+spack.lock
 
 # Postprocessing subdirectories
 postproc/*/

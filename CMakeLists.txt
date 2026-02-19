@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(
-  NESOTOKAMAK
+  PENKNIFE
   VERSION 0.0.1
   LANGUAGES CXX)
 
@@ -20,14 +20,14 @@ find_package(VANTAGE-Reactions REQUIRED)
 
 # Identify source files
 set(SRC_FILES
-src/EquationSystems/TokamakSystem.cpp
+src/EquationSystems/PlasmaSystem.cpp
 src/EquationSystems/MagneticField.cpp
 src/EquationSystems/SingleDiffusiveField.cpp
 src/EquationSystems/DoubleDiffusiveField.cpp
 src/EquationSystems/ReducedBraginskii.cpp
 src/EquationSystems/ElectrostaticTurbulence.cpp
-src/BoundaryConditions/TokamakBaseBndCond.cpp
-src/BoundaryConditions/TokamakBndConds.cpp
+src/BoundaryConditions/PlasmaBaseBndCond.cpp
+src/BoundaryConditions/PlasmaBndConds.cpp
 src/BoundaryConditions/ObliqueBC.cpp
 src/BoundaryConditions/ObliqueOutflowBC.cpp
 src/BoundaryConditions/SheathBC.cpp
@@ -36,7 +36,7 @@ src/ParticleSystems/ParticleSystem.cpp
 src/Misc/VariableConverter.cpp
 src/Misc/EquationOfState.cpp
 src/Misc/IdealGasEoS.cpp
-src/RiemannSolvers/TokamakSolver.cpp
+src/RiemannSolvers/PlasmaSolver.cpp
 src/RiemannSolvers/Upwind.cpp
 src/RiemannSolvers/VorticityUpwind.cpp
 src/RiemannSolvers/VorticityAverage.cpp
@@ -68,7 +68,7 @@ add_sycl_to_target(TARGET ${OBJLIB_NAME} SOURCES ${SRC_FILES})
 # ##############################################################################
 # Build solver exec
 # ##############################################################################
-set(EXEC_NAME tokamak)
+set(EXEC_NAME penknife)
 
 add_executable(${EXEC_NAME} src/main.cpp $<TARGET_OBJECTS:${OBJLIB_NAME}>)
 

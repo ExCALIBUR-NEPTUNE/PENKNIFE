@@ -1,7 +1,7 @@
-NESO-Tokamak
+PENKNIFE
 =========================
 
-NESO-Tokamak documentation
+PENKNIFE documentation
 
 .. toctree::
    :maxdepth: 3

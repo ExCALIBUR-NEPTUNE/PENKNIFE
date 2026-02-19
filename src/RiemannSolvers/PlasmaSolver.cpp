@@ -1,18 +1,18 @@
-#include "TokamakSolver.hpp"
+#include "PlasmaSolver.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /**
  * @brief Default constructor.
  */
-TokamakSolver::TokamakSolver(
+PlasmaSolver::PlasmaSolver(
     const LU::SessionReaderSharedPtr &pSession)
     : RiemannSolver(pSession)
 {
 }
 
-void TokamakSolver::v_Solve(
+void PlasmaSolver::v_Solve(
     const int nDim, const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
     const Array<OneD, const Array<OneD, NekDouble>> &Bwd,
     Array<OneD, Array<OneD, NekDouble>> &flux)
@@ -58,4 +58,4 @@ void TokamakSolver::v_Solve(
     }
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

@@ -1,6 +1,6 @@
 #include "ParticleSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 std::string ParticleSystem::class_name =
@@ -753,4 +753,4 @@ void ParticleSystem::set_up_boundaries()
         reflection_composites, store);
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

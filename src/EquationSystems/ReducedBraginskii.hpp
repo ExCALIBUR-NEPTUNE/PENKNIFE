@@ -1,12 +1,12 @@
 #ifndef REDUCEDBRAGINSKII_HPP
 #define REDUCEDBRAGINSKII_HPP
 #include "../Misc/VariableConverter.hpp"
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 // [omega, {n, mnv, 1.5p}_e, {n, mnv, 1.5p}_i, ...]
-class ReducedBraginskii : public TokamakSystem
+class ReducedBraginskii : public PlasmaSystem
 {
 public:
     friend class MemoryManager<ReducedBraginskii>;
@@ -172,5 +172,5 @@ private:
     Array<OneD, NekDouble> krec;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

@@ -1,19 +1,19 @@
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 
 #include <LibUtilities/BasicUtils/Vmath.hpp>
 
 #include <LibUtilities/TimeIntegration/TimeIntegrationScheme.h>
 #include <boost/core/ignore_unused.hpp>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /// Name of class
 static std::string class_name;
-std::string TokamakSystem::class_name =
+std::string PlasmaSystem::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
-        "Tokamak", TokamakSystem::create,
-        "Tokamak equation system. Runs in either a 2D or 3D "
+        "Plasma", PlasmaSystem::create,
+        "Plasma equation system. Runs in either a 2D or 3D "
         "domain.");
 /**
  * @brief Creates an instance of this class.
@@ -23,18 +23,18 @@ static SU::EquationSystemSharedPtr create(
     const SD::MeshGraphSharedPtr &graph)
 {
     SU::EquationSystemSharedPtr p =
-        MemoryManager<TokamakSystem>::AllocateSharedPtr(session, graph);
+        MemoryManager<PlasmaSystem>::AllocateSharedPtr(session, graph);
     p->InitObject();
     return p;
 }
 
-TokamakSystem::TokamakSystem(const LU::SessionReaderSharedPtr &session,
+PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                              const SD::MeshGraphSharedPtr &graph)
     : TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>(session, graph)
 {
 }
 
-std::shared_ptr<ParticleSystem> TokamakSystem::GetParticleSystem()
+std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
 {
     return this->particle_sys;
 }
@@ -42,7 +42,7 @@ std::shared_ptr<ParticleSystem> TokamakSystem::GetParticleSystem()
 /**
  * @brief Load all required session parameters into member variables.
  */
-void TokamakSystem::load_params()
+void PlasmaSystem::load_params()
 {
     TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>::load_params();
 
@@ -84,7 +84,7 @@ void TokamakSystem::load_params()
  * @param time Current simulation time
  *
  */
-void TokamakSystem::DoOdeProjection(
+void PlasmaSystem::DoOdeProjection(
     const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
     Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time)
 {
@@ -128,7 +128,7 @@ void TokamakSystem::DoOdeProjection(
     }
 }
 
-void TokamakSystem::v_ExtraFldOutput(
+void PlasmaSystem::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)
 {
@@ -216,7 +216,7 @@ void TokamakSystem::v_ExtraFldOutput(
  * @param create_field if true, create a new field object and add it to
  * m_fields. Optional, defaults to true.
  */
-void TokamakSystem::v_InitObject(bool create_field)
+void PlasmaSystem::v_InitObject(bool create_field)
 {
     TimeEvoEqnSysBase::v_InitObject(create_field);
 
@@ -263,7 +263,7 @@ void TokamakSystem::v_InitObject(bool create_field)
         this->B[d]->GetTrace();
     }
     this->mag_field = std::make_shared<MagneticField>(
-        m_session, as<TokamakSystem>(), this->B, m_spacedim);
+        m_session, as<PlasmaSystem>(), this->B, m_spacedim);
     this->b_unit = this->mag_field->b_unit;
     this->mag_B  = this->mag_field->mag_B;
     this->mag_field->Update(0);
@@ -340,7 +340,7 @@ void TokamakSystem::v_InitObject(bool create_field)
     }
 
     // Bind projection function for time integration object
-    m_ode.DefineProjection(&TokamakSystem::DoOdeProjection, this);
+    m_ode.DefineProjection(&PlasmaSystem::DoOdeProjection, this);
     if (m_projectionType == MR::eDiscontinuous)
     {
         // Turn off forward-transform of initial conditions.
@@ -353,15 +353,15 @@ void TokamakSystem::v_InitObject(bool create_field)
     }
 
     m_varConv = MemoryManager<VariableConverter>::AllocateSharedPtr(
-        as<TokamakSystem>(), m_spacedim);
+        as<PlasmaSystem>(), m_spacedim);
 
     // Forcing terms
     m_forcing = SU::Forcing::Load(m_session, shared_from_this(), m_indfields,
                                   m_indfields.size());
 
-    m_bndConds = MemoryManager<TokamakBoundaryConditions>::AllocateSharedPtr();
+    m_bndConds = MemoryManager<PlasmaBoundaryConditions>::AllocateSharedPtr();
 
-    m_bndConds->Initialize(m_session, as<TokamakSystem>(), m_indfields, B, E,
+    m_bndConds->Initialize(m_session, as<PlasmaSystem>(), m_indfields, B, E,
                            m_spacedim);
 }
 
@@ -369,7 +369,7 @@ void TokamakSystem::v_InitObject(bool create_field)
  * @brief Initialises the time integration scheme (as specified in the
  * session file), and perform the time integration.
  */
-void TokamakSystem::v_DoSolve()
+void PlasmaSystem::v_DoSolve()
 {
     ASSERTL0(m_intScheme != nullptr, "No time integration scheme.");
 
@@ -604,7 +604,7 @@ void TokamakSystem::v_DoSolve()
  * diagnostics, if enabled
  * @param step Time step number
  */
-bool TokamakSystem::v_PostIntegrate(int step)
+bool PlasmaSystem::v_PostIntegrate(int step)
 {
     this->solver_callback_handler.call_post_integrate(this);
 
@@ -619,7 +619,7 @@ bool TokamakSystem::v_PostIntegrate(int step)
  *
  * @param step Time step number
  */
-bool TokamakSystem::v_PreIntegrate(int step)
+bool PlasmaSystem::v_PreIntegrate(int step)
 {
     this->solver_callback_handler.call_pre_integrate(this);
 
@@ -655,7 +655,7 @@ bool TokamakSystem::v_PreIntegrate(int step)
     return UnsteadySystem::v_PreIntegrate(step);
 }
 
-NESOSessionFunctionSharedPtr TokamakSystem::get_species_function(
+NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
     const std::string &s, std::string name, const MR::ExpListSharedPtr &field,
     bool cache)
 {
@@ -690,7 +690,7 @@ NESOSessionFunctionSharedPtr TokamakSystem::get_species_function(
 /**
  * @brief After reading ICs, calculate phi and grad(phi)
  */
-void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
+void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                                            [[maybe_unused]] const int domain)
 {
     if (m_session->DefinesFunction("InitialConditions"))
@@ -855,7 +855,7 @@ void TokamakSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
     ++m_nchk;
 }
 
-void TokamakSystem::SetBoundaryConditions(NekDouble time)
+void PlasmaSystem::SetBoundaryConditions(NekDouble time)
 {
     EquationSystem::SetBoundaryConditions(time);
     std::string varName;
@@ -869,4 +869,4 @@ void TokamakSystem::SetBoundaryConditions(NekDouble time)
     }
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

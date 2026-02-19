@@ -1,9 +1,9 @@
 #include "ElectrostaticTurbulence.hpp"
-#include "../RiemannSolvers/TokamakSolver.hpp"
+#include "../RiemannSolvers/PlasmaSolver.hpp"
 #include <SolverUtils/Advection/AdvectionNonConservative.h>
 #include <SolverUtils/Advection/AdvectionWeakDG.h>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /// Name of class
@@ -29,7 +29,7 @@ static SU::EquationSystemSharedPtr create(
 ElectrostaticTurbulence::ElectrostaticTurbulence(
     const LU::SessionReaderSharedPtr &session,
     const SD::MeshGraphSharedPtr &graph)
-    : TokamakSystem(session, graph)
+    : PlasmaSystem(session, graph)
 {
     this->n_indep_fields       = 3; // p_e, w, phi
     this->n_fields_per_species = 3; // n_i, v_i, p_i
@@ -37,7 +37,7 @@ ElectrostaticTurbulence::ElectrostaticTurbulence(
 
 void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
 {
-    TokamakSystem::v_InitObject(DeclareFields);
+    PlasmaSystem::v_InitObject(DeclareFields);
 
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
@@ -154,7 +154,7 @@ void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
     // callback functions
     this->riemann_solver = SU::GetRiemannSolverFactory().CreateInstance(
         this->riemann_solver_type, m_session);
-    auto t = std::dynamic_pointer_cast<TokamakSolver>(this->riemann_solver);
+    auto t = std::dynamic_pointer_cast<PlasmaSolver>(this->riemann_solver);
     // t->ni_idx    = ni_idx;
     // t->vi_idx    = vi_idx;
     // t->pi_idx    = pi_idx;
@@ -228,7 +228,7 @@ bool ElectrostaticTurbulence::v_PostIntegrate(int step)
 
     // Writes a step of the particle trajectory.
 
-    return TokamakSystem::v_PostIntegrate(step);
+    return PlasmaSystem::v_PostIntegrate(step);
 }
 
 /**
@@ -1447,7 +1447,7 @@ void ElectrostaticTurbulence::v_SetInitialConditions(NekDouble init_time,
                                                      bool dump_ICs,
                                                      const int domain)
 {
-    TokamakSystem::v_SetInitialConditions(init_time, dump_ICs, domain);
+    PlasmaSystem::v_SetInitialConditions(init_time, dump_ICs, domain);
     CalcInitPhi();
     Checkpoint_Output(0);
 }
@@ -1474,7 +1474,7 @@ void ElectrostaticTurbulence::v_SetInitialConditions(NekDouble init_time,
 
 void ElectrostaticTurbulence::load_params()
 {
-    TokamakSystem::load_params();
+    PlasmaSystem::load_params();
     // Type of advection to use. Default is DG.
     m_session->LoadSolverInfo("AdvectionType", this->adv_type, "WeakDG");
     // Type of Riemann solver to use. Default = "Upwind"
@@ -1489,7 +1489,7 @@ void ElectrostaticTurbulence::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)
 {
-    TokamakSystem::v_ExtraFldOutput(fieldcoeffs, variables);
+    PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
     const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
 
@@ -1515,4 +1515,4 @@ void ElectrostaticTurbulence::v_ExtraFldOutput(
         }
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

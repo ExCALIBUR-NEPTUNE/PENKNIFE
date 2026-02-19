@@ -1,5 +1,5 @@
-#ifndef TOKAMAKSYSTEM_HPP
-#define TOKAMAKSYSTEM_HPP
+#ifndef PLASMA_SYSTEM_HPP
+#define PLASMA_SYSTEM_HPP
 
 #include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
 #include "nektar_interface/solver_base/time_evolved_eqnsys_base.hpp"
@@ -11,7 +11,7 @@
 #include <SolverUtils/EquationSystem.h>
 #include <SolverUtils/Forcing/Forcing.h>
 
-#include "../BoundaryConditions/TokamakBndConds.hpp"
+#include "../BoundaryConditions/PlasmaBndConds.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
 #include "ImplicitHelper.hpp"
@@ -25,22 +25,24 @@ namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 namespace SU = Nektar::SolverUtils;
 
-namespace NESO::Solvers::tokamak
+using namespace NESO::Solvers;
+
+namespace PENKNIFE
 {
 
 /**
- * @brief Equation system for the Tokamak proxyapp
+ * @brief Equation system for the PENKNIFE solver
  *
  */
-class TokamakSystem
+class PlasmaSystem
     : public TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>
 {
     friend class MagneticField;
-    friend class TokamakBaseBndCond;
+    friend class PlasmaBaseBndCond;
     friend class VariableConverter;
 
 public:
-    friend class MemoryManager<TokamakSystem>;
+    friend class MemoryManager<PlasmaSystem>;
 
     /// Name of class
     static std::string class_name;
@@ -53,7 +55,7 @@ public:
         const SD::MeshGraphSharedPtr &graph)
     {
         SU::EquationSystemSharedPtr p =
-            MemoryManager<TokamakSystem>::AllocateSharedPtr(session, graph);
+            MemoryManager<PlasmaSystem>::AllocateSharedPtr(session, graph);
         p->InitObject();
         return p;
     }
@@ -61,7 +63,7 @@ public:
     virtual std::shared_ptr<ParticleSystem> GetParticleSystem();
 
     /// Callback handler to call user-defined callbacks
-    SolverCallbackHandler<TokamakSystem> solver_callback_handler;
+    SolverCallbackHandler<PlasmaSystem> solver_callback_handler;
 
     struct Species
     {
@@ -96,8 +98,8 @@ public:
     }
 
 protected:
-    TokamakSystem(const LU::SessionReaderSharedPtr &session,
-                  const SD::MeshGraphSharedPtr &graph);
+    PlasmaSystem(const LU::SessionReaderSharedPtr &session,
+                 const SD::MeshGraphSharedPtr &graph);
 
     NekDouble mesh_length; // mesh conversion to m
     NekDouble Nnorm;       // Density normalisation to m^-3
@@ -152,7 +154,7 @@ protected:
     VariableConverterSharedPtr m_varConv;
 
     /// Boundary Conditions
-    std::shared_ptr<TokamakBoundaryConditions> m_bndConds;
+    std::shared_ptr<PlasmaBoundaryConditions> m_bndConds;
 
     /// Forcing terms
     std::vector<SolverUtils::ForcingSharedPtr> m_forcing;
@@ -206,5 +208,5 @@ protected:
         m_nesoSessionFunctions;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

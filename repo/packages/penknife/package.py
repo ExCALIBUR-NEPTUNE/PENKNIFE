@@ -3,12 +3,12 @@ import os
 import shutil
 
 
-class NesoTokamak(CMakePackage):
-    """NESO-Tokamak"""
+class Penknife(CMakePackage):
+    """PENKNIFE"""
 
-    homepage = "https://github.com/ExCALIBUR-NEPTUNE/NESO-Tokamak"
+    homepage = "https://github.com/ExCALIBUR-NEPTUNE/PENKNIFE"
 
-    git = "https://github.com/ExCALIBUR-NEPTUNE/NESO-Tokamak.git"
+    git = "https://github.com/ExCALIBUR-NEPTUNE/PENKNIFE.git"
     version("working", branch="main")
     version("main", branch="main")
 

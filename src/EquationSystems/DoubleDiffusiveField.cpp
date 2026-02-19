@@ -1,6 +1,6 @@
 #include "DoubleDiffusiveField.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /// Name of class
@@ -25,7 +25,7 @@ static SU::EquationSystemSharedPtr create(
 DoubleDiffusiveField::DoubleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,
     const SD::MeshGraphSharedPtr &graph)
-    : TokamakSystem(session, graph)
+    : PlasmaSystem(session, graph)
 {
     this->n_indep_fields       = 1;
     this->n_fields_per_species = 2;
@@ -33,7 +33,7 @@ DoubleDiffusiveField::DoubleDiffusiveField(
 
 void DoubleDiffusiveField::v_InitObject(bool DeclareFields)
 {
-    TokamakSystem::v_InitObject(DeclareFields);
+    PlasmaSystem::v_InitObject(DeclareFields);
 
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
@@ -519,7 +519,7 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
 
 void DoubleDiffusiveField::load_params()
 {
-    TokamakSystem::load_params();
+    PlasmaSystem::load_params();
     NekDouble lambda;
 
     m_session->LoadParameter("k_ci", this->k_ci, 3.9);
@@ -581,14 +581,14 @@ bool DoubleDiffusiveField::v_PostIntegrate(int step)
 
     // Writes a step of the particle trajectory.
 
-    return TokamakSystem::v_PostIntegrate(step);
+    return PlasmaSystem::v_PostIntegrate(step);
 }
 
 void DoubleDiffusiveField::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)
 {
-    TokamakSystem::v_ExtraFldOutput(fieldcoeffs, variables);
+    PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
     const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
     if (this->particles_enabled)
@@ -611,4 +611,4 @@ void DoubleDiffusiveField::v_ExtraFldOutput(
         }
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

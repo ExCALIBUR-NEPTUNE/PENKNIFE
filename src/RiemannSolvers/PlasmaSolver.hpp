@@ -1,5 +1,5 @@
-#ifndef TOKAMAKSOLVER
-#define TOKAMAKSOLVER
+#ifndef PLASMASOLVER_HPP
+#define PLASMASOLVER_HPP
 
 #include <SolverUtils/RiemannSolvers/RiemannSolver.h>
 #include <nektar_interface/solver_base/neso_reader.hpp>
@@ -7,9 +7,9 @@
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace SU = Nektar::SolverUtils;
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class TokamakSolver : public SU::RiemannSolver
+class PlasmaSolver : public SU::RiemannSolver
 {
 public:
     int omega_idx;
@@ -17,7 +17,7 @@ public:
 protected:
     bool m_pointSolve;
 
-    TokamakSolver(const LU::SessionReaderSharedPtr &pSession);
+    PlasmaSolver(const LU::SessionReaderSharedPtr &pSession);
 
     using ND = NekDouble;
     void v_Solve(const int nDim, const Array<OneD, const Array<OneD, ND>> &Fwd,
@@ -47,6 +47,6 @@ protected:
                  "This function should be defined by subclasses.");
     }
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

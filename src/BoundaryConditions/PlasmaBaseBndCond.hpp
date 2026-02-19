@@ -1,5 +1,5 @@
-#ifndef TOKAMAK_BASEBNDCOND_HPP
-#define TOKAMAK_BASEBNDCOND_HPP
+#ifndef PLASMA_BASEBNDCOND_HPP
+#define PLASMA_BASEBNDCOND_HPP
 
 #include <string>
 
@@ -13,37 +13,37 @@ namespace LU = Nektar::LibUtilities;
 namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class TokamakSystem;
-class TokamakBaseBndCond;
+class PlasmaSystem;
+class PlasmaBaseBndCond;
 
 /// A shared pointer to a boundary condition object
-typedef std::shared_ptr<TokamakBaseBndCond> TokamakBaseBndCondSharedPtr;
+typedef std::shared_ptr<PlasmaBaseBndCond> PlasmaBaseBndCondSharedPtr;
 
 /// Declaration of the boundary condition factory
 typedef LU::NekFactory<
-    std::string, TokamakBaseBndCond, const LU::SessionReaderSharedPtr &,
-    const std::weak_ptr<TokamakSystem> &,
+    std::string, PlasmaBaseBndCond, const LU::SessionReaderSharedPtr &,
+    const std::weak_ptr<PlasmaSystem> &,
     const Array<OneD, MR::ExpListSharedPtr> &,
     const Array<OneD, MR::DisContFieldSharedPtr> &,
     const Array<OneD, MR::DisContFieldSharedPtr> &,
     Array<OneD, SpatialDomains::BoundaryConditionShPtr>,
     Array<OneD, MultiRegions::ExpListSharedPtr>, const int, const int>
-    TokamakBaseBndCondFactory;
+    PlasmaBaseBndCondFactory;
 
 /// Declaration of the boundary condition factory singleton
-TokamakBaseBndCondFactory &GetTokamakBaseBndCondFactory();
+PlasmaBaseBndCondFactory &GetPlasmaBaseBndCondFactory();
 
 /**
- * @class TokamakBaseBndCond
+ * @class PlasmaBaseBndCond
  * @brief Encapsulates the user-defined boundary conditions for the
- *        tokamak solver.
+ *        plasma solver.
  */
-class TokamakBaseBndCond
+class PlasmaBaseBndCond
 {
 public:
-    virtual ~TokamakBaseBndCond()
+    virtual ~PlasmaBaseBndCond()
     {
     }
 
@@ -65,7 +65,7 @@ protected:
     /// Session reader
     LU::SessionReaderSharedPtr m_session;
 
-    const std::weak_ptr<TokamakSystem> m_system;
+    const std::weak_ptr<PlasmaSystem> m_system;
 
     std::map<int, SpatialDomains::BoundaryConditionShPtr> m_bndConds;
     std::map<int, MultiRegions::ExpListSharedPtr> m_bndExp;
@@ -104,8 +104,8 @@ protected:
     int m_nEdgeCoeffs;
 
     /// Constructor
-    TokamakBaseBndCond(const LU::SessionReaderSharedPtr &pSession,
-                       const std::weak_ptr<TokamakSystem> &pSystem,
+    PlasmaBaseBndCond(const LU::SessionReaderSharedPtr &pSession,
+                       const std::weak_ptr<PlasmaSystem> &pSystem,
                        const Array<OneD, MR::ExpListSharedPtr> &pFields,
                        const Array<OneD, MR::DisContFieldSharedPtr> &pB,
                        const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -120,5 +120,5 @@ protected:
 
     virtual void v_ApplyBwdWeight();
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

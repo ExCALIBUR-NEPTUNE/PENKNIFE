@@ -1,6 +1,6 @@
 #include "IdealGasEoS.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 std::string IdealGasEoS::className =
@@ -67,4 +67,4 @@ NekDouble IdealGasEoS::v_GetRhoFromPT(const NekDouble &p, const NekDouble &T)
     return p / (m_gasConstant * T);
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

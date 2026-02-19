@@ -1,6 +1,6 @@
 #include "Upwind.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 std::string MultiFieldUpwindSolver::solverName =
     SU::GetRiemannSolverFactory().RegisterCreatorFunction(
@@ -30,7 +30,7 @@ std::string MultiFieldUpwindSolver::solverName =
  */
 MultiFieldUpwindSolver::MultiFieldUpwindSolver(
     const LU::SessionReaderSharedPtr &pSession)
-    : TokamakSolver(pSession)
+    : PlasmaSolver(pSession)
 {
     m_pointSolve = false;
 }
@@ -65,4 +65,4 @@ void MultiFieldUpwindSolver::v_ArraySolve(
         }
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

@@ -2,11 +2,11 @@
 
 using namespace std;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 std::string WallBC::className =
-    GetTokamakBaseBndCondFactory().RegisterCreatorFunction(
+    GetPlasmaBaseBndCondFactory().RegisterCreatorFunction(
         "Wall", WallBC::create, "Wall boundary condition.");
 
 WallBC::WallBC(const LU::SessionReaderSharedPtr &pSession,
@@ -16,7 +16,7 @@ WallBC::WallBC(const LU::SessionReaderSharedPtr &pSession,
                    Array<OneD, SpatialDomains::BoundaryConditionShPtr> cond,
                    Array<OneD, MultiRegions::ExpListSharedPtr> exp,
                    const int pSpaceDim, const int bcRegion)
-    : TokamakBaseBndCond(pSession, pFields, pB, pE, cond, exp, pSpaceDim,
+    : PlasmaBaseBndCond(pSession, pFields, pB, pE, cond, exp, pSpaceDim,
                          bcRegion)
 {
     className = "Wall";
@@ -217,4 +217,4 @@ void WallBC::v_Apply(const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
         phi_bc, m_bndExp[phi_idx]->UpdateCoeffs());
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

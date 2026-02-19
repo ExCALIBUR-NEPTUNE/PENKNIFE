@@ -1,11 +1,11 @@
 #ifndef DOUBLEDIFFUSIVEFIELD_HPP
 #define DOUBLEDIFFUSIVEFIELD_HPP
 #include "../Misc/VariableConverter.hpp"
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class DoubleDiffusiveField : public TokamakSystem
+class DoubleDiffusiveField : public PlasmaSystem
 {
 public:
     friend class MemoryManager<DoubleDiffusiveField>;
@@ -104,5 +104,5 @@ private:
     Array<OneD, MR::ExpListSharedPtr> m_difffields;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif
