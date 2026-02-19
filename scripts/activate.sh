@@ -40,4 +40,12 @@ _run_eg_completions() {
     esac
 }
 
+deactivate()
+{
+    complete -r ./scripts/run_eg.sh
+    spack env deactivate
+}
+
+REPO_ROOT=$( cd -- "$(realpath $( dirname -- "${BASH_SOURCE[0]}" )/..)" &> /dev/null && pwd )
+spack env activate -p "${REPO_ROOT}"
 complete -F _run_eg_completions ./scripts/run_eg.sh

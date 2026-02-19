@@ -6,21 +6,13 @@ spack:
   # add package specs to the `specs` list
   specs:
   - pk.penknife ^neso.adaptivecpp compilationflow=omplibraryonly ^neso+libonly ^neso-particles~build_tests
-  view:
-    adaptivecpp:
-      root: views/adaptivecpp
-      select: ['%gcc']
-      link_type: symlink
-    oneapi:
-      root: views/oneapi-dpcpp
-      select: ['%oneapi']
-      link_type: symlink
+  view: true
   concretizer:
     unify: when_possible
   repos:
   - ./repo
-  - ../NESO/NESO-Spack
-  - ../VANTAGE-Reactions/Reactions-repo
+  - ./NESO/NESO-Spack
+  - ./VANTAGE-Reactions/Reactions-repo
   packages:
     c:
       require:
@@ -34,17 +26,17 @@ spack:
         mpi: [mpich, openmpi]
   develop:
     nektar:
-      path: ../NESO/nektar
+      path: ./NESO/nektar
       spec: nektar@master
     neso:
-      path: ../NESO
+      path: ./NESO
       spec: neso@working
     neso-particles:
-      path: ../NESO/neso-particles
+      path: ./NESO/neso-particles
       spec: neso-particles@working
     reactions:
-      path: ../VANTAGE-Reactions
+      path: ./VANTAGE-Reactions
       spec: reactions@working
     penknife:
-      path: ../
+      path: ./
       spec: penknife@working
