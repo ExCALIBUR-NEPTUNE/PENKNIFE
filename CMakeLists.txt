@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(
-  NESOTOKAMAK
+  PENKNIFE
   VERSION 0.0.1
   LANGUAGES CXX)
 
@@ -68,7 +68,7 @@ add_sycl_to_target(TARGET ${OBJLIB_NAME} SOURCES ${SRC_FILES})
 # ##############################################################################
 # Build solver exec
 # ##############################################################################
-set(EXEC_NAME tokamak)
+set(EXEC_NAME penknife)
 
 add_executable(${EXEC_NAME} src/main.cpp $<TARGET_OBJECTS:${OBJLIB_NAME}>)
 
