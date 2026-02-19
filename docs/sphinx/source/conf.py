@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'PENKNIFE'
-copyright = '2022, UKAEA'
+copyright = '2026, UKAEA'
 author = 'UKAEA'
 release = ''
 
