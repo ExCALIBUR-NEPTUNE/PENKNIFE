@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<NEKTAR>
+    <COLLECTIONS DEFAULT="MatrixFree" />
+    <!--
+        The composite index for the domain is expected to be 0 if the mesh was generated from the included .geo file
+     -->
+    <EXPANSIONS>
+       <E COMPOSITE="C[5]" NUMMODES="4" TYPE="MODIFIED" FIELDS="n" />
+    </EXPANSIONS>
+
+    <CONDITIONS>
+        <SOLVERINFO>
+            <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
+            <I PROPERTY="Projection"                   VALUE="Continuous" />
+            <I PROPERTY="TimeIntegrationMethod"        VALUE="IMEXOrder2"    />
+            <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
+            <I PROPERTY="Preconditioner"               VALUE="Diagonal"/>
+            <I PROPERTY="DiffusionAdvancement"         VALUE="Implicit"/>
+        </SOLVERINFO>
+
+        <PARAMETERS>
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 1</P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1</P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18</P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0</P>
+            <!-- Time step in cyclotron units -->
+            <P> TimeStep       = 0.01               </P>
+            <P> NumSteps      = 100              </P>
+            <P> TFinal        = NumSteps*TimeStep </P>
+            <P> IO_CheckSteps  = 1                </P>
+            <P> IO_InfoSteps   = 1                </P>
+            <!-- Coulomb logarithm -->
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <!-- <P> k_par       = 0.1        </P> -->
+            <!-- <P> k_perp       = 0.0001        </P> -->
+            <!-- Background temperature in Tnorm eV -->
+            <P> T_bg      = 10         </P>
+
+            <!-- Scaling factor for ICs -->
+            <P> xc = 1 </P>
+            <P> rc = 1 </P>
+            <P> yc = 0 </P>                     
+            <P> rs = 0.25 </P>
+            <P> ys = 0 </P>
+            <P> sr = 0.1 </P>
+            <P> sy = 0.1 </P>
+            
+            <!-- Implicit solve params -->
+            <P> IterativeSolverTolerance  = 1.0E-6  </P>
+            <P> NekNonlinSysMaxIterations = 30       </P>
+            <P> NewtonRelativeIteTol      = 1.0E-10  </P>
+            <P> NonlinIterTolRelativeL2   = 1.0E-10  </P>
+            <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
+        </PARAMETERS>
+
+        <VARIABLES>
+            <V ID="0"> n  </V>
+        </VARIABLES>
+
+        <BOUNDARYREGIONS>
+            <B ID="1"> C[1] </B> <!-- Low x -->
+            <B ID="2"> C[2] </B> <!-- High x -->
+            <B ID="3"> C[3] </B> <!-- Low y -->
+            <B ID="4"> C[4] </B> <!-- High y -->
+        </BOUNDARYREGIONS>
+
+        <BOUNDARYCONDITIONS>
+            <REGION REF="1">
+                <N VAR="n"  VALUE="0.0" />
+            </REGION>
+            <REGION REF="2">
+                <N VAR="n"  VALUE="0.0" />
+            </REGION>
+	        <REGION REF="3">
+                <N VAR="n"  VALUE="0.0" />
+            </REGION>
+            <REGION REF="4">
+                <N VAR="n"  VALUE="0.0" />
+            </REGION>
+        </BOUNDARYCONDITIONS>
+        <FUNCTION NAME="InitialConditions">
+            <E VAR="n"  DOMAIN="0" VALUE="1+exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+        </FUNCTION>
+        <FUNCTION NAME="MagneticMeanField">
+            <E VAR="Bx" VALUE="(y-yc)/sqrt((x-xc)*(x-xc)+(y-yc)*(y-yc))" />
+            <E VAR="By" VALUE="-(x-xc)/sqrt((x-xc)*(x-xc)+(y-yc)*(y-yc))" />
+            <E VAR="Bz" VALUE="1.0" />
+        </FUNCTION>
+    </CONDITIONS>
+    <NESO>
+        <SPECIES>
+            <I NAME="D" FIELDS="n">
+                <P> Mass = 2.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="1+exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />  
+                </FUNCTION>
+            </I>
+        </SPECIES> 
+    </NESO>
+</NEKTAR>
+
+

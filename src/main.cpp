@@ -3,7 +3,7 @@
 // File: main.cpp
 //
 //
-// Description: Entrypoint for the TOKAMAK solver
+// Description: Entrypoint for the PENKNIFE solver
 //
 ///////////////////////////////////////////////////////////////////////////////
 #include <iostream>

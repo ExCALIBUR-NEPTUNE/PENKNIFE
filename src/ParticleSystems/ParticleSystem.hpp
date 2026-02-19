@@ -1,5 +1,5 @@
-#ifndef TOKAMAKPARTICLE_SYSTEM_H
-#define TOKAMAKPARTICLE_SYSTEM_H
+#ifndef PENKNIFE_PARTICLE_SYSTEM_H
+#define PENKNIFE_PARTICLE_SYSTEM_H
 
 #include <array>
 
@@ -12,7 +12,7 @@
 #include <nektar_interface/utilities.hpp>
 #include <neso_particles.hpp>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /**
@@ -46,82 +46,17 @@ public:
     ParticleSystem(NESOReaderSharedPtr session, SD::MeshGraphSharedPtr graph,
                    MPI_Comm comm = MPI_COMM_WORLD);
 
-    virtual ~ParticleSystem() override = default;
+    virtual ~ParticleSystem() override;
 
     /// Disable (implicit) copies.
     ParticleSystem(const ParticleSystem &st) = delete;
     /// Disable (implicit) copies.
     ParticleSystem &operator=(ParticleSystem const &a) = delete;
 
-    inline virtual void init_spec() override
-    {
-        this->particle_spec = {
-            ParticleProp(Sym<REAL>("POSITION"), this->ndim, true),
-            ParticleProp(Sym<REAL>("VELOCITY"), 3),
-            ParticleProp(Sym<INT>("CELL_ID"), 1, true),
-            ParticleProp(Sym<INT>("ID"), 1),
-            ParticleProp(Sym<INT>("INTERNAL_STATE"), 1),
-            ParticleProp(Sym<REAL>("M"), 1),
-            ParticleProp(Sym<REAL>("Q"), 1),
-            ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
-            ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
-            ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
-            ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->ndim),
-            ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1),
-            ParticleProp(Sym<REAL>("ELECTRIC_FIELD"), 3),
-            ParticleProp(Sym<REAL>("MAGNETIC_FIELD"), 3),
-            ParticleProp(Sym<REAL>("TSP"), 2)};
-
-        for (auto &[k, v] : this->config->get_particle_species())
-        {
-            this->particle_spec.push(
-                ParticleProp(Sym<REAL>(k + "_SOURCE_DENSITY"), 1));
-            this->particle_spec.push(
-                ParticleProp(Sym<REAL>(k + "_SOURCE_ENERGY"), 1));
-            this->particle_spec.push(
-                ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), this->ndim));
-        }
-        this->particle_spec.push(ParticleProp(Sym<REAL>("WEIGHT"), 1));
-        this->particle_spec.push(
-            ParticleProp(Sym<REAL>("TOT_REACTION_RATE"), 1));
-        this->particle_spec.push(
-            ParticleProp(Sym<INT>("REACTIONS_PANIC_FLAG"), 1));
-        this->particle_spec.push(
-            ParticleProp(Sym<INT>("PARTICLE_REACTED_FLAG"), 1));
-        this->particle_spec.push(ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1));
-        this->particle_spec.push(
-            ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1));
-        this->particle_spec.push(
-            ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), this->ndim));
-
-        this->particle_spec.push(ParticleProp(
-            Sym<REAL>("NESO_PARTICLES_BOUNDARY_INTERSECTION_POINT"),
-            this->ndim));
-        this->particle_spec.push(ParticleProp(
-            Sym<REAL>("NESO_PARTICLES_BOUNDARY_NORMAL"), this->ndim));
-        this->particle_spec.push(
-            ParticleProp(Sym<INT>("NESO_PARTICLES_BOUNDARY_METADATA"), 2));
-    }
-
-    virtual void init_object() override
-    {
-        PartSysBase::init_object();
-        config->get_session()->LoadParameter("mesh_length", this->mesh_length,
-                                             1.);
-        config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
-        config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
-        config->get_session()->LoadParameter("Bnorm", this->Bnorm, 1);
-
-        this->omega_c =
-            constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
-        this->particle_remover =
-            std::make_shared<ParticleRemover>(this->sycl_target);
-
-        this->transfer_particles();
-        pre_advection(particle_sub_group(this->particle_group));
-    }
-
+    virtual void init_spec() override;
+    virtual void init_object() override;
     virtual void set_up_species() override;
+    virtual void set_up_boundaries();
 
     struct SpeciesInfo
     {
@@ -136,8 +71,6 @@ public:
         return species_map;
     }
 
-    virtual void set_up_boundaries();
-
     /**
      *  Integrate the particle system forward to the requested time using
      *  (at most) the requested time step.
@@ -147,7 +80,6 @@ public:
      */
     inline virtual void integrate(const double time_end, const double dt)
     {
-
         // Get the current simulation time.
         NESOASSERT(time_end >= this->simulation_time,
                    "Cannot integrate backwards in time.");
@@ -178,26 +110,11 @@ public:
      * @param syms Corresponding Particle Syms
      * @param syms Corresponding components
      */
-    inline virtual void finish_setup(
+    virtual void finish_setup(
         std::vector<std::shared_ptr<DisContField>> &src_fields,
-        std::vector<Sym<REAL>> &syms, std::vector<int> &components)
-    {
-        this->src_syms       = syms;
-        this->src_components = components;
-        this->field_project  = std::make_shared<FieldProject<DisContField>>(
-            src_fields, this->particle_group, this->cell_id_translation);
-        init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
-                    Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"),
-                    Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
-                    Sym<REAL>("ELECTRON_DENSITY"), this->src_syms,
-                    Sym<INT>("ID"), Sym<REAL>("TOT_REACTION_RATE"));
-    }
-    inline virtual void diag_setup(
-        const std::shared_ptr<DisContField> &diag_field)
-    {
-        this->diagnostic_project = std::make_shared<FieldProject<DisContField>>(
-            diag_field, this->particle_group, this->cell_id_translation);
-    }
+        std::vector<Sym<REAL>> &syms, std::vector<int> &components);
+
+    virtual void diag_setup(const std::shared_ptr<DisContField> &diag_field);
 
     inline virtual void diag_project()
     {
@@ -226,43 +143,11 @@ public:
         remove_marked_particles();
     }
 
-    inline virtual void setup_evaluate_fields(
+    virtual void setup_evaluate_fields(
         Array<OneD, std::shared_ptr<DisContField>> &E,
         Array<OneD, std::shared_ptr<DisContField>> &B,
         std::shared_ptr<DisContField> ne, std::shared_ptr<DisContField> Te,
-        Array<OneD, std::shared_ptr<DisContField>> &ve)
-    {
-        auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
-            particle_group->domain->mesh);
-        this->field_evaluate_ne =
-            std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                ne, mesh, this->cell_id_translation);
-        if (Te)
-        {
-            this->field_evaluate_Te =
-                std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                    Te, mesh, this->cell_id_translation);
-        }
-        this->field_evaluate_ve =
-            std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>(
-                this->ndim);
-        for (int d = 0; d < this->ndim; ++d)
-        {
-            if (ve[d])
-            {
-                this->field_evaluate_ve[d] =
-                    std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                        ve[d], mesh, this->cell_id_translation);
-            }
-
-            this->field_evaluate_E.emplace_back(
-                std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                    E[d], mesh, this->cell_id_translation));
-            this->field_evaluate_B.emplace_back(
-                std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                    B[d], mesh, this->cell_id_translation));
-        }
-    }
+        Array<OneD, std::shared_ptr<DisContField>> &ve);
 
     /**
      * Evaluate E and B at the particle locations.
@@ -540,6 +425,19 @@ protected:
         }
     }
 
+    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+                                const double dt_inner)
+    {
+        auto ions = particle_sub_group(
+            sg, [=](auto Q) { return Q.at(0) != 0.0; },
+            Access::read(Sym<REAL>("Q")));
+        integrate_inner_ion(ions, dt_inner);
+        auto neutrals = particle_sub_group(
+            sg, [=](auto Q) { return Q.at(0) == 0.0; },
+            Access::read(Sym<REAL>("Q")));
+        integrate_inner_neutral(neutrals, dt_inner);
+    }
+
     const long size;
     const long rank;
     std::mt19937 rng_phasespace;
@@ -651,21 +549,38 @@ protected:
         }
     }
 
+    inline void apply_timestep_inner(ParticleSubGroupSharedPtr sg,
+                                     const double dt)
+    {
+        pre_advection(sg);
+        integrate_inner(sg, dt);
+        apply_boundary_conditions(sg, dt);
+        sg = find_partial_moves(sg, dt);
+        while (partial_moves_remaining(sg))
+        {
+            pre_advection(sg);
+            integrate_inner(sg, dt);
+            apply_boundary_conditions(sg, dt);
+            sg = find_partial_moves(sg, dt);
+        }
+    }
+
     inline void apply_timestep(ParticleGroupSharedPtr g, const double dt)
     {
         apply_timestep_reset(g);
-        for (auto &[k, v] : this->species_map)
-        {
-            if (v.charge == 0)
-            {
-                apply_neutral_timestep(static_particle_sub_group(v.sub_group),
-                                       dt);
-            }
-            else
-            {
-                apply_ion_timestep(static_particle_sub_group(v.sub_group), dt);
-            }
-        }
+
+        apply_timestep_inner(static_particle_sub_group(g), dt);
+        // for (auto &[k, v] : this->species_map)
+        // {
+        //     if (v.charge == 0)
+        //     {
+        //         apply_neutral_timestep(particle_sub_group(v.sub_group), dt);
+        //     }
+        //     else
+        //     {
+        //         apply_ion_timestep(particle_sub_group(v.sub_group), dt);
+        //     }
+        // }
     }
 
     /**
@@ -686,5 +601,5 @@ protected:
             profile_elapsed(t0, profile_timestamp()));
     }
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

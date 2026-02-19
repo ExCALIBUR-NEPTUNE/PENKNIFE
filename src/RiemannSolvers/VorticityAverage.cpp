@@ -1,6 +1,6 @@
 #include "VorticityAverage.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 std::string VorticityAverageSolver::solverName =
     SU::GetRiemannSolverFactory().RegisterCreatorFunction(
@@ -29,7 +29,7 @@ std::string VorticityAverageSolver::solverName =
  */
 VorticityAverageSolver::VorticityAverageSolver(
     const LU::SessionReaderSharedPtr &pSession)
-    : TokamakSolver(pSession)
+    : PlasmaSolver(pSession)
 {
     m_pointSolve = false;
 }
@@ -66,4 +66,4 @@ void VorticityAverageSolver::v_ArraySolve(
         flux[omega_idx][p] = flux_omega[p];
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

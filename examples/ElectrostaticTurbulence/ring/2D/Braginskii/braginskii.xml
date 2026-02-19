@@ -12,46 +12,43 @@
             <I PROPERTY="EQTYPE"                       VALUE="ElectrostaticTurbulence"/>
             <I PROPERTY="Projection"                   VALUE="DisContinuous" />
             <I PROPERTY="UpwindType"                   VALUE="MultiFieldUpwind"        />
-            <I PROPERTY="DiffusionAdvancement"         VALUE="Implicit"/>
-            <I PROPERTY="AdvectionType"                VALUE="WeakDG"/>
+            <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
+            <I PROPERTY="AdvectionAdvancement"          VALUE="Explicit"/>
+            <I PROPERTY="AdvectionType"          VALUE="WeakDG"/>
         </SOLVERINFO>
         <TIMEINTEGRATIONSCHEME>
             <METHOD> DIRK </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
 
-        <GLOBALSYSSOLNINFO>
-            <V VAR="n,v,e,phi,omega">
-                <I PROPERTY="GlobalSysSoln"             VALUE="XxtMultiLevelStaticCond"/>
-                <I PROPERTY="LinSysIterSolver"          VALUE="GMRES"/>
-                <I PROPERTY="Preconditioner"            VALUE="Diagonal"        />
-                <I PROPERTY="MaxIterations"             VALUE="1000"/>
-                <I PROPERTY="GMRESMaxStorage"           VALUE=200       />
-                <I PROPERTY="IterativeSolverTolerance"  VALUE="1e-6"/>
-            </V>
-        </GLOBALSYSSOLNINFO>
-
         <PARAMETERS>
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 1</P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1</P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18</P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0</P>
             <!-- Timestepping and output options -->
-            <P> TimeStep      = 0.0005            </P>
-            <P> NumSteps      = 200              </P>
+            <P> TimeStep      = 0.0001            </P>
+            <P> NumSteps      = 1000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 1     </P>
-            <P> IO_CheckSteps = 1     </P>
+            <P> IO_CheckSteps = 10     </P>
             <P> particle_output_freq = 1          </P>
+
+            <!-- <P> IterativeSolverTolerance  = 1.0E-12  </P> -->
             <P> NekNonlinSysMaxIterations = 30       </P>
+            <!-- <P> NewtonRelativeIteTol      = 1.0E-10  </P>
+            <P> NonlinIterTolRelativeL2   = 1.0E-10  </P>
+            <P> LinSysRelativeTolInNonlin = 1.0E-02  </P> -->
 
-
-            <P> epsilon         = 1.0   </P>
             <!-- Anisotropic diffusion -->
-            <P> k_par           = 0   </P>
-            <P> k_perp          = 0.1   </P>
-            <P> kappa_par           = 0   </P>
-            <P> kappa_perp          = 0.0   </P>
-            <P> TCore           = 300.0 </P>
-            <P> T_bnd            = 1.0 </P>
-            <P> k_B             = 1.0 </P>
-            <P> m_i             = 1.0 </P>
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <P> kappa_par       = 0.001        </P>
+            <P> kappa_perp       = 0.0001        </P>
 
             <!-- Scaling factor for ICs -->
             <P> rc = 2 </P>
@@ -60,10 +57,8 @@
             <P> yc = 0 </P>                     
             <P> rs = 0.75 </P>
             <P> ys = 0 </P>
-            <P> sr = 0.1 </P>
-            <P> sy = 0.1 </P>
-
-            <P> num_particles_total = 0 </P>
+            <P> sr = 0.05 </P>
+            <P> sy = 0.05 </P>
         </PARAMETERS>
 
         <VARIABLES>
@@ -81,41 +76,34 @@
 
         <BOUNDARYCONDITIONS>
             <REGION REF="1">
-                <N VAR="n"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <D VAR="v"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <N VAR="e"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <N VAR="w"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <D VAR="phi" USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <!-- <N VAR="n"   VALUE="0.0" />
+                <N VAR="n"   VALUE="0.0" />
                 <N VAR="v"   VALUE="0.0" />
                 <N VAR="e"   VALUE="0.0" />
                 <N VAR="w"   VALUE="0.0" />
-                <D VAR="phi" VALUE="0.0" /> -->
+                <D VAR="phi" VALUE="0.0" />
             </REGION>
             <REGION REF="2">
-                <N VAR="n"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <D VAR="v"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <N VAR="e"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <N VAR="w"   USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <D VAR="phi" USERDEFINEDTYPE="Sheath" VALUE="0.0" />
-                <!-- <N VAR="n"   VALUE="0.0" />
+                <N VAR="n"   VALUE="0.0" />
                 <N VAR="v"   VALUE="0.0" />
                 <N VAR="e"   VALUE="0.0" />
                 <N VAR="w"   VALUE="0.0" />
-                <D VAR="phi" VALUE="0.0" /> -->
+                <D VAR="phi" VALUE="0.0" />
             </REGION>
+
         </BOUNDARYCONDITIONS>
         <FUNCTION NAME="InitialConditions">
-            <E VAR="n"  DOMAIN="0" VALUE="0" />
-            <E VAR="v"  DOMAIN="0" VALUE="0" />
-            <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
-            <E VAR="e"  DOMAIN="0" VALUE="1+0.01*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" />
-            <E VAR="w"  DOMAIN="0" VALUE="0" />
-            <!-- <E VAR="w"  DOMAIN="0" VALUE="sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(11*ang(x-rc, y-yc))" /> -->
+            <!-- <E VAR="n"  DOMAIN="0" VALUE="0" /> -->
+            <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+
+            <E VAR="v"  DOMAIN="0" VALUE="50-5*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
+            <E VAR="e"  DOMAIN="0" VALUE="1-0.1*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
+            <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" /> -->
+            <!-- <E VAR="w"  DOMAIN="0" VALUE="0.01*exp((-(x-rc-rs)^2/(sr*sr))+(-(y-yc-ys)^2/(sy*sy)))*(-sr^2+(x-rc-rs)^2+(y-yc-ys)^2)/sr^4" /> -->
+            <E VAR="w"  DOMAIN="0" VALUE="50*(sin(2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(7*ang(x-rc, y-yc))^2" />
 
             <!-- <E VAR="w"  DOMAIN="0" VALUE="0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy))) * (-4*sy^4*(x-rc-rs)^2-4*sr^4*(y-yc-ys)^2-2*sr^2*sy^4-2*sr^4*sy^2) / (sr^4*sy^4)" /> -->
-            <E VAR="phi"  DOMAIN="0" VALUE="0" />
-            <!-- <E VAR="phi"  DOMAIN="0" VALUE="0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
+            <!-- <E VAR="w"  DOMAIN="0" VALUE="0" /> -->
+            <E VAR="phi"  DOMAIN="0" VALUE="0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
         </FUNCTION>
         <FUNCTION NAME="MagneticField">
             <E VAR="Bx" VALUE="(y-yc)/sqrt((x-rc)*(x-rc)+(y-yc)*(y-yc))" />
@@ -125,20 +113,22 @@
     </CONDITIONS>
     <NESO>
         <SPECIES>
-            <S ID="0" NAME="D">
-                <P> Mass = 1.0 </P>
+            <I NAME="D+" FIELDS="n,v,e">
+                <P> Mass = 2.0 </P>
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
-                    <!-- <E VAR="n"  DOMAIN="0" VALUE="1+0.01*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
+                    <!-- <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
                     <E VAR="n"  DOMAIN="0" VALUE="1+0.01*sin(4*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" />
-                    <E VAR="v"  DOMAIN="0" VALUE="100*sin(PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*(1+0.01*sin(4*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))) " />
-                    <!-- <E VAR="v"  DOMAIN="0" VALUE="100" /> -->
+                    <!-- <E VAR="v"  DOMAIN="0" VALUE="100*0.5*(1+tanh(1-10*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))) " /> -->
+                    <E VAR="v"  DOMAIN="0" VALUE="50-5*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
                     <!-- <E VAR="v"  DOMAIN="0" VALUE="10*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(11*ang(x-rc, y-yc))" /> -->
-                    <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
-                    <E VAR="e"  DOMAIN="0" VALUE="1+0.01*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" />
+                    <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
+                    <E VAR="e"  DOMAIN="0" VALUE="1-0.1*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
+
+                    <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" /> -->
                     <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
                 </FUNCTION>
-            </S>
+            </I>
         </SPECIES> 
     </NESO>
 </NEKTAR>

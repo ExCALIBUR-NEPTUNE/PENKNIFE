@@ -1,14 +1,14 @@
-#ifndef VORTICITY_UPWINDSOLVER
-#define VORTICITY_UPWINDSOLVER
+#ifndef VORTICITY_UPWINDSOLVER_HPP
+#define VORTICITY_UPWINDSOLVER_HPP
 
-#include "TokamakSolver.hpp"
+#include "PlasmaSolver.hpp"
 
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace SU = Nektar::SolverUtils;
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class VorticityUpwindSolver : public TokamakSolver
+class VorticityUpwindSolver : public PlasmaSolver
 {
 public:
     static SU::RiemannSolverSharedPtr create(
@@ -26,6 +26,6 @@ protected:
                       const Array<OneD, const Array<OneD, NekDouble>> &Bwd,
                       Array<OneD, Array<OneD, NekDouble>> &flux) final;
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

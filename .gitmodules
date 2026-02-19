@@ -4,3 +4,6 @@
 [submodule "Reactions"]
 	path = Reactions
 	url = git@github.com:UKAEA-Edge-Code/Reactions.git
+[submodule "VANTAGE-Reactions"]
+	path = VANTAGE-Reactions
+	url = git@github.com:UKAEA-Edge-Code/VANTAGE-Reactions.git

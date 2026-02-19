@@ -6,8 +6,8 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'NESO-Tokamak'
-copyright = '2025, UKAEA'
+project = 'PENKNIFE'
+copyright = '2026, UKAEA'
 author = 'UKAEA'
 release = ''
 
@@ -49,14 +49,14 @@ if os.path.exists(docs_version):
     html_theme_options.update({
         "check_switcher": False,
         "switcher": {
-            "json_url": "https://excalibur-neptune.github.io/NESO-Tokamak/switcher.json",
+            "json_url": "https://excalibur-neptune.github.io/PENKNIFE/switcher.json",
             "version_match": version,
         },
         "navbar_start": ["navbar-logo", "version-switcher"]
     })
 
-breathe_projects = {"NESO-Tokamak": "../../build/doxygen/xml"}
-breathe_default_project = "NESO-Tokamak"
+breathe_projects = {"PENKNIFE": "../../build/doxygen/xml"}
+breathe_default_project = "PENKNIFE"
 
 # Enable referencing figures etc by number.
 numfig = True

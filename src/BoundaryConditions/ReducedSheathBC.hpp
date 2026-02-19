@@ -1,19 +1,19 @@
-#ifndef TOKAMAK_SHEATH_HPP
-#define TOKAMAK_SHEATH_HPP
+#ifndef PLASMA_SHEATH_HPP
+#define PLASMA_SHEATH_HPP
 
-#include "TokamakBaseBndCond.hpp"
+#include "PlasmaBaseBndCond.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
-class ReducedSheathBC : public TokamakBaseBndCond
+class ReducedSheathBC : public PlasmaBaseBndCond
 {
 public:
     friend class MemoryManager<ReducedSheathBC>;
 
-    static TokamakBaseBndCondSharedPtr create(
+    static PlasmaBaseBndCondSharedPtr create(
         const LU::SessionReaderSharedPtr &pSession,
-        const std::weak_ptr<TokamakSystem> &pSystem,
+        const std::weak_ptr<PlasmaSystem> &pSystem,
         const Array<OneD, MR::ExpListSharedPtr> &pFields,
         const Array<OneD, MR::DisContFieldSharedPtr> &pB,
         const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -22,7 +22,7 @@ public:
         const int bcRegion)
 
     {
-        TokamakBaseBndCondSharedPtr p =
+        PlasmaBaseBndCondSharedPtr p =
             MemoryManager<ReducedSheathBC>::AllocateSharedPtr(
                 pSession, pSystem, pFields, pB, pE, cond, exp, pSpaceDim,
                 bcRegion);
@@ -38,7 +38,7 @@ protected:
 
 private:
     ReducedSheathBC(const LU::SessionReaderSharedPtr &pSession,
-                    const std::weak_ptr<TokamakSystem> &pSystem,
+                    const std::weak_ptr<PlasmaSystem> &pSystem,
                     const Array<OneD, MR::ExpListSharedPtr> &pFields,
                     const Array<OneD, MR::DisContFieldSharedPtr> &pB,
                     const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -57,5 +57,5 @@ private:
     // Array<OneD, Array<OneD, NekDouble>> v_ExB;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

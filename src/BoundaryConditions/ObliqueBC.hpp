@@ -1,19 +1,19 @@
-#ifndef TOKAMAK_OBLIQUE_HPP
-#define TOKAMAK_OBLIQUE_HPP
+#ifndef PLASMA_OBLIQUE_HPP
+#define PLASMA_OBLIQUE_HPP
 
-#include "TokamakBaseBndCond.hpp"
+#include "PlasmaBaseBndCond.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
-class ObliqueBC : public TokamakBaseBndCond
+class ObliqueBC : public PlasmaBaseBndCond
 {
 public:
     friend class MemoryManager<ObliqueBC>;
 
-    static TokamakBaseBndCondSharedPtr create(
+    static PlasmaBaseBndCondSharedPtr create(
         const LU::SessionReaderSharedPtr &pSession,
-        const std::weak_ptr<TokamakSystem> &pSystem,
+        const std::weak_ptr<PlasmaSystem> &pSystem,
         const Array<OneD, MR::ExpListSharedPtr> &pFields,
         const Array<OneD, MR::DisContFieldSharedPtr> &pB,
         const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -21,7 +21,7 @@ public:
         Array<OneD, MultiRegions::ExpListSharedPtr> exp, const int pSpaceDim,
         const int bcRegion)
     {
-        TokamakBaseBndCondSharedPtr p =
+        PlasmaBaseBndCondSharedPtr p =
             MemoryManager<ObliqueBC>::AllocateSharedPtr(
                 pSession, pSystem, pFields, pB, pE, cond, exp, pSpaceDim,
                 bcRegion);
@@ -37,7 +37,7 @@ protected:
 
 private:
     ObliqueBC(const LU::SessionReaderSharedPtr &pSession,
-              const std::weak_ptr<TokamakSystem> &pSystem,
+              const std::weak_ptr<PlasmaSystem> &pSystem,
               const Array<OneD, MR::ExpListSharedPtr> &pFields,
               const Array<OneD, MR::DisContFieldSharedPtr> &pB,
               const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -47,5 +47,5 @@ private:
     ~ObliqueBC() override {};
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

@@ -6,15 +6,15 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include "reactions.hpp"
+#include <reactions/reactions.hpp>
 #include "../Misc/Constants.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-using namespace Reactions;
+using namespace VANTAGE::Reactions;
 struct norm
 {
-    static constexpr double time        = 1.0E-4;
+    static constexpr double time        = 1.0E-8;
     static constexpr double length      = -1;
     static constexpr double temp        = 1.0;
     static constexpr double dens        = 1e18;
@@ -151,5 +151,5 @@ public:
             norm::time, h10_2_1_8_coeffs);
     }
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

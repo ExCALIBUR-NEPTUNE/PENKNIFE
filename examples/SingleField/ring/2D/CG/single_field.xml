@@ -31,8 +31,6 @@
             <P> IO_CheckSteps  = 10                </P>
             <P> IO_InfoSteps   = 10                </P>
 
-            <P> particle_output_freq = 1          </P>
-
             <!-- Coulomb logarithm -->
             <P> lambda    = 13          </P>
             <P> k_c       = 3.19        </P>

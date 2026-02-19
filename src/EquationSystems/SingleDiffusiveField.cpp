@@ -1,6 +1,6 @@
 #include "SingleDiffusiveField.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /// Name of class
@@ -25,14 +25,14 @@ static SU::EquationSystemSharedPtr create(
 SingleDiffusiveField::SingleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,
     const SD::MeshGraphSharedPtr &graph)
-    : TokamakSystem(session, graph)
+    : PlasmaSystem(session, graph)
 {
     this->n_indep_fields = 0;
 }
 
 void SingleDiffusiveField::v_InitObject(bool DeclareFields)
 {
-    TokamakSystem::v_InitObject(DeclareFields);
+    PlasmaSystem::v_InitObject(DeclareFields);
     this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
 
     int npoints = m_indfields[0]->GetNpoints();
@@ -174,26 +174,17 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
                 varcoeffs[vc[i][j]] = m_D[i][j];
             }
         }
-        // std::cout << "PreSolve: "
-        //           << m_indfields[ni_idx]->GetPoolCount("GlobalLinSys") <<
-        //           "\n";
 
         // Solve a system of equations with Helmholtz solver
         auto key = m_indfields[ni_idx]->HelmSolve(
             outarray[ni_idx], m_indfields[ni_idx]->UpdateCoeffs(), factors,
             varcoeffs, varfactors);
-        // std::cout << "PostSolve: "
-        //           << m_indfields[ni_idx]->GetPoolCount("GlobalLinSys") <<
-        //           "\n";
 
         if (key.GetMatrixType() == StdRegions::eHelmholtz ||
             key.GetMatrixType() == StdRegions::eHelmholtzGJP)
         {
             m_indfields[ni_idx]->UnsetGlobalLinSys(key, true);
         }
-        // std::cout << "PostUnset: "
-        //           << m_indfields[ni_idx]->GetPoolCount("GlobalLinSys") <<
-        //           "\n";
 
         m_indfields[ni_idx]->BwdTrans(m_indfields[ni_idx]->GetCoeffs(),
                                       outarray[ni_idx]);
@@ -205,32 +196,60 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
 void SingleDiffusiveField::CalcKPar(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
-    double Z    = m_ions[f].charge;
-    int ni_idx  = m_ions[f].fields.at(field_to_index.at("n"));
+    if (m_session->DefinesParameter("k_par"))
+    {
+        double k = m_session->GetParameter("k_par");
+        Vmath::Fill(npoints, k, m_kpar, 1);
+    }
+    else
+    {
+        double Z   = m_ions[f].charge;
+        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-    Vmath::Fill(npoints, this->k_par / (Z * Z), m_kpar, 1);
-    Vmath::Vdiv(npoints, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1, m_kpar,
-                1);
+        Vmath::Fill(npoints, this->k_par / (Z * Z), m_kpar, 1);
+        Vmath::Vdiv(npoints, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1,
+                    m_kpar, 1);
+    }
 }
 
 void SingleDiffusiveField::CalcKPerp(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
-    double Z    = m_ions[f].charge;
-    double A    = m_ions[f].mass;
-    int ni_idx  = m_ions[f].fields.at(field_to_index.at("n"));
+    if (m_session->DefinesParameter("k_perp"))
+    {
+        double k = m_session->GetParameter("k_perp");
+        Vmath::Fill(npoints, k, m_kperp, 1);
+    }
+    else
+    {
+        double Z   = m_ions[f].charge;
+        double A   = m_ions[f].mass;
+        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-    Vmath::Fill(npoints, this->k_perp * Z * Z * std::sqrt(A), m_kperp, 1);
-    Vmath::Vmul(npoints, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1, m_kperp,
-                1);
-    Vmath::Vdiv(npoints, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
+        Vmath::Fill(npoints, this->k_perp * Z * Z * std::sqrt(A), m_kperp, 1);
+        Vmath::Vmul(npoints, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1,
+                    m_kperp, 1);
+        Vmath::Vdiv(npoints, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
+    }
+}
+
+void SingleDiffusiveField::CalcKPerpAnomalous(int f)
+{
+    int npoints = m_fields[0]->GetNpoints();
+
+    for (int p = 0; p < npoints; ++p)
+    {
+        m_kperp[p] = this->k_perp / std::sqrt(this->mag_B[p]);
+    }
 }
 
 void SingleDiffusiveField::CalcDiffTensor(int f)
 {
     int npoints = m_fields[0]->GetNpoints();
+
     CalcKPar(f);
     CalcKPerp(f);
+
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 3; j++)
@@ -318,7 +337,7 @@ void SingleDiffusiveField::GetFluxVectorDiff(
 
 void SingleDiffusiveField::load_params()
 {
-    TokamakSystem::load_params();
+    PlasmaSystem::load_params();
     NekDouble k_c, lambda, T_bg;
 
     m_session->LoadParameter("k_c", k_c);
@@ -350,14 +369,14 @@ bool SingleDiffusiveField::v_PostIntegrate(int step)
         this->particle_sys->diag_project();
     // Writes a step of the particle trajectory.
 
-    return TokamakSystem::v_PostIntegrate(step);
+    return PlasmaSystem::v_PostIntegrate(step);
 }
 
 void SingleDiffusiveField::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)
 {
-    TokamakSystem::v_ExtraFldOutput(fieldcoeffs, variables);
+    PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
     const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
 
@@ -378,4 +397,4 @@ void SingleDiffusiveField::v_ExtraFldOutput(
         fieldcoeffs.push_back(SrcFwd);
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

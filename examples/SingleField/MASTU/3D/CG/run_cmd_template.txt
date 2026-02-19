@@ -1,1 +1,1 @@
-mpirun -np <NMPI> <SOLVER_EXEC> single_field.xml mastu3dl.xml
+mpirun -np <NMPI> <SOLVER_EXEC> single_field.xml mastu3dl2.xml

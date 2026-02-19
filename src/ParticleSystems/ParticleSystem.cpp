@@ -1,6 +1,6 @@
 #include "ParticleSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 std::string ParticleSystem::class_name =
@@ -11,8 +11,85 @@ ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
                                SD::MeshGraphSharedPtr graph, MPI_Comm comm)
     : PartSysBase(session, graph, comm), simulation_time(0.0),
       size(this->sycl_target->comm_pair.size_parent),
-      rank(this->sycl_target->comm_pair.rank_parent) {};
+      rank(this->sycl_target->comm_pair.rank_parent)
+{
+    this->sycl_target->profile_map.enable();
+}
 
+ParticleSystem::~ParticleSystem()
+{
+    this->sycl_target->profile_map.disable();
+    this->sycl_target->profile_map.write_events_json("profile", this->rank);
+}
+
+void ParticleSystem::init_spec()
+{
+    this->particle_spec = {
+        ParticleProp(Sym<REAL>("POSITION"), this->ndim, true),
+        ParticleProp(Sym<REAL>("VELOCITY"), 3),
+        ParticleProp(Sym<INT>("CELL_ID"), 1, true),
+        ParticleProp(Sym<INT>("ID"), 1),
+        ParticleProp(Sym<INT>("INTERNAL_STATE"), 1),
+        ParticleProp(Sym<REAL>("M"), 1),
+        ParticleProp(Sym<REAL>("Q"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->ndim),
+        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1),
+        ParticleProp(Sym<REAL>("ELECTRIC_FIELD"), 3),
+        ParticleProp(Sym<REAL>("MAGNETIC_FIELD"), 3),
+        ParticleProp(Sym<REAL>("TSP"), 2)};
+
+    for (auto &[k, v] : this->config->get_particle_species())
+    {
+        this->particle_spec.push(
+            ParticleProp(Sym<REAL>(k + "_SOURCE_DENSITY"), 1));
+        this->particle_spec.push(
+            ParticleProp(Sym<REAL>(k + "_SOURCE_ENERGY"), 1));
+        this->particle_spec.push(
+            ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), this->ndim));
+    }
+    this->particle_spec.push(ParticleProp(Sym<REAL>("WEIGHT"), 1));
+    this->particle_spec.push(ParticleProp(Sym<REAL>("TOT_REACTION_RATE"), 1));
+    this->particle_spec.push(ParticleProp(Sym<INT>("REACTIONS_PANIC_FLAG"), 1));
+    this->particle_spec.push(
+        ParticleProp(Sym<INT>("PARTICLE_REACTED_FLAG"), 1));
+    this->particle_spec.push(ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1));
+    this->particle_spec.push(ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), this->ndim));
+
+    this->particle_spec.push(ParticleProp(
+        Sym<REAL>("NESO_PARTICLES_BOUNDARY_INTERSECTION_POINT"), this->ndim));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("NESO_PARTICLES_BOUNDARY_NORMAL"), this->ndim));
+    this->particle_spec.push(
+        ParticleProp(Sym<INT>("NESO_PARTICLES_BOUNDARY_METADATA"), 2));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_DENSITY_SOURCE"), 1));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), this->ndim));
+    this->particle_spec.push(
+        ParticleProp(Sym<REAL>("SURFACE_ENERGY_SOURCE"), 1));
+}
+
+void ParticleSystem::init_object()
+{
+    PartSysBase::init_object();
+    config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
+    config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
+    config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
+    config->get_session()->LoadParameter("Bnorm", this->Bnorm, 1);
+
+    this->omega_c =
+        constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
+    this->particle_remover =
+        std::make_shared<ParticleRemover>(this->sycl_target);
+
+    this->transfer_particles();
+    pre_advection(particle_sub_group(this->particle_group));
+}
 void ParticleSystem::set_up_species()
 {
     // get seed from file
@@ -106,24 +183,24 @@ void ParticleSystem::set_up_species()
                     double T = v->second.m_expression->Evaluate();
 
                     std::uniform_real_distribution u(0.0, 1.0);
-                    std::gamma_distribution mb(1.5, T);
+                    std::normal_distribution norm(0.0,
+                                                  std::sqrt(T / particle_mass));
                     double vth = constants::c *
                                  std::sqrt(Tnorm / constants::m_p) /
                                  (mesh_length * omega_c);
 
                     for (int p = 0; p < N; ++p)
                     {
-                        double energy = mb(this->rng_phasespace);
-                        double speed =
-                            vth * std::sqrt(2 * energy / particle_mass);
-                        // inverse transform sampling
-                        double sintheta  = std::sqrt(u(this->rng_phasespace));
-                        double phi       = 2 * M_PI * u(this->rng_phasespace);
-                        velocities[1][p] = speed * sintheta * cos(phi);
-                        velocities[2][p] = 0;
+                        double sintheta = std::sqrt(u(this->rng_phasespace));
 
-                        velocities[0][p] =
-                            -speed * std::sqrt(1 - sintheta * sintheta);
+                        velocities[1][p] = vth * norm(this->rng_phasespace);
+                        velocities[2][p] = vth * norm(this->rng_phasespace);
+                        double vperp =
+                            std::sqrt(velocities[1][p] * velocities[1][p] +
+                                      velocities[2][p] * velocities[2][p]);
+                        velocities[0][p] = -vperp *
+                                           std::sqrt(1 - sintheta * sintheta) /
+                                           sintheta;
                     }
                 }
 
@@ -204,15 +281,15 @@ void ParticleSystem::set_up_species()
                     initial_distribution[Sym<REAL>("TOT_REACTION_RATE")][px]
                                         [0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
-                        2.0;
+                        0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")]
                                         [px][0] = 0.0;
                     initial_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")]
                                         [px][0] = 0.0;
                     initial_distribution[Sym<REAL>("FLUID_DENSITY")][px][0] =
-                        2.0; // 1e18 m^-3
+                        0.0; // 1e18 m^-3
                     initial_distribution[Sym<REAL>("FLUID_TEMPERATURE")][px]
                                         [0] = 2.0; // eV
                 }
@@ -235,6 +312,65 @@ void ParticleSystem::set_up_species()
     set_up_boundaries();
 }
 
+void ParticleSystem::setup_evaluate_fields(
+    Array<OneD, std::shared_ptr<DisContField>> &E,
+    Array<OneD, std::shared_ptr<DisContField>> &B,
+    std::shared_ptr<DisContField> ne, std::shared_ptr<DisContField> Te,
+    Array<OneD, std::shared_ptr<DisContField>> &ve)
+{
+    auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
+        particle_group->domain->mesh);
+    this->field_evaluate_ne =
+        std::make_shared<FunctionEvaluateBasis<DisContField>>(
+            ne, mesh, this->cell_id_translation);
+    if (Te)
+    {
+        this->field_evaluate_Te =
+            std::make_shared<FunctionEvaluateBasis<DisContField>>(
+                Te, mesh, this->cell_id_translation);
+    }
+    this->field_evaluate_ve =
+        std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>(
+            this->ndim);
+    for (int d = 0; d < this->ndim; ++d)
+    {
+        if (ve[d])
+        {
+            this->field_evaluate_ve[d] =
+                std::make_shared<FunctionEvaluateBasis<DisContField>>(
+                    ve[d], mesh, this->cell_id_translation);
+        }
+
+        this->field_evaluate_E.emplace_back(
+            std::make_shared<FunctionEvaluateBasis<DisContField>>(
+                E[d], mesh, this->cell_id_translation));
+        this->field_evaluate_B.emplace_back(
+            std::make_shared<FunctionEvaluateBasis<DisContField>>(
+                B[d], mesh, this->cell_id_translation));
+    }
+}
+
+void ParticleSystem::finish_setup(
+    std::vector<std::shared_ptr<DisContField>> &src_fields,
+    std::vector<Sym<REAL>> &syms, std::vector<int> &components)
+{
+    this->src_syms       = syms;
+    this->src_components = components;
+    this->field_project  = std::make_shared<FieldProject<DisContField>>(
+        src_fields, this->particle_group, this->cell_id_translation);
+    init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
+                Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"),
+                Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
+                Sym<REAL>("ELECTRON_DENSITY"), this->src_syms, Sym<INT>("ID"),
+                Sym<REAL>("TOT_REACTION_RATE"));
+}
+
+void ParticleSystem::diag_setup(const std::shared_ptr<DisContField> &diag_field)
+{
+    this->diagnostic_project = std::make_shared<FieldProject<DisContField>>(
+        diag_field, this->particle_group, this->cell_id_translation);
+}
+
 template <typename RNG>
 inline std::vector<double> gamma_distribution(const int N, const double alpha,
                                               const double beta, RNG &rng)
@@ -251,6 +387,7 @@ inline std::vector<double> gamma_distribution(const int N, const double alpha,
 
 void ParticleSystem::add_sources(double time, double dt)
 {
+    auto r = ProfileRegion("NESO", "add_sources");
     double particle_thermal_velocity;
     const long rank = this->sycl_target->comm_pair.rank_parent;
 
@@ -344,16 +481,38 @@ void ParticleSystem::add_sources(double time, double dt)
                         double T = v->second.m_expression->Evaluate();
 
                         std::uniform_real_distribution u(0.0, 1.0);
-                        std::gamma_distribution mb(1.5, T);
-                        double vth = constants::c *
-                                     std::sqrt(Tnorm / constants::m_p) /
-                                     (mesh_length * omega_c);
+                        std::normal_distribution norm(0.0, 1.0);
+
+                        double vth =
+                            constants::c *
+                            std::sqrt(Tnorm * T /
+                                      (constants::m_p * particle_mass)) /
+                            (mesh_length * omega_c);
 
                         for (int p = 0; p < N; ++p)
                         {
-                            double energy = mb(this->rng_phasespace);
-                            double speed =
-                                vth * std::sqrt(2 * energy / particle_mass);
+                            velocities[1][p] = vth * norm(this->rng_phasespace);
+                            velocities[2][p] = vth * norm(this->rng_phasespace);
+                            velocities[0][p] =
+                                -vth *
+                                std::sqrt(-2 *
+                                          std::log(u(this->rng_phasespace)));
+                        }
+                    }
+                    else if (auto v = vmap.find(std::pair("Vin", 0));
+                             v != vmap.end()) // Specific to EIRENE example
+                    {
+                        for (int d = 0; d < 3; ++d)
+                        {
+                            velocities.emplace_back(std::vector<double>(N));
+                        }
+                        double speed = v->second.m_expression->Evaluate() /
+                                       (mesh_length * omega_c);
+
+                        std::uniform_real_distribution u(0.0, 1.0);
+
+                        for (int p = 0; p < N; ++p)
+                        {
                             // inverse transform sampling
                             double sintheta =
                                 std::sqrt(u(this->rng_phasespace));
@@ -451,15 +610,15 @@ void ParticleSystem::add_sources(double time, double dt)
                         src_distribution[Sym<REAL>("TOT_REACTION_RATE")][px]
                                         [0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
-                            2.0;
+                            0.0;
                         src_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_SOURCE_ENERGY")]
                                         [px][0] = 0.0;
                         src_distribution[Sym<REAL>("ELECTRON_SOURCE_DENSITY")]
                                         [px][0] = 0.0;
                         src_distribution[Sym<REAL>("FLUID_DENSITY")][px][0] =
-                            2.0; // 1e18 m^-3
+                            0.0; // 1e18 m^-3
                         src_distribution[Sym<REAL>("FLUID_TEMPERATURE")][px]
                                         [0] = 2.0; // eV
                     }
@@ -476,11 +635,16 @@ void ParticleSystem::add_sources(double time, double dt)
                 Access::read(Sym<INT>("INTERNAL_STATE")));
         v.sub_group = sub_group;
     }
+
+    r.end();
+    this->sycl_target->profile_map.add_region(r);
     transfer_particles();
 }
 
 void ParticleSystem::add_sinks(double time, double dt)
 {
+    auto r = ProfileRegion("NESO", "add_sinks");
+
     std::uniform_real_distribution<> rng_dist(0, 1);
 
     Array<OneD, Array<OneD, NekDouble>> posarr(3);
@@ -561,6 +725,8 @@ void ParticleSystem::add_sinks(double time, double dt)
         }
         state++;
     }
+    r.end();
+    this->sycl_target->profile_map.add_region(r);
     remove_marked_particles();
 }
 
@@ -587,4 +753,4 @@ void ParticleSystem::set_up_boundaries()
         reflection_composites, store);
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

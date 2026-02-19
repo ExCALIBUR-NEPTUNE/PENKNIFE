@@ -1,12 +1,12 @@
 #ifndef ELECTROSTATICTURBULENCE_HPP
 #define ELECTROSTATICTURBULENCE_HPP
 #include "../Misc/VariableConverter.hpp"
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 // [omega, {n, mnv, 1.5p}_e, {n, mnv, 1.5p}_i, ...]
-class ElectrostaticTurbulence : public TokamakSystem
+class ElectrostaticTurbulence : public PlasmaSystem
 {
 public:
     friend class MemoryManager<ElectrostaticTurbulence>;
@@ -197,5 +197,5 @@ private:
     StdRegions::VarCoeffMap m_kappa;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

@@ -26,11 +26,12 @@
             <!-- Normalised magnetic field in T -->
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
-            <P> TimeStep       = 957.883316               </P>
-            <P> NumSteps      = 100              </P>
+            <P> TimeStep       = 95.7883316               </P>
+            <P> NumSteps      = 10000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 10                </P>
-            <P> IO_InfoSteps   = 10                </P>
+            <!-- ~957883.316 -->
+            <P> IO_CheckSteps  = 100                </P>
+            <P> IO_InfoSteps   = 100                </P>
             <P> epsilon        = 1.0               </P>
 
             <!-- Coulomb logarithm -->
@@ -55,7 +56,7 @@
             <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
             <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
 
-            <P> particle_output_freq = 1              </P>
+            <P> particle_output_freq = 10              </P>
         </PARAMETERS>
 
         <VARIABLES>
@@ -63,11 +64,11 @@
         </VARIABLES>
 
         <BOUNDARYREGIONS>
-            <B ID="0"> C[3] </B>
+            <B ID="3"> C[3] </B>
         </BOUNDARYREGIONS>
         <BOUNDARYCONDITIONS>
             <!--Wall -->
-            <REGION REF="0">
+            <REGION REF="3">
                 <N VAR="n" VALUE="0"/>
             </REGION>         
         </BOUNDARYCONDITIONS>
@@ -81,6 +82,7 @@
         </FUNCTION>
 
     </CONDITIONS>
+
     <NESO>
         <SPECIES>
             <I NAME="D+" FIELDS="n">
@@ -90,66 +92,31 @@
                     <E VAR="n"  DOMAIN="0" VALUE="2" />
                 </FUNCTION>
             </I>
-            <I NAME="W20+" FIELDS="n">
-                <P> Mass = 183.0 </P>
-                <P> Charge = 20.0 </P>
-                <FUNCTION NAME="InitialConditions">
-                    <E VAR="n"  DOMAIN="0" VALUE="1" />
-                </FUNCTION>
-            </I>
-            <!-- <N NAME="D" ION="D+" FIELDS="n">
-                <P> Mass = 2 </P>
-                <P> Charge = 0 </P>
-                <FUNCTION NAME="InitialConditions">
-                    <E VAR="n"  DOMAIN="0" VALUE="1" />
-                </FUNCTION>
-            </N> -->
-            <KI NAME="W20">
-                <P> Mass = 183.0 </P>
-                <P> Charge = 20.0 </P>
+            <KN NAME="D">
+                <P> Mass = 2.0 </P>
                 <INITIAL N="1">
-                    <E VAR="W" VALUE="0.0000005"/>
-                    <E VAR="X" VALUE="140"/>
-                    <E VAR="Y" VALUE="4.377308645701408"/>
-                    <E VAR="VX" VALUE="-0.001820325651"/>
-                    <E VAR="VY" VALUE="-0.000713628137"/>
-                    <E VAR="VZ"  VALUE="-0.00235492694"/>
+                    <E VAR="W" VALUE="0.000000001"/>
+                    <E VAR="X" VALUE="199.9999"/>
+                    <E VAR="Y" VALUE="0"/>
                 </INITIAL>
                 <SOURCES>
-                    <P N="1000">
-                        <E VAR="W" VALUE="0.000005"/>
-                        <E VAR="X" VALUE="140"/>
+                    <P N="100">
+                        <E VAR="W" VALUE="0.00005"/>
+                        <E VAR="X" VALUE="199.9999"/>
                         <E VAR="Y" VALUE="0"/>
-                        <E VAR="Tin" VALUE="2.585"/>
+                        <!-- <E VAR="Vin" VALUE="1573.5"/> -->
+                        <E VAR="Tin" VALUE="0.02585"/>
                     </P>
                 </SOURCES>
-            </KI>
-            <KI NAME="W2">
-                <P> Mass = 183.0 </P>
-                <P> Charge = 2.0 </P>
-                <INITIAL N="1">
-                    <E VAR="W" VALUE="0.0000005"/>
-                    <E VAR="X" VALUE="140"/>
-                    <E VAR="Y" VALUE="4.377308645701408"/>
-                    <E VAR="VX" VALUE="-0.001820325651"/>
-                    <E VAR="VY" VALUE="-0.000713628137"/>
-                    <E VAR="VZ"  VALUE="-0.00235492694"/>
-                </INITIAL>
-                <SOURCES>
-                    <P N="1000">
-                        <E VAR="W" VALUE="0.000005"/>
-                        <E VAR="X" VALUE="140"/>
-                        <E VAR="Y" VALUE="0"/>
-                        <E VAR="Tin" VALUE="2.585"/>
-                    </P>
-                </SOURCES>
-            </KI>
+            </KN>
         </SPECIES>
+
         <VANTAGE>
-            <S TYPE="Specular" SPECIES="W20,W2">
-                <REGION REF="0"/>
+            <S TYPE="Specular" SPECIES="D">
+                <REGION REF="3"/>
                 <RATE TYPE="Constant" VALUE="1.0"/>
-            </S>             
+            </S>           
         </VANTAGE>
+
     </NESO>
 </NEKTAR>

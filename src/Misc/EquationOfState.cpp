@@ -1,6 +1,6 @@
 #include "EquationOfState.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 EquationOfStateFactory &GetEquationOfStateFactory()
 {
@@ -39,4 +39,4 @@ NekDouble EquationOfState::v_GetSoundSpeed(const NekDouble &rho,
     return std::sqrt(chi + kappa * enthalpy);
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
