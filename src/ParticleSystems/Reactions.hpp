@@ -5,7 +5,7 @@
 
 using namespace VANTAGE::Reactions;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 inline auto get_uniform_rng_kernel(SYCLTargetSharedPtr sycl_target,
@@ -362,6 +362,6 @@ inline auto recombination_reaction_fixed(
     return recomb_reaction;
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

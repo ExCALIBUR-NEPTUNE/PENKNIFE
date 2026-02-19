@@ -21,11 +21,11 @@ BRANCHES=$(python3 -c "import json; print(' '.join([fx['version'] for fx in json
 echo $BRANCHES
 
 # clone the repo into a temporary place
-REPO=https://github.com/ExCALIBUR-NEPTUNE/NESO-Tokamak.git
+REPO=https://github.com/ExCALIBUR-NEPTUNE/PENKNIFE.git
 mkdir /tmp/repo-checkout
 cd /tmp/repo-checkout
 git clone $REPO
-cd NESO-Tokamak/docs
+cd PENKNIFE/docs
 
 # copy the redirecting index to the output directory
 cp ./redirect_index.html ${OUTPUT_DIR}/index.html

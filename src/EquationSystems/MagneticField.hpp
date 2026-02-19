@@ -11,17 +11,17 @@ namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 namespace SU = Nektar::SolverUtils;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class TokamakSystem;
+class PlasmaSystem;
 
 class MagneticField
 {
-    friend TokamakSystem;
+    friend PlasmaSystem;
 
 public:
     MagneticField(const LU::SessionReaderSharedPtr &session,
-                  const std::weak_ptr<TokamakSystem> &eq_sys,
+                  const std::weak_ptr<PlasmaSystem> &eq_sys,
                   Array<OneD, MR::DisContFieldSharedPtr> &B, const int dim);
 
     void Read(NekDouble time = 0);
@@ -77,8 +77,8 @@ private:
     /// Squared Magnitude of the magnetic field
     Array<OneD, NekDouble> mag_B;
 
-    std::weak_ptr<TokamakSystem> m_sys;
+    std::weak_ptr<PlasmaSystem> m_sys;
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

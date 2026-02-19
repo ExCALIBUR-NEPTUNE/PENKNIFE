@@ -6,7 +6,7 @@ tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
 
 def jsonobjectfunc(version):
     strversion = str(version)
-    urlversion = "https://excalibur-neptune.github.io/NESO-Tokamak/" + strversion + "/sphinx/html/"
+    urlversion = "https://excalibur-neptune.github.io/PENKNIFE/" + strversion + "/sphinx/html/"
     return {"version": strversion, "url": urlversion}
     
 json_contents = [jsonobjectfunc("main"), jsonobjectfunc("dev")]

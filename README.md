@@ -1,5 +1,5 @@
-# NESO-Tokamak
-A NESO-based solver for modelling MAST-U.
+# PENKNIFE
+Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements
 
 ## Building
 The easiest way to build the app is to use the [Spack package manager](https://spack.readthedocs.io/en/latest/index.html).
@@ -32,11 +32,11 @@ spack compiler add `spack location -i intel-oneapi-compilers`/compiler/latest/li
 spack compiler add `spack location -i intel-oneapi-compilers`/compiler/latest/linux/bin
 ```
 
-### Build and clone NESO-Tokamak:
+### Build and clone PENKNIFE:
 ```bash
 cd ..
-git clone https://github.com/ExCALIBUR-NEPTUNE/NESO-Tokamak.git
-cd NESO-Tokamak
+git clone https://github.com/ExCALIBUR-NEPTUNE/PENKNIFE.git
+cd PENKNIFE
 git submodule update --init --recursive
 spack env activate ./spack -p
 spack install

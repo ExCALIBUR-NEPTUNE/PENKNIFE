@@ -9,7 +9,7 @@
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 //  Forward declaration
 class EquationOfState;
@@ -132,6 +132,6 @@ protected:
     virtual NekDouble v_GetRhoFromPT(const NekDouble &rho,
                                      const NekDouble &p) = 0;
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

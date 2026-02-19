@@ -1,16 +1,16 @@
 #include <iomanip>
 #include <iostream>
 
-#include "../EquationSystems/TokamakSystem.hpp"
+#include "../EquationSystems/PlasmaSystem.hpp"
 #include "VariableConverter.hpp"
 #include <LibUtilities/BasicUtils/Smath.hpp>
 #include <LocalRegions/Expansion2D.h>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 VariableConverter::VariableConverter(
-    const std::weak_ptr<TokamakSystem> &pSystem, const int spaceDim)
+    const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     : m_system(pSystem), m_spacedim(spaceDim),
       field_to_index(pSystem.lock()->field_to_index)
 {
@@ -229,4 +229,4 @@ void VariableConverter::GetSystemSoundSpeed(
     }
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

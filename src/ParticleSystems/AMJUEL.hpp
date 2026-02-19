@@ -9,7 +9,7 @@
 #include <reactions/reactions.hpp>
 #include "../Misc/Constants.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 using namespace VANTAGE::Reactions;
 struct norm
@@ -151,5 +151,5 @@ public:
             norm::time, h10_2_1_8_coeffs);
     }
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

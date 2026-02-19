@@ -1,17 +1,17 @@
-#ifndef TOKAMAK_WALL_HPP
-#define TOKAMAK_WALL_HPP
+#ifndef PLASMA_WALL_HPP
+#define PLASMA_WALL_HPP
 
-#include "TokamakBaseBndCond.hpp"
+#include "PlasmaBaseBndCond.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
-class WallBC : public TokamakBaseBndCond
+class WallBC : public PlasmaBaseBndCond
 {
 public:
     friend class MemoryManager<WallBC>;
 
-    static TokamakBaseBndCondSharedPtr create(
+    static PlasmaBaseBndCondSharedPtr create(
         const LU::SessionReaderSharedPtr &pSession,
         const Array<OneD, MR::ExpListSharedPtr> &pFields,
         const Array<OneD, MR::DisContFieldSharedPtr> &pB,
@@ -21,7 +21,7 @@ public:
         const int bcRegion)
 
     {
-        TokamakBaseBndCondSharedPtr p =
+        PlasmaBaseBndCondSharedPtr p =
             MemoryManager<WallBC>::AllocateSharedPtr(
                 pSession, pFields, pB, pE, cond, exp, pSpaceDim, bcRegion);
         return p;
@@ -54,5 +54,5 @@ private:
     Array<OneD, Array<OneD, NekDouble>> v_ExB;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

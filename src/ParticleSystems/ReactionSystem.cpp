@@ -1,7 +1,7 @@
 #include "ReactionSystem.hpp"
 #include "Reactions.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 std::string ReactionSystem::class_name =
     GetParticleSystemFactory().RegisterCreatorFunction(
@@ -369,4 +369,4 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
 
 
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

@@ -1,12 +1,12 @@
 #include "MagneticField.hpp"
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 #include <FieldUtils/Interpolator.h>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 MagneticField::MagneticField(const LU::SessionReaderSharedPtr &session,
-                             const std::weak_ptr<TokamakSystem> &eqn_sys,
+                             const std::weak_ptr<PlasmaSystem> &eqn_sys,
                              Array<OneD, MR::DisContFieldSharedPtr> &pB,
                              const int dim)
     : B(pB), ndim(dim), ptsIO(session->GetComm()), m_sys(eqn_sys)
@@ -246,4 +246,4 @@ void MagneticField::Update(NekDouble time)
     }
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

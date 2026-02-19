@@ -1,9 +1,9 @@
-#ifndef TOKAMAKIDEALGASEOS_HPP
-#define TOKAMAKIDEALGASEOS_HPP
+#ifndef PLASMA_IDEALGASEOS_HPP
+#define PLASMA_IDEALGASEOS_HPP
 
 #include "EquationOfState.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /**
@@ -70,6 +70,6 @@ private:
     }
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

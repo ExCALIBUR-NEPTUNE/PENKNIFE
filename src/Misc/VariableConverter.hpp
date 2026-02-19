@@ -1,5 +1,5 @@
-#ifndef TOKAMAKVARIABLECONVERTER_HPP
-#define TOKAMAKVARIABLECONVERTER_HPP
+#ifndef PLASMA_VARIABLECONVERTER_HPP
+#define PLASMA_VARIABLECONVERTER_HPP
 
 #include "EquationOfState.hpp"
 #include "nektar_interface/utilities.hpp"
@@ -8,10 +8,10 @@
 
 namespace SD = Nektar::SpatialDomains;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 // Forward declarations
-class TokamakSystem;
+class PlasmaSystem;
 class VariableConverter;
 typedef std::shared_ptr<VariableConverter> VariableConverterSharedPtr;
 /**
@@ -20,7 +20,7 @@ typedef std::shared_ptr<VariableConverter> VariableConverterSharedPtr;
 class VariableConverter
 {
 public:
-    VariableConverter(const std::weak_ptr<TokamakSystem> &pSystem,
+    VariableConverter(const std::weak_ptr<PlasmaSystem> &pSystem,
                       const int spaceDim);
 
     ~VariableConverter() = default;
@@ -120,7 +120,7 @@ public:
     }
 
 protected:
-    const std::weak_ptr<TokamakSystem> m_system;
+    const std::weak_ptr<PlasmaSystem> m_system;
     const NektarFieldIndexMap &field_to_index;
     int omega_idx;
     int pe_idx;
@@ -128,6 +128,6 @@ protected:
     size_t m_spacedim;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 
 #endif

@@ -1,10 +1,10 @@
 #ifndef SINGLEDIFFUSIVEFIELD_HPP
 #define SINGLEDIFFUSIVEFIELD_HPP
-#include "TokamakSystem.hpp"
+#include "PlasmaSystem.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
-class SingleDiffusiveField : public TokamakSystem
+class SingleDiffusiveField : public PlasmaSystem
 {
 public:
     friend class MemoryManager<SingleDiffusiveField>;
@@ -73,5 +73,5 @@ protected:
     std::shared_ptr<DisContField> diag_field;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

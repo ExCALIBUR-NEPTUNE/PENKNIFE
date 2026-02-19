@@ -1,9 +1,9 @@
 #include "ReducedBraginskii.hpp"
-#include "../RiemannSolvers/TokamakSolver.hpp"
+#include "../RiemannSolvers/PlasmaSolver.hpp"
 #include <SolverUtils/Advection/AdvectionNonConservative.h>
 #include <SolverUtils/Advection/AdvectionWeakDG.h>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /// Name of class
@@ -27,7 +27,7 @@ static SU::EquationSystemSharedPtr create(
 
 ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
                                      const SD::MeshGraphSharedPtr &graph)
-    : TokamakSystem(session, graph)
+    : PlasmaSystem(session, graph)
 {
     this->n_indep_fields       = 1; // p_e
     this->n_fields_per_species = 3; // n_i, v_i, p_i
@@ -35,7 +35,7 @@ ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
 
 void ReducedBraginskii::v_InitObject(bool DeclareFields)
 {
-    TokamakSystem::v_InitObject(DeclareFields);
+    PlasmaSystem::v_InitObject(DeclareFields);
 
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
@@ -119,7 +119,7 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
     // callback functions
     this->riemann_solver = SU::GetRiemannSolverFactory().CreateInstance(
         this->riemann_solver_type, m_session);
-    auto t = std::dynamic_pointer_cast<TokamakSolver>(this->riemann_solver);
+    auto t = std::dynamic_pointer_cast<PlasmaSolver>(this->riemann_solver);
     this->riemann_solver->SetVector("Vn", &ReducedBraginskii::GetAdvVelNorm,
                                     this);
 
@@ -186,7 +186,7 @@ bool ReducedBraginskii::v_PostIntegrate(int step)
 
     // Writes a step of the particle trajectory.
 
-    return TokamakSystem::v_PostIntegrate(step);
+    return PlasmaSystem::v_PostIntegrate(step);
 }
 
 /**
@@ -987,13 +987,13 @@ void ReducedBraginskii::DoParticlesCoeff(
 void ReducedBraginskii::v_SetInitialConditions(NekDouble init_time,
                                                bool dump_ICs, const int domain)
 {
-    TokamakSystem::v_SetInitialConditions(init_time, dump_ICs, domain);
+    PlasmaSystem::v_SetInitialConditions(init_time, dump_ICs, domain);
     Checkpoint_Output(0);
 }
 
 void ReducedBraginskii::load_params()
 {
-    TokamakSystem::load_params();
+    PlasmaSystem::load_params();
     // Type of advection to use. Default is DG.
     m_session->LoadSolverInfo("AdvectionType", this->adv_type, "WeakDG");
     // Type of Riemann solver to use. Default = "Upwind"
@@ -1057,7 +1057,7 @@ void ReducedBraginskii::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)
 {
-    TokamakSystem::v_ExtraFldOutput(fieldcoeffs, variables);
+    PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
     const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
 
@@ -1081,4 +1081,4 @@ void ReducedBraginskii::v_ExtraFldOutput(
         }
     }
 }
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

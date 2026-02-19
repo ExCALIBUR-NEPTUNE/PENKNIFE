@@ -6,7 +6,7 @@
 
 using namespace VANTAGE::Reactions;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 class ReactionSystem : public ParticleSystem
@@ -165,5 +165,5 @@ protected:
     std::shared_ptr<ReactionsBoundary> boundary;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

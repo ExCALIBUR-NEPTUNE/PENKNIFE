@@ -1,24 +1,24 @@
 #include "BohmBC.hpp"
-#include "../EquationSystems/TokamakSystem.hpp"
+#include "../EquationSystems/PlasmaSystem.hpp"
 
 using namespace std;
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 std::string BohmBC::className =
-    GetTokamakBaseBndCondFactory().RegisterCreatorFunction(
+    GetPlasmaBaseBndCondFactory().RegisterCreatorFunction(
         "Bohm", BohmBC::create, "Bohm boundary condition.");
 
 BohmBC::BohmBC(const LU::SessionReaderSharedPtr &pSession,
-               const std::weak_ptr<TokamakSystem> &pSystem,
+               const std::weak_ptr<PlasmaSystem> &pSystem,
                const Array<OneD, MR::ExpListSharedPtr> &pFields,
                const Array<OneD, MR::DisContFieldSharedPtr> &pB,
                const Array<OneD, MR::DisContFieldSharedPtr> &pE,
                Array<OneD, SpatialDomains::BoundaryConditionShPtr> cond,
                Array<OneD, MultiRegions::ExpListSharedPtr> exp,
                const int pSpaceDim, const int bcRegion)
-    : TokamakBaseBndCond(pSession, pSystem, pFields, pB, pE, cond, exp,
+    : PlasmaBaseBndCond(pSession, pSystem, pFields, pB, pE, cond, exp,
                          pSpaceDim, bcRegion)
 {
     m_session->LoadParameter("Ge", Ge, 0.0);
@@ -156,4 +156,4 @@ void BohmBC::v_Apply(const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
     m_bndExp[0]->FwdTrans(phi, m_bndExp[phi_idx]->UpdateCoeffs());
 }
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE

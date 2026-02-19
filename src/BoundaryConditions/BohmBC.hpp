@@ -1,19 +1,19 @@
-#ifndef TOKAMAK_BOHM_HPP
-#define TOKAMAK_BOHM_HPP
+#ifndef PLASMA_BOHM_HPP
+#define PLASMA_BOHM_HPP
 
-#include "TokamakBaseBndCond.hpp"
+#include "PlasmaBaseBndCond.hpp"
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
-class BohmBC : public TokamakBaseBndCond
+class BohmBC : public PlasmaBaseBndCond
 {
 public:
     friend class MemoryManager<BohmBC>;
 
-    static TokamakBaseBndCondSharedPtr create(
+    static PlasmaBaseBndCondSharedPtr create(
         const LU::SessionReaderSharedPtr &pSession,
-        const std::weak_ptr<TokamakSystem> &pSystem,
+        const std::weak_ptr<PlasmaSystem> &pSystem,
         const Array<OneD, MR::ExpListSharedPtr> &pFields,
         const Array<OneD, MR::DisContFieldSharedPtr> &pB,
         const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -22,7 +22,7 @@ public:
         const int bcRegion)
 
     {
-        TokamakBaseBndCondSharedPtr p =
+        PlasmaBaseBndCondSharedPtr p =
             MemoryManager<BohmBC>::AllocateSharedPtr(pSession, pSystem, pFields,
                                                      pB, cond, exp, pE,
                                                      pSpaceDim, bcRegion);
@@ -38,7 +38,7 @@ protected:
 
 private:
     BohmBC(const LU::SessionReaderSharedPtr &pSession,
-           const std::weak_ptr<TokamakSystem> &pSystem,
+           const std::weak_ptr<PlasmaSystem> &pSystem,
            const Array<OneD, MR::ExpListSharedPtr> &pFields,
            const Array<OneD, MR::DisContFieldSharedPtr> &pB,
            const Array<OneD, MR::DisContFieldSharedPtr> &pE,
@@ -58,5 +58,5 @@ private:
     NekDouble me = 1 / 2000;
 };
 
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif

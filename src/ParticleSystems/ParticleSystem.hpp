@@ -12,7 +12,7 @@
 #include <nektar_interface/utilities.hpp>
 #include <neso_particles.hpp>
 
-namespace NESO::Solvers::tokamak
+namespace PENKNIFE
 {
 
 /**
@@ -601,5 +601,5 @@ protected:
             profile_elapsed(t0, profile_timestamp()));
     }
 };
-} // namespace NESO::Solvers::tokamak
+} // namespace PENKNIFE
 #endif
