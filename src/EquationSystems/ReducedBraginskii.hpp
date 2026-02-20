@@ -110,10 +110,6 @@ protected:
                           std::vector<std::string> &variables) override;
 
 private:
-    std::vector<int> ni_idx;
-    std::vector<int> vi_idx;
-    std::vector<int> pi_idx;
-
     int pe_idx;
 
     std::vector<int> ni_src_idx;

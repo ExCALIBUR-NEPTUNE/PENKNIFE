@@ -31,8 +31,7 @@ ElectrostaticTurbulence::ElectrostaticTurbulence(
     const SD::MeshGraphSharedPtr &graph)
     : PlasmaSystem(session, graph)
 {
-    this->n_indep_fields       = 3; // p_e, w, phi
-    this->n_fields_per_species = 3; // n_i, v_i, p_i
+    this->n_indep_fields = 3; // p_e, w, phi
 }
 
 void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
@@ -57,9 +56,9 @@ void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
 
     // Create storage for velocities
     int npts  = GetNpoints();
-    pe_idx    = this->n_fields_per_species * this->n_species;
-    omega_idx = this->n_fields_per_species * this->n_species + 1;
-    phi_idx   = this->n_fields_per_species * this->n_species + 2;
+    pe_idx    = m_indfields.size() - this->n_indep_fields;
+    omega_idx = m_indfields.size() - this->n_indep_fields + 1;
+    phi_idx   = m_indfields.size() - this->n_indep_fields + 2;
 
     // ExB velocity
     this->v_ExB = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);

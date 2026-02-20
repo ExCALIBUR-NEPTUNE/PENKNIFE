@@ -30,7 +30,6 @@ ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
     : PlasmaSystem(session, graph)
 {
     this->n_indep_fields       = 1; // p_e
-    this->n_fields_per_species = 3; // n_i, v_i, p_i
 }
 
 void ReducedBraginskii::v_InitObject(bool DeclareFields)
@@ -58,7 +57,7 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
     this->m_kcross = Array<OneD, NekDouble>(npts, 0.0);
     this->m_kperp  = Array<OneD, NekDouble>(npts, 0.0);
 
-    pe_idx = this->n_fields_per_species * this->n_species;
+    pe_idx = m_indfields.size() - this->n_indep_fields;
 
     // Parallel velocities
     this->v_e_par = Array<OneD, NekDouble>(npts, 0.0);
