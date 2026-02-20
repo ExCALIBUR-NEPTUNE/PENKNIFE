@@ -27,7 +27,7 @@ DoubleDiffusiveField::DoubleDiffusiveField(
     const SD::MeshGraphSharedPtr &graph)
     : PlasmaSystem(session, graph)
 {
-    this->n_indep_fields       = 1;
+    this->n_indep_fields = 1;
 }
 
 void DoubleDiffusiveField::v_InitObject(bool DeclareFields)
@@ -223,32 +223,31 @@ void DoubleDiffusiveField::CalcKappa(
     const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f)
 {
     int npoints = m_fields[0]->GetNpoints();
-    double Z, A;
-    // this->neso_config->load_species_parameter(f, "Charge", Z);
-    // this->neso_config->load_species_parameter(f, "Mass", A);
+    double Z    = this->m_ions[f].charge;
+    double A    = this->m_ions[f].mass;
+    int pi_idx  = this->m_ions[f].fields[field_to_index["p"]];
+    int ni_idx  = this->m_ions[f].fields[field_to_index["n"]];
 
     Array<OneD, NekDouble> tmp(npoints, 0.0);
 
     for (const auto &[s2, v2] : this->GetIons())
     {
-        double Z2, A2;
-        // this->neso_config->load_species_parameter(s2, "Charge", Z2);
-        // this->neso_config->load_species_parameter(s2, "Mass", A2);
-        int ni2_idx = v2.fields.at(field_to_index["n"]);
+        double Z2   = this->m_ions[s2].charge;
+        double A2   = this->m_ions[s2].mass;
+        int ni_idx2 = this->m_ions[s2].fields.at(field_to_index["n"]);
+
         for (int p = 0; p < npoints; ++p)
         {
-            tmp[p] += Z2 * Z2 * sqrt(A2 / (A + A2)) * in_arr[ni2_idx][p];
+            tmp[p] += Z2 * Z2 * sqrt(A2 / (A + A2)) * in_arr[ni_idx2][p];
         }
     }
-    int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
-    int pi_idx = m_ions[f].fields.at(field_to_index.at("e"));
 
     for (int p = 0; p < npoints; ++p)
     {
         this->m_kpar[p] = this->kappa_i_par * in_arr[ni_idx][p] *
                           (in_arr[pi_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
         this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
-                           in_arr[ni_idx[f]][p] /
+                           in_arr[ni_idx][p] /
                            (this->mag_B[p] * sqrt(in_arr[pi_idx][p]));
         this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
                             in_arr[pi_idx][p] / (Z * sqrt(this->mag_B[p]));
