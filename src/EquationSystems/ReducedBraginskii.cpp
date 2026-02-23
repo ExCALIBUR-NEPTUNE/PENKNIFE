@@ -349,21 +349,16 @@ void ReducedBraginskii::CalcVelocities(
         int ni_idx = v.fields.at(field_to_index["n"]);
         int vi_idx = v.fields.at(field_to_index["v"]);
         int pi_idx = v.fields.at(field_to_index["p"]);
-        // Calculate Ion parallel velocities
-        Vmath::Smul(npts, 1.0 / v.mass, inarray[vi_idx], 1, this->v_i_par[s],
-                    1);
-        Vmath::Svtvp(npts, v.charge, this->v_i_par[s], 1,
-                     m_fields[1]->GetPhys(), 1, m_fields[1]->UpdatePhys(), 1);
 
-        Vmath::Vdiv(npts, this->v_i_par[s], 1, inarray[ni_idx], 1,
-                    this->v_i_par[s], 1);
-
-        for (int d = 0; d < m_spacedim; ++d)
+        for (int p = 0; p < npts; ++p)
         {
-            Vmath::Vmul(npts, this->b_unit[d], 1, this->v_i_par[s], 1,
-                        adv_vel[ni_idx][d], 1);
-            Vmath::Vcopy(npts, adv_vel[ni_idx][d], 1, adv_vel[vi_idx][d], 1);
-            Vmath::Vcopy(npts, adv_vel[ni_idx][d], 1, adv_vel[pi_idx][d], 1);
+            double v_i_par = inarray[vi_idx][p] / (v.mass * inarray[ni_idx][p]);
+            for (int d = 0; d < m_spacedim; ++d)
+            {
+                adv_vel[ni_idx][d][p] = v_i_par * this->b_unit[d][p];
+                adv_vel[vi_idx][d][p] = v_i_par * this->b_unit[d][p];
+                adv_vel[pi_idx][d][p] = v_i_par * this->b_unit[d][p];
+            }
         }
     }
     Vmath::Vdiv(npts, m_fields[1]->GetPhys(), 1, ne, 1, this->v_e_par, 1);
@@ -379,18 +374,16 @@ void ReducedBraginskii::CalcVelocities(
         int nn_idx = v.fields.at(field_to_index["n"]);
         int vn_idx = v.fields.at(field_to_index["v"]);
         int pn_idx = v.fields.at(field_to_index["p"]);
-        // Calculate Ion parallel velocities
-        Vmath::Smul(npts, 1.0 / v.mass, inarray[vn_idx], 1, this->v_i_par[s],
-                    1);
-        Vmath::Vdiv(npts, this->v_i_par[s], 1, inarray[nn_idx], 1,
-                    this->v_i_par[s], 1);
 
-        for (int d = 0; d < m_spacedim; ++d)
+        for (int p = 0; p < npts; ++p)
         {
-            Vmath::Vmul(npts, this->b_unit[d], 1, this->v_i_par[s], 1,
-                        adv_vel[nn_idx][d], 1);
-            Vmath::Vcopy(npts, adv_vel[nn_idx][d], 1, adv_vel[vn_idx][d], 1);
-            Vmath::Vcopy(npts, adv_vel[nn_idx][d], 1, adv_vel[pn_idx][d], 1);
+            double v_i_par = inarray[vn_idx][p] / (v.mass * inarray[nn_idx][p]);
+            for (int d = 0; d < m_spacedim; ++d)
+            {
+                adv_vel[nn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                adv_vel[vn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                adv_vel[pn_idx][d][p] = v_i_par * this->b_unit[d][p];
+            }
         }
     }
 }
@@ -447,9 +440,11 @@ void ReducedBraginskii::GetFluxVector(
 
     for (int d = 0; d < m_spacedim; ++d)
     {
-        // Electron Energy Flux
-        Vmath::Vmul(npts, field_vals[pe_idx], 1, this->adv_vel[pe_idx][d], 1,
-                    fluxes[pe_idx][d], 1);
+        for (int p = 0; p < npts; ++p)
+        {
+            fluxes[pe_idx][d][p] =
+                this->adv_vel[pe_idx][d][p] * field_vals[pe_idx][p];
+        }
     }
 
     for (const auto &[s, v] : this->GetSpecies())
@@ -460,15 +455,15 @@ void ReducedBraginskii::GetFluxVector(
 
         for (int d = 0; d < m_spacedim; ++d)
         {
-            // Ion Density Flux
-            Vmath::Vmul(npts, field_vals[ni_idx], 1, this->adv_vel[ni_idx][d],
-                        1, fluxes[ni_idx][d], 1);
-            // Ion Momentum Flux
-            Vmath::Vmul(npts, field_vals[vi_idx], 1, this->adv_vel[vi_idx][d],
-                        1, fluxes[vi_idx][d], 1);
-            // Ion Energy Flux
-            Vmath::Vmul(npts, field_vals[pi_idx], 1, this->adv_vel[pi_idx][d],
-                        1, fluxes[pi_idx][d], 1);
+            for (int p = 0; p < npts; ++p)
+            {
+                fluxes[ni_idx][d][p] =
+                    this->adv_vel[ni_idx][d][p] * field_vals[ni_idx][p];
+                fluxes[vi_idx][d][p] =
+                    this->adv_vel[vi_idx][d][p] * field_vals[vi_idx][p];
+                fluxes[pi_idx][d][p] =
+                    this->adv_vel[pi_idx][d][p] * field_vals[pi_idx][p];
+            }
         }
     }
 }
@@ -727,8 +722,8 @@ void ReducedBraginskii::CalcNeutralSources_nvp(
         double SGN = -kIZ * ne[p] * vn[p] + krec * ne[p] * vi[p] +
                      kCX * nn[p] * vi[p] - kCX * ni[p] * vn[p];
 
-        double vdiffsq =
-            (vi[p] / ni[p] - vn[p] / nn[p]) * (vi[p] / ni[p] - vn[p] / nn[p]);
+        double vdiffsq = (vi[p] / ni[p] - vn[p] / nn[p]) *
+                         (vi[p] / ni[p] - vn[p] / nn[p]) / (m * m);
         double SP = -kIZ * ne[p] * pn[p] + krec * ne[p] * pi[p] +
                     kCX * nn[p] * pi[p] - kCX * ni[p] * pn[p] +
                     (m * ni[p] / 3) * (krec * ne[p] + kCX * nn[p]) * vdiffsq;
@@ -744,8 +739,8 @@ void ReducedBraginskii::CalcNeutralSources_nvp(
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
-        outarray[vn_idx][p] += SGN;
-        outarray[vi_idx][p] -= SGN + SN * vi[p] / ni[p];
+        outarray[vn_idx][p] += m * SGN;
+        outarray[vi_idx][p] -= m * SGN + SN * vi[p] / ni[p];
         outarray[pn_idx][p] += SP;
         outarray[pi_idx][p] += SPI;
     }
@@ -787,8 +782,8 @@ void ReducedBraginskii::CalcNeutralSources_nv(
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
-        outarray[vn_idx][p] += SGN;
-        outarray[vi_idx][p] -= SGN + SN * vi[p] / ni[p];
+        outarray[vn_idx][p] += m * SGN;
+        outarray[vi_idx][p] -= m * SGN + SN * vi[p] / ni[p];
     }
 }
 
@@ -820,8 +815,8 @@ void ReducedBraginskii::CalcNeutralSources_nv(
         double SGN = -kIZ * ne[p] * vn[p] + krec * ne[p] * vi[p] +
                      kCX * nn[p] * vi[p] - kCX * ni[p] * vn[p];
 
-        double vdiffsq =
-            (vi[p] / ni[p] - vn[p] / nn[p]) * (vi[p] / ni[p] - vn[p] / nn[p]);
+        double vdiffsq = (vi[p] / ni[p] - vn[p] / nn[p]) *
+                         (vi[p] / ni[p] - vn[p] / nn[p]) / (m * m);
 
         double SPI = ni[p] * nn[p] * (kIZ + kCX) * (m / 3) * vdiffsq;
 
@@ -833,8 +828,8 @@ void ReducedBraginskii::CalcNeutralSources_nv(
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
-        outarray[vn_idx][p] += SGN;
-        outarray[vi_idx][p] -= SGN + SN * vi[p] / ni[p];
+        outarray[vn_idx][p] += m * SGN;
+        outarray[vi_idx][p] -= m * SGN + SN * vi[p] / ni[p];
         outarray[pi_idx][p] += SPI;
     }
 }
