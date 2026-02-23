@@ -78,8 +78,35 @@ protected:
         const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &q_field,
         Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
 
-    void CalcNeutralRates(int s, int ion,
-                          const Array<OneD, Array<OneD, NekDouble>> &inarray);
+    void CalcNeutralSources(const double m, int pe_idx, int ni_idx, int vi_idx,
+                            int pi_idx, int nn_idx, int vn_idx, int pn_idx,
+                            const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            const Array<OneD, NekDouble> &ne,
+                            Array<OneD, Array<OneD, NekDouble>> &outarray,
+                            Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources(const double m, int pe_idx, int ni_idx, int vi_idx,
+                            int nn_idx, int vn_idx,
+                            const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            const Array<OneD, NekDouble> &ne,
+                            Array<OneD, Array<OneD, NekDouble>> &outarray,
+                            Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources(const double m, int pe_idx, int ni_idx, int vi_idx,
+                            int pi_idx, int nn_idx, int vn_idx,
+                            const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            const Array<OneD, NekDouble> &ne,
+                            Array<OneD, Array<OneD, NekDouble>> &outarray,
+                            Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources(const double m, int pe_idx, int ni_idx, int pi_idx,
+                            int nn_idx, int pn_idx,
+                            const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            const Array<OneD, NekDouble> &ne,
+                            Array<OneD, Array<OneD, NekDouble>> &outarray,
+                            Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources(const double m, int pe_idx, int ni_idx, int nn_idx,
+                            const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            const Array<OneD, NekDouble> &ne,
+                            Array<OneD, Array<OneD, NekDouble>> &outarray,
+                            Array<OneD, NekDouble> &Spe);
 
     void AddNeutralSources(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                            Array<OneD, Array<OneD, NekDouble>> &outarray);
