@@ -698,7 +698,7 @@ void ReducedBraginskii::GetFluxVectorDiff(
     }
 }
 
-void ReducedBraginskii::CalcNeutralSources(
+void ReducedBraginskii::CalcNeutralSources_nvp(
     const double m, int pe_idx, int ni_idx, int vi_idx, int pi_idx, int nn_idx,
     int vn_idx, int pn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
@@ -751,7 +751,7 @@ void ReducedBraginskii::CalcNeutralSources(
     }
 }
 
-void ReducedBraginskii::CalcNeutralSources(
+void ReducedBraginskii::CalcNeutralSources_nv(
     const double m, int pe_idx, int ni_idx, int vi_idx, int nn_idx, int vn_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
@@ -792,7 +792,7 @@ void ReducedBraginskii::CalcNeutralSources(
     }
 }
 
-void ReducedBraginskii::CalcNeutralSources(
+void ReducedBraginskii::CalcNeutralSources_nv(
     const double m, int pe_idx, int ni_idx, int vi_idx, int pi_idx, int nn_idx,
     int vn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
@@ -839,7 +839,7 @@ void ReducedBraginskii::CalcNeutralSources(
     }
 }
 
-void ReducedBraginskii::CalcNeutralSources(
+void ReducedBraginskii::CalcNeutralSources_np(
     const double m, int pe_idx, int ni_idx, int pi_idx, int nn_idx, int pn_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
@@ -882,7 +882,7 @@ void ReducedBraginskii::CalcNeutralSources(
     }
 }
 
-void ReducedBraginskii::CalcNeutralSources(
+void ReducedBraginskii::CalcNeutralSources_n(
     const double m, int pe_idx, int ni_idx, int nn_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
@@ -937,15 +937,15 @@ void ReducedBraginskii::AddNeutralSources(
                 // Neutral n,v,p; Ion n,v,p
                 int vn_idx = v.fields.at(field_to_index["v"]);
                 int vi_idx = this->m_ions[v.ion].fields.at(field_to_index["v"]);
-                CalcNeutralSources(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
-                                   nn_idx, vn_idx, pn_idx, inarray, ne,
-                                   outarray, tmp);
+                CalcNeutralSources_nvp(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
+                                       nn_idx, vn_idx, pn_idx, inarray, ne,
+                                       outarray, tmp);
             }
             else
             {
                 // Neutral n,p; Ion n,v,p; Ion n,p;
-                CalcNeutralSources(v.mass, pe_idx, ni_idx, pi_idx, nn_idx,
-                                   pn_idx, inarray, ne, outarray, tmp);
+                CalcNeutralSources_np(v.mass, pe_idx, ni_idx, pi_idx, nn_idx,
+                                      pn_idx, inarray, ne, outarray, tmp);
             }
         }
 
@@ -958,21 +958,22 @@ void ReducedBraginskii::AddNeutralSources(
             {
                 // Neutral n,v; Ion n,v,p
                 int pi_idx = this->m_ions[v.ion].fields.at(field_to_index["p"]);
-                CalcNeutralSources(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
-                                   nn_idx, vn_idx, inarray, ne, outarray, tmp);
+                CalcNeutralSources_nv(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
+                                      nn_idx, vn_idx, inarray, ne, outarray,
+                                      tmp);
             }
             else
             {
                 // Neutral n,v; Ion n,v
-                CalcNeutralSources(v.mass, pe_idx, ni_idx, vi_idx, nn_idx,
-                                   vn_idx, inarray, ne, outarray, tmp);
+                CalcNeutralSources_nv(v.mass, pe_idx, ni_idx, vi_idx, nn_idx,
+                                      vn_idx, inarray, ne, outarray, tmp);
             }
         }
         else
         {
             // Neutral n; Ion n; Ion n,v; Ion n,v,p
-            CalcNeutralSources(v.mass, pe_idx, ni_idx, nn_idx, inarray, ne,
-                               outarray, tmp);
+            CalcNeutralSources_n(v.mass, pe_idx, ni_idx, nn_idx, inarray, ne,
+                                 outarray, tmp);
         }
     }
     Vmath::Vadd(nPts, outarray[pe_idx], 1, tmp, 1, outarray[pe_idx], 1);
