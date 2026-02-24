@@ -417,9 +417,11 @@ Array<OneD, Array<OneD, NekDouble>> &ReducedBraginskii::GetAdvVelNorm()
         {
             m_indfields[j]->ExtractTracePhys(this->adv_vel[j][d],
                                              this->adv_vel_trace[j][d]);
-            Vmath::Vvtvp(num_trace_pts, normals[d], 1,
-                         this->adv_vel_trace[j][d], 1, this->trace_vel_norm[j],
-                         1, this->trace_vel_norm[j], 1);
+            for (int p = 0; p < num_trace_pts; ++p)
+            {
+                this->trace_vel_norm[j][p] +=
+                    normals[d][p] * this->adv_vel_trace[j][d][p];
+            }
         }
     }
     return this->trace_vel_norm;
@@ -648,46 +650,49 @@ void ReducedBraginskii::GetFluxVectorDiff(
 
         for (unsigned int j = 0; j < nDim; ++j)
         {
-            Vmath::Vmul(nPts, m_D[vc[j][0]].GetValue(), 1, qfield[0][ni_idx], 1,
-                        fluxes[j][ni_idx], 1);
-            for (unsigned int k = 1; k < nDim; ++k)
+            for (unsigned int k = 0; k < nDim; ++k)
             {
-                Vmath::Vvtvp(nPts, m_D[vc[j][k]].GetValue(), 1,
-                             qfield[k][ni_idx], 1, fluxes[j][ni_idx], 1,
-                             fluxes[j][ni_idx], 1);
+                const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
+                for (int p = 0; p < nPts; ++p)
+                {
+                    fluxes[j][ni_idx][p] += D[p] * qfield[k][ni_idx][p];
+                }
             }
         }
 
         if (nDim == 3)
         {
-            Vmath::Vvtvvtm(nPts, b_unit[1], 1, qfield[2][pi_idx], 1, b_unit[2],
-                           1, qfield[1][pi_idx], 1, fluxes[0][pi_idx], 1);
-            Vmath::Vvtvvtm(nPts, b_unit[2], 1, qfield[0][pi_idx], 1, b_unit[0],
-                           1, qfield[2][pi_idx], 1, fluxes[1][pi_idx], 1);
-            Vmath::Vvtvvtm(nPts, b_unit[0], 1, qfield[1][pi_idx], 1, b_unit[1],
-                           1, qfield[0][pi_idx], 1, fluxes[2][pi_idx], 1);
+            for (int p = 0; p < nPts; ++p)
+            {
+                fluxes[0][pi_idx][p] = b_unit[1][p] * qfield[2][pi_idx][p] -
+                                       b_unit[2][p] * qfield[1][pi_idx][p];
+                fluxes[1][pi_idx][p] = b_unit[2][p] * qfield[0][pi_idx][p] -
+                                       b_unit[0][p] * qfield[2][pi_idx][p];
+                fluxes[2][pi_idx][p] = b_unit[0][p] * qfield[1][pi_idx][p] -
+                                       b_unit[1][p] * qfield[0][pi_idx][p];
+            }
         }
         else
         {
-            Vmath::Vmul(nPts, b_unit[2], 1, qfield[1][pi_idx], 1,
-                        fluxes[0][pi_idx], 1);
-            Vmath::Neg(nPts, fluxes[0][pi_idx], 1);
-            Vmath::Vmul(nPts, b_unit[2], 1, qfield[0][pi_idx], 1,
-                        fluxes[1][pi_idx], 1);
+            for (int p = 0; p < nPts; ++p)
+            {
+                fluxes[0][pi_idx][p] = -b_unit[2][p] * qfield[1][pi_idx][p];
+                fluxes[1][pi_idx][p] = b_unit[2][p] * qfield[0][pi_idx][p];
+            }
         }
 
         CalcKappa(in_arr, s);
         CalcDiffTensor();
         for (unsigned int j = 0; j < nDim; ++j)
         {
-            Vmath::Vmul(nPts, m_kcross, 1, fluxes[j][pi_idx], 1,
-                        fluxes[j][pi_idx], 1);
             // Calc diffusion of n with D tensor and n field
             for (unsigned int k = 0; k < nDim; ++k)
             {
-                Vmath::Vvtvp(nPts, m_D[vc[j][k]].GetValue(), 1,
-                             qfield[k][pi_idx], 1, fluxes[j][pi_idx], 1,
-                             fluxes[j][pi_idx], 1);
+                const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
+                for (int p = 0; p < nPts; ++p)
+                {
+                    fluxes[j][pi_idx][p] += D[p] * qfield[k][pi_idx][p];
+                }
             }
         }
     }
