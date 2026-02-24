@@ -35,9 +35,7 @@ protected:
     void v_InitObject(bool DeclareFields = true) override;
     void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                                 const int domain) override;
-    // void v_SetBoundaryConditions(Array<OneD, Array<OneD, NekDouble>>
-    // &physarray,
-    //                              NekDouble time) override;
+
     bool v_PostIntegrate(int step) override;
     void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
                   Array<OneD, Array<OneD, NekDouble>> &outarray,
@@ -69,10 +67,7 @@ protected:
     void CalcOmegaFlux(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                        Array<OneD, Array<OneD, NekDouble>> &omega_flux);
 
-    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                        const Array<OneD, Array<OneD, NekDouble>> &v_ExB,
-                        const Array<OneD, NekDouble> &ne,
-                        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &);
+    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray);
 
     Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
     Array<OneD, NekDouble> &GetOmegaFlux();
@@ -159,6 +154,10 @@ private:
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel_trace;
     // Per field advection velocities normal to trace elements
     Array<OneD, Array<OneD, NekDouble>> trace_vel_norm;
+
+    // For Advection
+    std::vector<int> advected_fields;
+    Array<OneD, MR::ExpListSharedPtr> m_advfields;
 
     // Vorticity Flux
     Array<OneD, Array<OneD, NekDouble>> omega_flux;

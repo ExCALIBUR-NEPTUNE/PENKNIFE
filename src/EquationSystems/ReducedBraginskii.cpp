@@ -57,38 +57,40 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
     this->m_kcross = Array<OneD, NekDouble>(npts, 0.0);
     this->m_kperp  = Array<OneD, NekDouble>(npts, 0.0);
 
+    for (const auto &[s, v] : this->GetSpecies())
+    {
+        if (v.fields.find(field_to_index["v"]) != v.fields.end())
+        {
+            int ni_idx = v.fields.at(field_to_index["n"]);
+            int vi_idx = v.fields.at(field_to_index["v"]);
+            this->advected_fields.push_back(ni_idx);
+            this->advected_fields.push_back(vi_idx);
+
+            if (v.fields.find(field_to_index["p"]) != v.fields.end())
+            {
+                int pi_idx = v.fields.at(field_to_index["p"]);
+                this->advected_fields.push_back(pi_idx);
+            }
+        }
+    }
+
     pe_idx = m_indfields.size() - this->n_indep_fields;
+    this->advected_fields.push_back(pe_idx);
+    m_advfields = Array<OneD, MR::ExpListSharedPtr>(advected_fields.size());
+    for (int a : this->advected_fields)
+    {
+        m_advfields[a] = m_indfields[a];
+    }
 
-    // Parallel velocities
-    this->v_e_par = Array<OneD, NekDouble>(npts, 0.0);
-    this->v_i_par = std::vector<Array<OneD, NekDouble>>(n_species);
-
-    // Per-field advection velocities
-    this->adv_vel =
-        Array<OneD, Array<OneD, Array<OneD, NekDouble>>>(m_indfields.size());
+    this->adv_vel = Array<OneD, Array<OneD, Array<OneD, NekDouble>>>(
+        this->advected_fields.size());
 
     for (int i = 0; i < this->adv_vel.size(); ++i)
     {
         this->adv_vel[i] = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
-    }
-
-    for (int d = 0; d < m_spacedim; ++d)
-    {
-        this->adv_vel[pe_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
-    }
-
-    for (const auto &[s, v] : this->GetSpecies())
-    {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int vi_idx = v.fields.at(field_to_index["v"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
-
-        this->v_i_par[s] = Array<OneD, NekDouble>(npts, 0.0);
-        for (int d = 0; d < m_graph->GetSpaceDimension(); ++d)
+        for (int d = 0; d < m_spacedim; ++d)
         {
-            this->adv_vel[ni_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
-            this->adv_vel[vi_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
-            this->adv_vel[pi_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
+            this->adv_vel[i][d] = Array<OneD, NekDouble>(npts, 0.0);
         }
     }
 
@@ -231,7 +233,7 @@ void ReducedBraginskii::DoOdeRhs(
     // Calculate E
     ComputeE();
     // Calculate ExB, parallel and diamagnetic velocities
-    CalcVelocities(inarray, m_fields[0]->GetPhys(), this->adv_vel);
+    CalcVelocities(inarray);
 
     // Perform advection
     DoAdvection(inarray, outarray, time, Fwd, Bwd);
@@ -269,11 +271,39 @@ void ReducedBraginskii::DoAdvection(
     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
     const Array<OneD, Array<OneD, NekDouble>> &pBwd)
 {
-    int nvariables = inarray.size();
+    int nvariables = this->adv_vel.size();
+    int npointsIn  = GetNpoints();
+    int npointsOut = npointsIn;
+    int nTracePts  = GetTraceTotPoints();
+
     Array<OneD, Array<OneD, NekDouble>> advVel(m_spacedim);
 
-    m_advection->Advect(nvariables, m_indfields, advVel, inarray, outarray,
-                        time, pFwd, pBwd);
+    Array<OneD, Array<OneD, NekDouble>> outarrayAdv(nvariables);
+    for (int i = 0; i < nvariables; ++i)
+    {
+        outarrayAdv[i] = Array<OneD, NekDouble>(npointsOut, 0.0);
+    }
+
+    Array<OneD, Array<OneD, NekDouble>> inarrayAdv(nvariables);
+    Array<OneD, Array<OneD, NekDouble>> inFwd(nvariables);
+    Array<OneD, Array<OneD, NekDouble>> inBwd(nvariables);
+
+    for (int i = 0; i < nvariables; ++i)
+    {
+        inarrayAdv[i] = Array<OneD, NekDouble>(npointsIn, 0.0);
+        inFwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
+        inBwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
+    }
+
+    m_advection->Advect(nvariables, m_advfields, advVel, inarrayAdv,
+                        outarrayAdv, time, pFwd, pBwd);
+
+    for (int i = 0; i < nvariables; ++i)
+    {
+        Vmath::Vadd(npointsOut, outarrayAdv[i], 1,
+                    outarray[this->advected_fields[i]], 1,
+                    outarray[this->advected_fields[i]], 1);
+    }
 }
 
 /**
@@ -345,21 +375,20 @@ void ReducedBraginskii::ComputeE()
 }
 
 void ReducedBraginskii::CalcVelocities(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &adv_vel)
+    const Array<OneD, Array<OneD, NekDouble>> &inarray)
 {
     int npts = inarray[0].size();
-    for (int f = 0; f < adv_vel.size(); ++f)
+    for (int f = 0; f < this->adv_vel.size(); ++f)
     {
-        for (int d = 0; d < adv_vel[f].size(); ++d)
+        for (int d = 0; d < this->adv_vel[f].size(); ++d)
         {
-            Vmath::Zero(npts, adv_vel[f][d], 1);
+            Vmath::Zero(npts, this->adv_vel[f][d], 1);
         }
     }
-
+    const Array<OneD, NekDouble> &ne = m_fields[0]->GetPhys();
     // Zero Electron velocity
-    Vmath::Zero(npts, m_fields[1]->UpdatePhys(), 1);
+    Array<OneD, NekDouble> &j_i = m_fields[1]->UpdatePhys();
+    Vmath::Zero(npts, j_i, 1);
     for (const auto &[s, v] : GetIons())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
@@ -368,21 +397,33 @@ void ReducedBraginskii::CalcVelocities(
 
         for (int p = 0; p < npts; ++p)
         {
+            j_i[p] += v.charge * inarray[vi_idx][p] / v.mass;
             double v_i_par = inarray[vi_idx][p] / (v.mass * inarray[ni_idx][p]);
             for (int d = 0; d < m_spacedim; ++d)
             {
-                adv_vel[ni_idx][d][p] = v_i_par * this->b_unit[d][p];
-                adv_vel[vi_idx][d][p] = v_i_par * this->b_unit[d][p];
-                adv_vel[pi_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[ni_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[vi_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[pi_idx][d][p] = v_i_par * this->b_unit[d][p];
             }
         }
     }
-    Vmath::Vdiv(npts, m_fields[1]->GetPhys(), 1, ne, 1, this->v_e_par, 1);
-
-    for (int d = 0; d < m_spacedim; ++d)
+    Array<OneD, NekDouble> j_par(npts, 0.0);
+    // TODO calculate conductivity
+    double sigma = 0;
+    for (int p = 0; p < npts; ++p)
     {
-        Vmath::Vmul(npts, this->b_unit[d], 1, this->v_e_par, 1,
-                    adv_vel[pe_idx][d], 1);
+        for (int d = 0; d < m_spacedim; ++d)
+        {
+            j_par[p] += sigma * this->E[d]->GetPhys()[p] * this->b_unit[d][p];
+        }
+    }
+    for (int p = 0; p < npts; ++p)
+    {
+        for (int d = 0; d < m_spacedim; ++d)
+        {
+            this->adv_vel[pe_idx][d][p] =
+                this->b_unit[d][p] * (j_i[p] - j_par[p]) / ne[p];
+        }
     }
 
     for (const auto &[s, v] : GetNeutrals())
@@ -396,9 +437,9 @@ void ReducedBraginskii::CalcVelocities(
             double v_i_par = inarray[vn_idx][p] / (v.mass * inarray[nn_idx][p]);
             for (int d = 0; d < m_spacedim; ++d)
             {
-                adv_vel[nn_idx][d][p] = v_i_par * this->b_unit[d][p];
-                adv_vel[vn_idx][d][p] = v_i_par * this->b_unit[d][p];
-                adv_vel[pn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[nn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[vn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[pn_idx][d][p] = v_i_par * this->b_unit[d][p];
             }
         }
     }
@@ -453,8 +494,7 @@ void ReducedBraginskii::GetFluxVector(
     const Array<OneD, Array<OneD, NekDouble>> &field_vals,
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes)
 {
-    int npts       = field_vals[0].size();
-    int nVariables = field_vals.size();
+    int npts = field_vals[0].size();
 
     for (int d = 0; d < m_spacedim; ++d)
     {

@@ -51,9 +51,7 @@ protected:
 
     void ComputeE();
 
-    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                        const Array<OneD, NekDouble> &ne,
-                        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &);
+    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray);
 
     Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
 
@@ -148,11 +146,6 @@ private:
 
     /// Velocities
 
-    // Electron parallel velocity
-    Array<OneD, NekDouble> v_e_par;
-    // Ion parallel velocities
-    std::vector<Array<OneD, NekDouble>> v_i_par;
-
     // Per field advection velocities
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel;
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel_trace;
@@ -169,8 +162,11 @@ private:
     /// Advection type
     std::string adv_type;
 
+    // For Advection
+    std::vector<int> advected_fields;
+    Array<OneD, MR::ExpListSharedPtr> m_advfields;
+
     // For Diffusion
-    // workaround for bug in DiffusionLDG
     Array<OneD, MR::ExpListSharedPtr> m_difffields;
     //
     StdRegions::ConstFactorMap m_factors;
