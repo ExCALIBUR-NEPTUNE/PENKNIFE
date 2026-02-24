@@ -137,33 +137,40 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
 
+        int cnt = 0;
         for (const auto &[s, v] : this->GetIons())
         {
-            ni_src_idx.push_back(s * (2 + m_spacedim));
-            pi_src_idx.push_back(1 + s * (2 + m_spacedim));
-            vi_src_idx.push_back(2 + s * (2 + m_spacedim));
-
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
             src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_DENSITY"));
             src_components.push_back(0);
+            ni_src_idx.push_back(cnt++);
 
-            this->src_fields.emplace_back(
-                MemoryManager<MR::DisContField>::AllocateSharedPtr(
-                    *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-
-            src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
-            src_components.push_back(0);
-
-            for (int d = 0; d < this->m_spacedim; ++d)
+            if (v.fields.find(field_to_index["v"]) != v.fields.end())
+            {
+                for (int d = 0; d < this->m_spacedim; ++d)
+                {
+                    this->src_fields.emplace_back(
+                        MemoryManager<MR::DisContField>::AllocateSharedPtr(
+                            *std::dynamic_pointer_cast<MR::DisContField>(
+                                m_fields[0])));
+                    src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
+                    src_components.push_back(d);
+                }
+                vi_src_idx.push_back(cnt);
+                cnt += m_spacedim;
+            }
+            if (v.fields.find(field_to_index["p"]) != v.fields.end())
             {
                 this->src_fields.emplace_back(
                     MemoryManager<MR::DisContField>::AllocateSharedPtr(
                         *std::dynamic_pointer_cast<MR::DisContField>(
                             m_fields[0])));
-                src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
-                src_components.push_back(d);
+
+                src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
+                src_components.push_back(0);
+                pi_src_idx.push_back(cnt++);
             }
         }
         this->src_fields.emplace_back(
@@ -285,29 +292,38 @@ void ReducedBraginskii::DoParticles(
     for (const auto &[s, v] : this->GetIons())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
-        int vi_idx = v.fields.at(field_to_index["v"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
         //  Add contribution to ion density
         Vmath::Vadd(npts, outarray[ni_idx], 1,
                     this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
                     outarray[ni_idx], 1);
 
-        // Add contribution to ion energy
-        Vmath::Vadd(npts, outarray[pi_idx], 1,
-                    this->src_fields[pi_src_idx[s]]->GetPhys(), 1,
-                    outarray[pi_idx], 1);
-        // Add number density source contribution to ion energy
-        Array<OneD, NekDouble> dynamic_energy(npts);
-        m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
-        Vmath::Vvtvp(npts, dynamic_energy, 1,
-                     this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                     outarray[pi_idx], 1, outarray[pi_idx], 1);
-
-        for (int d = 0; d < m_spacedim; ++d)
+        if (v.fields.find(field_to_index["v"]) != v.fields.end())
         {
-            Vmath::Vvtvp(npts, this->b_unit[d], 1,
-                         this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
-                         outarray[vi_idx], 1, outarray[vi_idx], 1);
+            int vi_idx = v.fields.at(field_to_index["v"]);
+
+            for (int d = 0; d < m_spacedim; ++d)
+            {
+                Vmath::Vvtvp(npts, this->b_unit[d], 1,
+                             this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
+                             outarray[vi_idx], 1, outarray[vi_idx], 1);
+            }
+        }
+
+        if (v.fields.find(field_to_index["p"]) != v.fields.end())
+        {
+            int pi_idx = v.fields.at(field_to_index["p"]);
+
+            // Add contribution to ion energy
+            Vmath::Vadd(npts, outarray[pi_idx], 1,
+                        this->src_fields[pi_src_idx[s]]->GetPhys(), 1,
+                        outarray[pi_idx], 1);
+
+            // Add number density source contribution to ion energy
+            Array<OneD, NekDouble> dynamic_energy(npts);
+            m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
+            Vmath::Vvtvp(npts, dynamic_energy, 1,
+                         this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
+                         outarray[pi_idx], 1, outarray[pi_idx], 1);
         }
     }
 }
