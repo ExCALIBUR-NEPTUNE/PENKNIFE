@@ -60,14 +60,15 @@ protected:
                   [[maybe_unused]] const Array<OneD, NekDouble> &ne);
     void ComputeE();
     void ComputevExB();
-    void AddDriftVelocities(
-        const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &adv_vel);
+
+    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                        [[maybe_unused]] Array<OneD, Array<OneD, NekDouble>>
+                            &outarray = NullNekDoubleArrayOfArray);
+    void AddDriftVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                            [[maybe_unused]] Array<OneD, Array<OneD, NekDouble>>
+                                &outarray = NullNekDoubleArrayOfArray);
     void CalcOmegaFlux(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                        Array<OneD, Array<OneD, NekDouble>> &omega_flux);
-
-    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray);
 
     Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
     Array<OneD, NekDouble> &GetOmegaFlux();
