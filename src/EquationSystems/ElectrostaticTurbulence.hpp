@@ -125,13 +125,13 @@ protected:
                           std::vector<std::string> &variables) override;
 
 private:
-    int pe_idx;
+    int ee_idx;
     int omega_idx;
     int phi_idx;
 
     std::vector<int> ni_src_idx;
     std::vector<int> vi_src_idx;
-    std::vector<int> pi_src_idx;
+    std::vector<int> ei_src_idx;
 
     /// Hasegawa-Wakatani α
     NekDouble alpha;

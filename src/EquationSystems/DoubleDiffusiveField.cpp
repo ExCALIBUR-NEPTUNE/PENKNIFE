@@ -225,7 +225,7 @@ void DoubleDiffusiveField::CalcKappa(
     int npoints = m_fields[0]->GetNpoints();
     double Z    = this->m_ions[f].charge;
     double A    = this->m_ions[f].mass;
-    int pi_idx  = this->m_ions[f].fields[field_to_index["p"]];
+    int ei_idx  = this->m_ions[f].fields[field_to_index["e"]];
     int ni_idx  = this->m_ions[f].fields[field_to_index["n"]];
 
     Array<OneD, NekDouble> tmp(npoints, 0.0);
@@ -245,12 +245,12 @@ void DoubleDiffusiveField::CalcKappa(
     for (int p = 0; p < npoints; ++p)
     {
         this->m_kpar[p] = this->kappa_i_par * in_arr[ni_idx][p] *
-                          (in_arr[pi_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
+                          (in_arr[ei_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
         this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
                            in_arr[ni_idx][p] /
-                           (this->mag_B[p] * sqrt(in_arr[pi_idx][p]));
+                           (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
         this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
-                            in_arr[pi_idx][p] / (Z * sqrt(this->mag_B[p]));
+                            in_arr[ei_idx][p] / (Z * sqrt(this->mag_B[p]));
     }
 }
 
@@ -379,9 +379,9 @@ void DoubleDiffusiveField::DoDiffusion(
     for (const auto &[s, v] : this->GetSpecies())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
-        int pi_idx = v.fields.at(field_to_index["e"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
         Vmath::Vcopy(npointsIn, inarray[ni_idx], 1, inarrayDiff[ni_idx], 1);
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[pi_idx]);
+        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
     }
 
     // Repeat calculation for trace space
@@ -398,12 +398,12 @@ void DoubleDiffusiveField::DoDiffusion(
         for (const auto &[s, v] : this->GetSpecies())
         {
             int ni_idx = v.fields.at(field_to_index["n"]);
-            int pi_idx = v.fields.at(field_to_index["e"]);
+            int ei_idx = v.fields.at(field_to_index["e"]);
             Vmath::Vcopy(nTracePts, pFwd[ni_idx], 1, inFwd[ni_idx], 1);
             Vmath::Vcopy(nTracePts, pBwd[ni_idx], 1, inBwd[ni_idx], 1);
 
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[pi_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[pi_idx]);
+            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
+            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
         }
     }
 
@@ -433,7 +433,7 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
         CalcK(in_arr, s);
         CalcDiffTensor();
         int ni_idx = v.fields.at(field_to_index["n"]);
-        int pi_idx = v.fields.at(field_to_index["e"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
 
         for (unsigned int j = 0; j < nDim; ++j)
         {
@@ -449,34 +449,34 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
 
         if (nDim == 3)
         {
-            Vmath::Vvtvvtm(nPts, b_unit[1], 1, qfield[2][pi_idx], 1, b_unit[2],
-                           1, qfield[1][pi_idx], 1, fluxes[0][pi_idx], 1);
-            Vmath::Vvtvvtm(nPts, b_unit[2], 1, qfield[0][pi_idx], 1, b_unit[0],
-                           1, qfield[2][pi_idx], 1, fluxes[1][pi_idx], 1);
-            Vmath::Vvtvvtm(nPts, b_unit[0], 1, qfield[1][pi_idx], 1, b_unit[1],
-                           1, qfield[0][pi_idx], 1, fluxes[2][pi_idx], 1);
+            Vmath::Vvtvvtm(nPts, b_unit[1], 1, qfield[2][ei_idx], 1, b_unit[2],
+                           1, qfield[1][ei_idx], 1, fluxes[0][ei_idx], 1);
+            Vmath::Vvtvvtm(nPts, b_unit[2], 1, qfield[0][ei_idx], 1, b_unit[0],
+                           1, qfield[2][ei_idx], 1, fluxes[1][ei_idx], 1);
+            Vmath::Vvtvvtm(nPts, b_unit[0], 1, qfield[1][ei_idx], 1, b_unit[1],
+                           1, qfield[0][ei_idx], 1, fluxes[2][ei_idx], 1);
         }
         else
         {
-            Vmath::Vmul(nPts, b_unit[2], 1, qfield[1][pi_idx], 1,
-                        fluxes[0][pi_idx], 1);
-            Vmath::Neg(nPts, fluxes[0][pi_idx], 1);
-            Vmath::Vmul(nPts, b_unit[2], 1, qfield[0][pi_idx], 1,
-                        fluxes[1][pi_idx], 1);
+            Vmath::Vmul(nPts, b_unit[2], 1, qfield[1][ei_idx], 1,
+                        fluxes[0][ei_idx], 1);
+            Vmath::Neg(nPts, fluxes[0][ei_idx], 1);
+            Vmath::Vmul(nPts, b_unit[2], 1, qfield[0][ei_idx], 1,
+                        fluxes[1][ei_idx], 1);
         }
 
         CalcKappa(in_arr, s);
         CalcDiffTensor();
         for (unsigned int j = 0; j < nDim; ++j)
         {
-            Vmath::Vmul(nPts, m_kcross, 1, fluxes[j][pi_idx], 1,
-                        fluxes[j][pi_idx], 1);
+            Vmath::Vmul(nPts, m_kcross, 1, fluxes[j][ei_idx], 1,
+                        fluxes[j][ei_idx], 1);
             // Calc diffusion of n with D tensor and n field
             for (unsigned int k = 0; k < nDim; ++k)
             {
                 Vmath::Vvtvp(nPts, m_D[vc[j][k]].GetValue(), 1,
-                             qfield[k][pi_idx], 1, fluxes[j][pi_idx], 1,
-                             fluxes[j][pi_idx], 1);
+                             qfield[k][ei_idx], 1, fluxes[j][ei_idx], 1,
+                             fluxes[j][ei_idx], 1);
             }
         }
     }

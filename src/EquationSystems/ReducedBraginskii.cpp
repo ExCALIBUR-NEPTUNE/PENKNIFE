@@ -66,16 +66,16 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
             this->advected_fields.push_back(ni_idx);
             this->advected_fields.push_back(vi_idx);
 
-            if (v.fields.find(field_to_index["p"]) != v.fields.end())
+            if (v.fields.find(field_to_index["e"]) != v.fields.end())
             {
-                int pi_idx = v.fields.at(field_to_index["p"]);
-                this->advected_fields.push_back(pi_idx);
+                int ei_idx = v.fields.at(field_to_index["e"]);
+                this->advected_fields.push_back(ei_idx);
             }
         }
     }
 
-    pe_idx = m_indfields.size() - this->n_indep_fields;
-    this->advected_fields.push_back(pe_idx);
+    ee_idx = m_indfields.size() - this->n_indep_fields;
+    this->advected_fields.push_back(ee_idx);
     m_advfields = Array<OneD, MR::ExpListSharedPtr>(advected_fields.size());
     for (int a : this->advected_fields)
     {
@@ -163,7 +163,7 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
                 vi_src_idx.push_back(cnt);
                 cnt += m_spacedim;
             }
-            if (v.fields.find(field_to_index["p"]) != v.fields.end())
+            if (v.fields.find(field_to_index["e"]) != v.fields.end())
             {
                 this->src_fields.emplace_back(
                     MemoryManager<MR::DisContField>::AllocateSharedPtr(
@@ -172,7 +172,7 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
 
                 src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
                 src_components.push_back(0);
-                pi_src_idx.push_back(cnt++);
+                ei_src_idx.push_back(cnt++);
             }
         }
         this->src_fields.emplace_back(
@@ -316,8 +316,8 @@ void ReducedBraginskii::DoParticles(
     int npts = GetNpoints();
 
     // Add contribution to electron energy
-    Vmath::Vadd(npts, outarray[pe_idx], 1, this->src_fields[0]->GetPhys(), 1,
-                outarray[pe_idx], 1);
+    Vmath::Vadd(npts, outarray[ee_idx], 1, this->src_fields[0]->GetPhys(), 1,
+                outarray[ee_idx], 1);
 
     for (const auto &[s, v] : this->GetIons())
     {
@@ -339,21 +339,21 @@ void ReducedBraginskii::DoParticles(
             }
         }
 
-        if (v.fields.find(field_to_index["p"]) != v.fields.end())
+        if (v.fields.find(field_to_index["e"]) != v.fields.end())
         {
-            int pi_idx = v.fields.at(field_to_index["p"]);
+            int ei_idx = v.fields.at(field_to_index["e"]);
 
             // Add contribution to ion energy
-            Vmath::Vadd(npts, outarray[pi_idx], 1,
-                        this->src_fields[pi_src_idx[s]]->GetPhys(), 1,
-                        outarray[pi_idx], 1);
+            Vmath::Vadd(npts, outarray[ei_idx], 1,
+                        this->src_fields[ei_src_idx[s]]->GetPhys(), 1,
+                        outarray[ei_idx], 1);
 
             // Add number density source contribution to ion energy
             Array<OneD, NekDouble> dynamic_energy(npts);
             m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
             Vmath::Vvtvp(npts, dynamic_energy, 1,
                          this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                         outarray[pi_idx], 1, outarray[pi_idx], 1);
+                         outarray[ei_idx], 1, outarray[ei_idx], 1);
         }
     }
 }
@@ -393,7 +393,7 @@ void ReducedBraginskii::CalcVelocities(
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
         int vi_idx = v.fields.at(field_to_index["v"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
 
         for (int p = 0; p < npts; ++p)
         {
@@ -403,7 +403,7 @@ void ReducedBraginskii::CalcVelocities(
             {
                 this->adv_vel[ni_idx][d][p] = v_i_par * this->b_unit[d][p];
                 this->adv_vel[vi_idx][d][p] = v_i_par * this->b_unit[d][p];
-                this->adv_vel[pi_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[ei_idx][d][p] = v_i_par * this->b_unit[d][p];
             }
         }
     }
@@ -421,7 +421,7 @@ void ReducedBraginskii::CalcVelocities(
     {
         for (int d = 0; d < m_spacedim; ++d)
         {
-            this->adv_vel[pe_idx][d][p] =
+            this->adv_vel[ee_idx][d][p] =
                 this->b_unit[d][p] * (j_i[p] - j_par[p]) / ne[p];
         }
     }
@@ -430,7 +430,7 @@ void ReducedBraginskii::CalcVelocities(
     {
         int nn_idx = v.fields.at(field_to_index["n"]);
         int vn_idx = v.fields.at(field_to_index["v"]);
-        int pn_idx = v.fields.at(field_to_index["p"]);
+        int en_idx = v.fields.at(field_to_index["e"]);
 
         for (int p = 0; p < npts; ++p)
         {
@@ -439,7 +439,7 @@ void ReducedBraginskii::CalcVelocities(
             {
                 this->adv_vel[nn_idx][d][p] = v_i_par * this->b_unit[d][p];
                 this->adv_vel[vn_idx][d][p] = v_i_par * this->b_unit[d][p];
-                this->adv_vel[pn_idx][d][p] = v_i_par * this->b_unit[d][p];
+                this->adv_vel[en_idx][d][p] = v_i_par * this->b_unit[d][p];
             }
         }
     }
@@ -500,8 +500,8 @@ void ReducedBraginskii::GetFluxVector(
     {
         for (int p = 0; p < npts; ++p)
         {
-            fluxes[pe_idx][d][p] =
-                this->adv_vel[pe_idx][d][p] * field_vals[pe_idx][p];
+            fluxes[ee_idx][d][p] =
+                this->adv_vel[ee_idx][d][p] * field_vals[ee_idx][p];
         }
     }
 
@@ -509,7 +509,7 @@ void ReducedBraginskii::GetFluxVector(
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
         int vi_idx = v.fields.at(field_to_index["v"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
 
         for (int d = 0; d < m_spacedim; ++d)
         {
@@ -519,8 +519,8 @@ void ReducedBraginskii::GetFluxVector(
                     this->adv_vel[ni_idx][d][p] * field_vals[ni_idx][p];
                 fluxes[vi_idx][d][p] =
                     this->adv_vel[vi_idx][d][p] * field_vals[vi_idx][p];
-                fluxes[pi_idx][d][p] =
-                    this->adv_vel[pi_idx][d][p] * field_vals[pi_idx][p];
+                fluxes[ei_idx][d][p] =
+                    this->adv_vel[ei_idx][d][p] * field_vals[ei_idx][p];
             }
         }
     }
@@ -556,12 +556,12 @@ void ReducedBraginskii::DoDiffusion(
     }
 
     // Extract temperature
-    m_varConv->GetElectronTemperature(inarray, inarrayDiff[pe_idx]);
+    m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
 
     for (const auto &[s, v] : this->GetIons())
     {
-        int pi_idx = v.fields.at(field_to_index["p"]);
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[pi_idx]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
+        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
     }
 
     // Repeat calculation for trace space
@@ -572,13 +572,13 @@ void ReducedBraginskii::DoDiffusion(
     }
     else
     {
-        m_varConv->GetElectronTemperature(pFwd, inFwd[pe_idx]);
-        m_varConv->GetElectronTemperature(pBwd, inBwd[pe_idx]);
+        m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
+        m_varConv->GetElectronTemperature(pBwd, inBwd[ee_idx]);
         for (const auto &[s, v] : this->GetIons())
         {
-            int pi_idx = v.fields.at(field_to_index["p"]);
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[pi_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[pi_idx]);
+            int ei_idx = v.fields.at(field_to_index["e"]);
+            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
+            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
         }
     }
 
@@ -625,12 +625,12 @@ void ReducedBraginskii::CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
 
     for (int p = 0; p < npoints; ++p)
     {
-        m_kpar[p] = this->k_ci * this->k_par * pow(in_arr[pe_idx][p], 2.5) /
+        m_kpar[p] = this->k_ci * this->k_par * pow(in_arr[ee_idx][p], 2.5) /
                     (Z * Z * in_arr[ni_idx][p]);
         m_kperp[p] = this->k_perp * Z * Z * std::sqrt(A) * in_arr[ni_idx][p] /
-                     (sqrt(in_arr[pe_idx][p]) * this->mag_B[p]);
+                     (sqrt(in_arr[ee_idx][p]) * this->mag_B[p]);
         m_kcross[p] =
-            this->k_cross * ne[p] * in_arr[pe_idx][p] / (sqrt(this->mag_B[p]));
+            this->k_cross * ne[p] * in_arr[ee_idx][p] / (sqrt(this->mag_B[p]));
     }
 }
 
@@ -641,7 +641,7 @@ void ReducedBraginskii::CalcKappa(
     int npoints = m_fields[0]->GetNpoints();
     double Z    = this->m_ions[f].charge;
     double A    = this->m_ions[f].mass;
-    int pi_idx  = this->m_ions[f].fields[field_to_index["p"]];
+    int ei_idx  = this->m_ions[f].fields[field_to_index["e"]];
     int ni_idx  = this->m_ions[f].fields[field_to_index["n"]];
 
     Array<OneD, NekDouble> tmp(npoints, 0.0);
@@ -659,12 +659,12 @@ void ReducedBraginskii::CalcKappa(
     for (int p = 0; p < npoints; ++p)
     {
         this->m_kpar[p] = this->kappa_i_par * in_arr[ni_idx][p] *
-                          (in_arr[pi_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
+                          (in_arr[ei_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
         this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
                            in_arr[ni_idx][p] /
-                           (this->mag_B[p] * sqrt(in_arr[pi_idx][p]));
+                           (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
         this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
-                            in_arr[pi_idx][p] / (Z * sqrt(this->mag_B[p]));
+                            in_arr[ei_idx][p] / (Z * sqrt(this->mag_B[p]));
     }
 }
 
@@ -676,10 +676,10 @@ void ReducedBraginskii::CalcKappa(
     auto ne     = this->m_fields[0]->GetPhys();
     for (int p = 0; p < npoints; ++p)
     {
-        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[pe_idx][p], 2.5);
+        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[ee_idx][p], 2.5);
         this->m_kperp[p] = this->kappa_e_perp * ne[p] * ne[p] /
-                           (this->mag_B[p] * sqrt(in_arr[pe_idx][p]));
-        this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[pe_idx][p] /
+                           (this->mag_B[p] * sqrt(in_arr[ee_idx][p]));
+        this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[ee_idx][p] /
                             (sqrt(this->mag_B[p]));
     }
 }
@@ -699,7 +699,7 @@ void ReducedBraginskii::GetFluxVectorDiff(
     for (const auto &[s, v] : this->GetIons())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
 
         CalcK(in_arr, s);
         CalcDiffTensor();
@@ -720,20 +720,20 @@ void ReducedBraginskii::GetFluxVectorDiff(
         {
             for (int p = 0; p < nPts; ++p)
             {
-                fluxes[0][pi_idx][p] = b_unit[1][p] * qfield[2][pi_idx][p] -
-                                       b_unit[2][p] * qfield[1][pi_idx][p];
-                fluxes[1][pi_idx][p] = b_unit[2][p] * qfield[0][pi_idx][p] -
-                                       b_unit[0][p] * qfield[2][pi_idx][p];
-                fluxes[2][pi_idx][p] = b_unit[0][p] * qfield[1][pi_idx][p] -
-                                       b_unit[1][p] * qfield[0][pi_idx][p];
+                fluxes[0][ei_idx][p] = b_unit[1][p] * qfield[2][ei_idx][p] -
+                                       b_unit[2][p] * qfield[1][ei_idx][p];
+                fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p] -
+                                       b_unit[0][p] * qfield[2][ei_idx][p];
+                fluxes[2][ei_idx][p] = b_unit[0][p] * qfield[1][ei_idx][p] -
+                                       b_unit[1][p] * qfield[0][ei_idx][p];
             }
         }
         else
         {
             for (int p = 0; p < nPts; ++p)
             {
-                fluxes[0][pi_idx][p] = -b_unit[2][p] * qfield[1][pi_idx][p];
-                fluxes[1][pi_idx][p] = b_unit[2][p] * qfield[0][pi_idx][p];
+                fluxes[0][ei_idx][p] = -b_unit[2][p] * qfield[1][ei_idx][p];
+                fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p];
             }
         }
 
@@ -747,7 +747,7 @@ void ReducedBraginskii::GetFluxVectorDiff(
                 const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
                 for (int p = 0; p < nPts; ++p)
                 {
-                    fluxes[j][pi_idx][p] += D[p] * qfield[k][pi_idx][p];
+                    fluxes[j][ei_idx][p] += D[p] * qfield[k][ei_idx][p];
                 }
             }
         }
@@ -755,28 +755,28 @@ void ReducedBraginskii::GetFluxVectorDiff(
 }
 
 void ReducedBraginskii::CalcNeutralSources_nvp(
-    const double m, int pe_idx, int ni_idx, int vi_idx, int pi_idx, int nn_idx,
-    int vn_idx, int pn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
+    const double m, int ee_idx, int ni_idx, int vi_idx, int ei_idx, int nn_idx,
+    int vn_idx, int en_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &Spe)
+    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &See)
 {
     unsigned int nPts = ne.size();
 
-    const Array<OneD, NekDouble> &pe = inarray[pe_idx];
+    const Array<OneD, NekDouble> &ee = inarray[ee_idx];
     const Array<OneD, NekDouble> &nn = inarray[nn_idx];
     const Array<OneD, NekDouble> &vn = inarray[vn_idx];
-    const Array<OneD, NekDouble> &pn = inarray[pn_idx];
+    const Array<OneD, NekDouble> &en = inarray[en_idx];
     const Array<OneD, NekDouble> &ni = inarray[ni_idx];
     const Array<OneD, NekDouble> &vi = inarray[vi_idx];
-    const Array<OneD, NekDouble> &pi = inarray[pi_idx];
+    const Array<OneD, NekDouble> &ei = inarray[ei_idx];
 
     for (int p = 0; p < nPts; ++p)
     {
-        double exponent = 13.6 / pe[p];
+        double exponent = 13.6 / ee[p];
         double krec     = 0.7e-19 * std::sqrt(exponent);
         double kIZ      = (2e-13 / (6 + 1.0 / exponent)) *
                      std::sqrt(1.0 / exponent) * std::exp(-exponent);
-        double kCX = 3.2e-15 * std::sqrt(pi[p] / 0.026);
+        double kCX = 3.2e-15 * std::sqrt(ei[p] / 0.026);
 
         double SN = -kIZ * ne[p] * nn[p] + krec * ne[p] * ni[p];
 
@@ -785,37 +785,37 @@ void ReducedBraginskii::CalcNeutralSources_nvp(
 
         double vdiffsq = (vi[p] / ni[p] - vn[p] / nn[p]) *
                          (vi[p] / ni[p] - vn[p] / nn[p]) / (m * m);
-        double SP = -kIZ * ne[p] * pn[p] + krec * ne[p] * pi[p] +
-                    kCX * nn[p] * pi[p] - kCX * ni[p] * pn[p] +
+        double SP = -kIZ * ne[p] * en[p] + krec * ne[p] * ei[p] +
+                    kCX * nn[p] * ei[p] - kCX * ni[p] * en[p] +
                     (m * ni[p] / 3) * (krec * ne[p] + kCX * nn[p]) * vdiffsq;
 
         double SPI = ni[p] * nn[p] * (kIZ + kCX) *
-                     ((pn[p] / nn[p] - pi[p] / ni[p]) + (m / 3) * vdiffsq);
+                     ((en[p] / nn[p] - ei[p] / ni[p]) + (m / 3) * vdiffsq);
 
         double Wiz  = 1.0; // TODO get from AMJUEL
         double Wrec = 1.0;
 
-        Spe[p] -= ne[p] * pe[p] * (kIZ * nn[p] - krec * ni[p]) +
+        See[p] -= ne[p] * ee[p] * (kIZ * nn[p] - krec * ni[p]) +
                   ne[p] * (2.0 / 3.0) * (Wiz * nn[p] + Wrec * ni[p]);
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
         outarray[vn_idx][p] += m * SGN;
         outarray[vi_idx][p] -= m * SGN + SN * vi[p] / ni[p];
-        outarray[pn_idx][p] += SP;
-        outarray[pi_idx][p] += SPI;
+        outarray[en_idx][p] += SP;
+        outarray[ei_idx][p] += SPI;
     }
 }
 
 void ReducedBraginskii::CalcNeutralSources_nv(
-    const double m, int pe_idx, int ni_idx, int vi_idx, int nn_idx, int vn_idx,
+    const double m, int ee_idx, int ni_idx, int vi_idx, int nn_idx, int vn_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &Spe)
+    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &See)
 {
     unsigned int nPts = ne.size();
 
-    const Array<OneD, NekDouble> &pe = inarray[pe_idx];
+    const Array<OneD, NekDouble> &ee = inarray[ee_idx];
     const Array<OneD, NekDouble> &nn = inarray[nn_idx];
     const Array<OneD, NekDouble> &vn = inarray[vn_idx];
     const Array<OneD, NekDouble> &ni = inarray[ni_idx];
@@ -823,7 +823,7 @@ void ReducedBraginskii::CalcNeutralSources_nv(
 
     for (int p = 0; p < nPts; ++p)
     {
-        double exponent = 13.6 / pe[p];
+        double exponent = 13.6 / ee[p];
         double krec     = 0.7e-19 * std::sqrt(exponent);
         double kIZ      = (2e-13 / (6 + 1.0 / exponent)) *
                      std::sqrt(1.0 / exponent) * std::exp(-exponent);
@@ -838,7 +838,7 @@ void ReducedBraginskii::CalcNeutralSources_nv(
         double Wiz  = 1.0; // TODO get from AMJUEL
         double Wrec = 1.0;
 
-        Spe[p] -= ne[p] * pe[p] * (kIZ * nn[p] - krec * ni[p]) +
+        See[p] -= ne[p] * ee[p] * (kIZ * nn[p] - krec * ni[p]) +
                   ne[p] * (2.0 / 3.0) * (Wiz * nn[p] + Wrec * ni[p]);
 
         outarray[nn_idx][p] += SN;
@@ -849,27 +849,27 @@ void ReducedBraginskii::CalcNeutralSources_nv(
 }
 
 void ReducedBraginskii::CalcNeutralSources_nv(
-    const double m, int pe_idx, int ni_idx, int vi_idx, int pi_idx, int nn_idx,
+    const double m, int ee_idx, int ni_idx, int vi_idx, int ei_idx, int nn_idx,
     int vn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &Spe)
+    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &See)
 {
     unsigned int nPts = ne.size();
 
-    const Array<OneD, NekDouble> &pe = inarray[pe_idx];
+    const Array<OneD, NekDouble> &ee = inarray[ee_idx];
     const Array<OneD, NekDouble> &nn = inarray[nn_idx];
     const Array<OneD, NekDouble> &vn = inarray[vn_idx];
     const Array<OneD, NekDouble> &ni = inarray[ni_idx];
     const Array<OneD, NekDouble> &vi = inarray[vi_idx];
-    const Array<OneD, NekDouble> &pi = inarray[pi_idx];
+    const Array<OneD, NekDouble> &ei = inarray[ei_idx];
 
     for (int p = 0; p < nPts; ++p)
     {
-        double exponent = 13.6 / pe[p];
+        double exponent = 13.6 / ee[p];
         double krec     = 0.7e-19 * std::sqrt(exponent);
         double kIZ      = (2e-13 / (6 + 1.0 / exponent)) *
                      std::sqrt(1.0 / exponent) * std::exp(-exponent);
-        double kCX = 3.2e-15 * std::sqrt(pi[p] / 0.026);
+        double kCX = 3.2e-15 * std::sqrt(ei[p] / 0.026);
 
         double SN = -kIZ * ne[p] * nn[p] + krec * ne[p] * ni[p];
 
@@ -884,75 +884,75 @@ void ReducedBraginskii::CalcNeutralSources_nv(
         double Wiz  = 1.0; // TODO get from AMJUEL
         double Wrec = 1.0;
 
-        Spe[p] -= ne[p] * pe[p] * (kIZ * nn[p] - krec * ni[p]) +
+        See[p] -= ne[p] * ee[p] * (kIZ * nn[p] - krec * ni[p]) +
                   ne[p] * (2.0 / 3.0) * (Wiz * nn[p] + Wrec * ni[p]);
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
         outarray[vn_idx][p] += m * SGN;
         outarray[vi_idx][p] -= m * SGN + SN * vi[p] / ni[p];
-        outarray[pi_idx][p] += SPI;
+        outarray[ei_idx][p] += SPI;
     }
 }
 
 void ReducedBraginskii::CalcNeutralSources_np(
-    const double m, int pe_idx, int ni_idx, int pi_idx, int nn_idx, int pn_idx,
+    const double m, int ee_idx, int ni_idx, int ei_idx, int nn_idx, int en_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &Spe)
+    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &See)
 {
     unsigned int nPts = ne.size();
 
-    const Array<OneD, NekDouble> &pe = inarray[pe_idx];
+    const Array<OneD, NekDouble> &ee = inarray[ee_idx];
     const Array<OneD, NekDouble> &nn = inarray[nn_idx];
-    const Array<OneD, NekDouble> &pn = inarray[pn_idx];
+    const Array<OneD, NekDouble> &en = inarray[en_idx];
     const Array<OneD, NekDouble> &ni = inarray[ni_idx];
-    const Array<OneD, NekDouble> &pi = inarray[pi_idx];
+    const Array<OneD, NekDouble> &ei = inarray[ei_idx];
 
     for (int p = 0; p < nPts; ++p)
     {
-        double exponent = 13.6 / pe[p];
+        double exponent = 13.6 / ee[p];
         double krec     = 0.7e-19 * std::sqrt(exponent);
         double kIZ      = (2e-13 / (6 + 1.0 / exponent)) *
                      std::sqrt(1.0 / exponent) * std::exp(-exponent);
-        double kCX = 3.2e-15 * std::sqrt(pi[p] / 0.026);
+        double kCX = 3.2e-15 * std::sqrt(ei[p] / 0.026);
 
         double SN = -kIZ * ne[p] * nn[p] + krec * ne[p] * ni[p];
 
-        double SP = -kIZ * ne[p] * pn[p] + krec * ne[p] * pi[p] +
-                    kCX * nn[p] * pi[p] - kCX * ni[p] * pn[p];
+        double SP = -kIZ * ne[p] * en[p] + krec * ne[p] * ei[p] +
+                    kCX * nn[p] * ei[p] - kCX * ni[p] * en[p];
 
         double SPI =
-            ni[p] * nn[p] * (kIZ + kCX) * (pn[p] / nn[p] - pi[p] / ni[p]);
+            ni[p] * nn[p] * (kIZ + kCX) * (en[p] / nn[p] - ei[p] / ni[p]);
 
         double Wiz  = 1.0; // TODO get from AMJUEL
         double Wrec = 1.0;
 
-        Spe[p] -= ne[p] * pe[p] * (kIZ * nn[p] - krec * ni[p]) +
+        See[p] -= ne[p] * ee[p] * (kIZ * nn[p] - krec * ni[p]) +
                   ne[p] * (2.0 / 3.0) * (Wiz * nn[p] + Wrec * ni[p]);
 
         outarray[nn_idx][p] += SN;
         outarray[ni_idx][p] -= SN;
-        outarray[pn_idx][p] += SP;
-        outarray[pi_idx][p] += SPI;
+        outarray[en_idx][p] += SP;
+        outarray[ei_idx][p] += SPI;
     }
 }
 
 void ReducedBraginskii::CalcNeutralSources_n(
-    const double m, int pe_idx, int ni_idx, int nn_idx,
+    const double m, int ee_idx, int ni_idx, int nn_idx,
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, NekDouble> &ne,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &Spe)
+    Array<OneD, Array<OneD, NekDouble>> &outarray, Array<OneD, NekDouble> &See)
 {
     unsigned int nPts = ne.size();
 
-    const Array<OneD, NekDouble> &pe = inarray[pe_idx];
+    const Array<OneD, NekDouble> &ee = inarray[ee_idx];
     const Array<OneD, NekDouble> &nn = inarray[nn_idx];
     const Array<OneD, NekDouble> &ni = inarray[ni_idx];
 
     for (int p = 0; p < nPts; ++p)
     {
-        double exponent = 13.6 / pe[p];
+        double exponent = 13.6 / ee[p];
         double krec     = 0.7e-19 * std::sqrt(exponent);
         double kIZ      = (2e-13 / (6 + 1.0 / exponent)) *
                      std::sqrt(1.0 / exponent) * std::exp(-exponent);
@@ -962,7 +962,7 @@ void ReducedBraginskii::CalcNeutralSources_n(
         double Wiz  = 1.0; // TODO get from AMJUEL
         double Wrec = 1.0;
 
-        Spe[p] -= ne[p] * pe[p] * (kIZ * nn[p] - krec * ni[p]) +
+        See[p] -= ne[p] * ee[p] * (kIZ * nn[p] - krec * ni[p]) +
                   ne[p] * (2.0 / 3.0) * (Wiz * nn[p] + Wrec * ni[p]);
 
         outarray[nn_idx][p] += SN;
@@ -983,25 +983,25 @@ void ReducedBraginskii::AddNeutralSources(
         int nn_idx = v.fields.at(field_to_index["n"]);
         int ni_idx = this->m_ions[v.ion].fields.at(field_to_index["n"]);
 
-        if (v.fields.find(field_to_index["p"]) != v.fields.end())
+        if (v.fields.find(field_to_index["e"]) != v.fields.end())
         {
-            int pn_idx = v.fields.at(field_to_index["p"]);
-            int pi_idx = this->m_ions[v.ion].fields.at(field_to_index["p"]);
+            int en_idx = v.fields.at(field_to_index["e"]);
+            int ei_idx = this->m_ions[v.ion].fields.at(field_to_index["e"]);
 
             if (v.fields.find(field_to_index["v"]) != v.fields.end())
             {
                 // Neutral n,v,p; Ion n,v,p
                 int vn_idx = v.fields.at(field_to_index["v"]);
                 int vi_idx = this->m_ions[v.ion].fields.at(field_to_index["v"]);
-                CalcNeutralSources_nvp(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
-                                       nn_idx, vn_idx, pn_idx, inarray, ne,
+                CalcNeutralSources_nvp(v.mass, ee_idx, ni_idx, vi_idx, ei_idx,
+                                       nn_idx, vn_idx, en_idx, inarray, ne,
                                        outarray, tmp);
             }
             else
             {
                 // Neutral n,p; Ion n,v,p; Ion n,p;
-                CalcNeutralSources_np(v.mass, pe_idx, ni_idx, pi_idx, nn_idx,
-                                      pn_idx, inarray, ne, outarray, tmp);
+                CalcNeutralSources_np(v.mass, ee_idx, ni_idx, ei_idx, nn_idx,
+                                      en_idx, inarray, ne, outarray, tmp);
             }
         }
 
@@ -1009,30 +1009,30 @@ void ReducedBraginskii::AddNeutralSources(
         {
             int vn_idx = v.fields.at(field_to_index["v"]);
             int vi_idx = this->m_ions[v.ion].fields.at(field_to_index["v"]);
-            if (this->m_ions[v.ion].fields.find(field_to_index["p"]) !=
+            if (this->m_ions[v.ion].fields.find(field_to_index["e"]) !=
                 this->m_ions[v.ion].fields.end())
             {
                 // Neutral n,v; Ion n,v,p
-                int pi_idx = this->m_ions[v.ion].fields.at(field_to_index["p"]);
-                CalcNeutralSources_nv(v.mass, pe_idx, ni_idx, vi_idx, pi_idx,
+                int ei_idx = this->m_ions[v.ion].fields.at(field_to_index["e"]);
+                CalcNeutralSources_nv(v.mass, ee_idx, ni_idx, vi_idx, ei_idx,
                                       nn_idx, vn_idx, inarray, ne, outarray,
                                       tmp);
             }
             else
             {
                 // Neutral n,v; Ion n,v
-                CalcNeutralSources_nv(v.mass, pe_idx, ni_idx, vi_idx, nn_idx,
+                CalcNeutralSources_nv(v.mass, ee_idx, ni_idx, vi_idx, nn_idx,
                                       vn_idx, inarray, ne, outarray, tmp);
             }
         }
         else
         {
             // Neutral n; Ion n; Ion n,v; Ion n,v,p
-            CalcNeutralSources_n(v.mass, pe_idx, ni_idx, nn_idx, inarray, ne,
+            CalcNeutralSources_n(v.mass, ee_idx, ni_idx, nn_idx, inarray, ne,
                                  outarray, tmp);
         }
     }
-    Vmath::Vadd(nPts, outarray[pe_idx], 1, tmp, 1, outarray[pe_idx], 1);
+    Vmath::Vadd(nPts, outarray[ee_idx], 1, tmp, 1, outarray[ee_idx], 1);
 }
 
 /**
@@ -1170,11 +1170,11 @@ void ReducedBraginskii::DoDiffusionCoeff(
     }
 
     // Extract temperature
-    m_varConv->GetElectronTemperature(inarray, inarrayDiff[pe_idx]);
+    m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
     for (const auto &[s, v] : this->GetIons())
     {
-        int pi_idx = v.fields.at(field_to_index["p"]);
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[pi_idx]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
+        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
     }
 
     // Repeat calculation for trace space
@@ -1185,13 +1185,13 @@ void ReducedBraginskii::DoDiffusionCoeff(
     }
     else
     {
-        m_varConv->GetElectronTemperature(pFwd, inFwd[pe_idx]);
+        m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
         for (const auto &[s, v] : this->GetIons())
         {
-            int pi_idx = v.fields.at(field_to_index["p"]);
+            int ei_idx = v.fields.at(field_to_index["e"]);
 
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[pi_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[pi_idx]);
+            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
+            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
         }
     }
 
@@ -1219,23 +1219,23 @@ void ReducedBraginskii::DoParticlesCoeff(
     Array<OneD, NekDouble> tmp(ncoeff, 0.0);
 
     // Add contribution to electron energy
-    m_indfields[pe_idx]->FwdTrans(this->src_fields[0]->GetPhys(), tmp);
-    Vmath::Vadd(npts, outarray[pe_idx], 1, tmp, 1, outarray[pe_idx], 1);
+    m_indfields[ee_idx]->FwdTrans(this->src_fields[0]->GetPhys(), tmp);
+    Vmath::Vadd(npts, outarray[ee_idx], 1, tmp, 1, outarray[ee_idx], 1);
 
     for (const auto &[s, v] : this->GetIons())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
         int vi_idx = v.fields.at(field_to_index["v"]);
-        int pi_idx = v.fields.at(field_to_index["p"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
         //  Add contribution to ion density
         m_indfields[ni_idx]->FwdTrans(
             this->src_fields[ni_src_idx[s]]->GetPhys(), tmp);
         Vmath::Vadd(npts, outarray[ni_idx], 1, tmp, 1, outarray[ni_idx], 1);
 
         // Add contribution to ion energy
-        m_indfields[pi_idx]->FwdTrans(
-            this->src_fields[pi_src_idx[s]]->GetPhys(), tmp);
-        Vmath::Vadd(npts, outarray[pi_idx], 1, tmp, 1, outarray[pi_idx], 1);
+        m_indfields[ei_idx]->FwdTrans(
+            this->src_fields[ei_src_idx[s]]->GetPhys(), tmp);
+        Vmath::Vadd(npts, outarray[ei_idx], 1, tmp, 1, outarray[ei_idx], 1);
 
         // Add number density source contribution to ion energy
         Array<OneD, NekDouble> dynamic_energy(npts);
@@ -1243,8 +1243,8 @@ void ReducedBraginskii::DoParticlesCoeff(
         Vmath::Vmul(npts, dynamic_energy, 1,
                     this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
                     dynamic_energy, 1);
-        m_indfields[pi_idx]->FwdTrans(dynamic_energy, tmp);
-        Vmath::Vadd(npts, outarray[pi_idx], 1, tmp, 1, outarray[pi_idx], 1);
+        m_indfields[ei_idx]->FwdTrans(dynamic_energy, tmp);
+        Vmath::Vadd(npts, outarray[ei_idx], 1, tmp, 1, outarray[ei_idx], 1);
 
         Vmath::Zero(npts, dynamic_energy, 1);
         for (int d = 0; d < m_spacedim; ++d)
