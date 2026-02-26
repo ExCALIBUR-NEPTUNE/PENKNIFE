@@ -375,31 +375,39 @@ void ElectrostaticTurbulence::DoParticles(
 
     for (const auto &[s, v] : this->GetIons())
     {
-        int ni_idx  = v.fields.at(field_to_index["n"]);
-        int vi_idx  = v.fields.at(field_to_index["v"]);
-        int ei_idx  = v.fields.at(field_to_index["e"]);
-        double mass = v.mass;
+        int ni_idx = v.fields.at(field_to_index["n"]);
         //  Add contribution to ion density
         Vmath::Vadd(npts, outarray[ni_idx], 1,
                     this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
                     outarray[ni_idx], 1);
 
-        // Add contribution to ion energy
-        Vmath::Vadd(npts, outarray[ei_idx], 1,
-                    this->src_fields[ei_src_idx[s]]->GetPhys(), 1,
-                    outarray[ei_idx], 1);
-        // Add number density source contribution to ion energy
-        Array<OneD, NekDouble> dynamic_energy(npts);
-        m_varConv->GetIonDynamicEnergy(s, mass, inarray, dynamic_energy);
-        Vmath::Vvtvp(npts, dynamic_energy, 1,
-                     this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                     outarray[ei_idx], 1, outarray[ei_idx], 1);
-
-        for (int d = 0; d < m_spacedim; ++d)
+        if (v.fields.find(field_to_index["v"]) != v.fields.end())
         {
-            Vmath::Vvtvp(npts, this->b_unit[d], 1,
-                         this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
-                         outarray[vi_idx], 1, outarray[vi_idx], 1);
+            int vi_idx = v.fields.at(field_to_index["v"]);
+
+            for (int d = 0; d < m_spacedim; ++d)
+            {
+                Vmath::Vvtvp(npts, this->b_unit[d], 1,
+                             this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
+                             outarray[vi_idx], 1, outarray[vi_idx], 1);
+            }
+        }
+
+        if (v.fields.find(field_to_index["e"]) != v.fields.end())
+        {
+            int ei_idx = v.fields.at(field_to_index["e"]);
+
+            // Add contribution to ion energy
+            Vmath::Vadd(npts, outarray[ei_idx], 1,
+                        this->src_fields[ei_src_idx[s]]->GetPhys(), 1,
+                        outarray[ei_idx], 1);
+
+            // Add number density source contribution to ion energy
+            Array<OneD, NekDouble> dynamic_energy(npts);
+            m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
+            Vmath::Vvtvp(npts, dynamic_energy, 1,
+                         this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
+                         outarray[ei_idx], 1, outarray[ei_idx], 1);
         }
     }
 }
