@@ -29,7 +29,7 @@ static SU::EquationSystemSharedPtr create(
 }
 
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
-                             const SD::MeshGraphSharedPtr &graph)
+                           const SD::MeshGraphSharedPtr &graph)
     : TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>(session, graph)
 {
 }
@@ -144,19 +144,20 @@ void PlasmaSystem::v_ExtraFldOutput(
         {
             for (const auto &[f, fi] : v.fields)
             {
-                variables.push_back(m_session->GetVariable(f) + "_" + v.name);
+                variables.emplace_back(m_session->GetVariable(f) + "_" +
+                                       v.name);
                 Array<OneD, NekDouble> Fwd(nCoeffs);
                 this->m_indfields[fi]->FwdTransLocalElmt(
                     this->m_indfields[fi]->GetPhys(), Fwd);
-                fieldcoeffs.push_back(Fwd);
+                fieldcoeffs.emplace_back(Fwd);
             }
         }
         if (Te)
         {
-            variables.push_back("Te");
+            variables.emplace_back("Te");
             Array<OneD, NekDouble> Fwd(nCoeffs);
             this->Te->FwdTransLocalElmt(this->Te->GetPhys(), Fwd);
-            fieldcoeffs.push_back(Fwd);
+            fieldcoeffs.emplace_back(Fwd);
         }
     }
 
@@ -166,47 +167,47 @@ void PlasmaSystem::v_ExtraFldOutput(
         const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
 
-        variables.push_back("Bx");
+        variables.emplace_back("Bx");
         Array<OneD, NekDouble> BxFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[0]->GetPhys(), BxFwd);
-        fieldcoeffs.push_back(BxFwd);
+        fieldcoeffs.emplace_back(BxFwd);
 
-        variables.push_back("By");
+        variables.emplace_back("By");
         Array<OneD, NekDouble> ByFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[1]->GetPhys(), ByFwd);
-        fieldcoeffs.push_back(ByFwd);
+        fieldcoeffs.emplace_back(ByFwd);
 
-        variables.push_back("Bz");
+        variables.emplace_back("Bz");
         Array<OneD, NekDouble> BzFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[2]->GetPhys(), BzFwd);
-        fieldcoeffs.push_back(BzFwd);
+        fieldcoeffs.emplace_back(BzFwd);
 
-        variables.push_back("Ex");
+        variables.emplace_back("Ex");
         Array<OneD, NekDouble> ExFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[0]->GetPhys(), ExFwd);
-        fieldcoeffs.push_back(ExFwd);
+        fieldcoeffs.emplace_back(ExFwd);
 
-        variables.push_back("Ey");
+        variables.emplace_back("Ey");
         Array<OneD, NekDouble> EyFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[1]->GetPhys(), EyFwd);
-        fieldcoeffs.push_back(EyFwd);
+        fieldcoeffs.emplace_back(EyFwd);
 
-        variables.push_back("Ez");
+        variables.emplace_back("Ez");
         Array<OneD, NekDouble> EzFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[2]->GetPhys(), EzFwd);
-        fieldcoeffs.push_back(EzFwd);
+        fieldcoeffs.emplace_back(EzFwd);
     }
     m_session->MatchSolverInfo("OutputPartitions", "True", extraFields, false);
     if (extraFields)
     {
         const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
-        variables.push_back("Rank");
+        variables.emplace_back("Rank");
         Array<OneD, NekDouble> Rank(nPhys,
                                     this->m_session->GetComm()->GetRank());
         Array<OneD, NekDouble> RankFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(Rank, RankFwd);
-        fieldcoeffs.push_back(RankFwd);
+        fieldcoeffs.emplace_back(RankFwd);
     }
 }
 
@@ -691,7 +692,7 @@ NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
  * @brief After reading ICs, calculate phi and grad(phi)
  */
 void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                           [[maybe_unused]] const int domain)
+                                          [[maybe_unused]] const int domain)
 {
     if (m_session->DefinesFunction("InitialConditions"))
     {

@@ -1528,28 +1528,36 @@ void ElectrostaticTurbulence::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     m_fields[0]->FwdTransLocalElmt(this->phi->GetPhys(), fieldcoeffs[4]);
 
     if (this->particles_enabled)
     {
-        int i = 0;
+        int cnt = 0;
         for (auto &[k, v] : this->particle_sys->get_species())
         {
-            variables.push_back(k + "_SOURCE_DENSITY");
+            variables.emplace_back(k + "_SOURCE_DENSITY");
             Array<OneD, NekDouble> SrcFwd1(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(this->src_fields[i]->GetPhys(),
+            m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd1);
-            fieldcoeffs.push_back(SrcFwd1);
+            fieldcoeffs.emplace_back(SrcFwd1);
 
-            variables.push_back(k + "_SOURCE_ENERGY");
+            for (int d = 0; d < this->m_spacedim; ++d)
+            {
+                variables.emplace_back(k + "_SOURCE_MOMENTUM" +
+                                       std::to_string(d));
+                Array<OneD, NekDouble> SrcFwd1(nCoeffs);
+                m_fields[0]->FwdTransLocalElmt(
+                    this->src_fields[cnt++]->GetPhys(), SrcFwd1);
+                fieldcoeffs.emplace_back(SrcFwd1);
+            }
+
+            variables.emplace_back(k + "_SOURCE_ENERGY");
             Array<OneD, NekDouble> SrcFwd2(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(this->src_fields[i + 1]->GetPhys(),
+            m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd2);
-            fieldcoeffs.push_back(SrcFwd2);
-            i += (2 + m_spacedim);
+            fieldcoeffs.emplace_back(SrcFwd2);
         }
     }
 }
