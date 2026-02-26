@@ -63,23 +63,9 @@ void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
     // ExB velocity
     this->v_ExB = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
 
-    // Per-field advection velocities (phi not advected, omega is calculates
-    // separately)
-    this->adv_vel = Array<OneD, Array<OneD, Array<OneD, NekDouble>>>(
-        m_indfields.size() - 2);
-
-    for (int i = 0; i < this->adv_vel.size(); ++i)
-    {
-        this->adv_vel[i] = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
-    }
-    this->omega_flux = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
-
     for (int d = 0; d < m_spacedim; ++d)
     {
-        this->v_ExB[d]           = Array<OneD, NekDouble>(npts, 0.0);
-        this->adv_vel[ee_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
-        // this->adv_vel[omega_idx][d] = Array<OneD, NekDouble>(npts, 0.0);
-        this->omega_flux[d] = Array<OneD, NekDouble>(npts, 0.0);
+        this->v_ExB[d] = Array<OneD, NekDouble>(npts, 0.0);
     }
 
     for (const auto &[s, v] : this->GetSpecies())
@@ -107,16 +93,23 @@ void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
     {
         m_advfields[a] = m_indfields[a];
     }
-
+    // Per-field advection velocities (phi not advected, omega is calculates
+    // separately)
     this->adv_vel = Array<OneD, Array<OneD, Array<OneD, NekDouble>>>(
         this->advected_fields.size());
-    for (int i = 0; i < this->adv_vel.size(); ++i)
+    for (int i = 0; i < this->adv_vel.size() - 1; ++i)
     {
         this->adv_vel[i] = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
         for (int d = 0; d < m_spacedim; ++d)
         {
             this->adv_vel[i][d] = Array<OneD, NekDouble>(npts, 0.0);
         }
+    }
+    this->omega_flux = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);
+
+    for (int d = 0; d < m_spacedim; ++d)
+    {
+        this->omega_flux[d] = Array<OneD, NekDouble>(npts, 0.0);
     }
 
     // Since we are starting from a setup where each field is defined to be a
@@ -287,7 +280,7 @@ void ElectrostaticTurbulence::DoOdeRhs(
     CalcVelocities(inarray, outarray);
     AddDriftVelocities(inarray, outarray);
 
-    // CalcOmegaFlux(inarray, this->omega_flux);
+    CalcOmegaFlux(inarray, this->omega_flux);
 
     // Perform advection
     DoAdvection(inarray, outarray, time, Fwd, Bwd);
@@ -325,7 +318,7 @@ void ElectrostaticTurbulence::DoAdvection(
     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
     const Array<OneD, Array<OneD, NekDouble>> &pBwd)
 {
-    int nvariables = this->adv_vel.size();
+    int nvariables = this->advected_fields.size();
     int npointsIn  = GetNpoints();
     int npointsOut = npointsIn;
     int nTracePts  = GetTraceTotPoints();
@@ -982,7 +975,6 @@ Array<OneD, Array<OneD, NekDouble>> &ElectrostaticTurbulence::GetAdvVelNorm()
 {
     // Number of trace (interface) points
     int num_trace_pts = GetTraceNpoints();
-    // Auxiliary variable to compute normal velocities
 
     // Compute advection vel dot trace normals and store
     for (int j = 0; j < this->adv_vel_trace.size(); ++j)
@@ -1048,24 +1040,6 @@ void ElectrostaticTurbulence::GetFluxVector(
 {
     int npts = field_vals[0].size();
 
-    for (int d = 0; d < m_spacedim; ++d)
-    {
-        for (int p = 0; p < npts; ++p)
-        {
-            fluxes[ee_idx][d][p] =
-                this->adv_vel[ee_idx][d][p] * field_vals[ee_idx][p];
-        }
-    }
-
-    // Omega flux
-    for (int d = 0; d < m_spacedim; ++d)
-    {
-        Vmath::Vcopy(npts, this->omega_flux[d], 1, fluxes[omega_idx][d], 1);
-        // Vmath::Vmul(npts, field_vals[omega_idx], 1,
-        // this->adv_vel[omega_idx][d],
-        //             1, fluxes[omega_idx][d], 1);
-    }
-
     for (const auto &[s, v] : this->GetSpecies())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
@@ -1084,6 +1058,19 @@ void ElectrostaticTurbulence::GetFluxVector(
                     this->adv_vel[ei_idx][d][p] * field_vals[ei_idx][p];
             }
         }
+    }
+    for (int d = 0; d < m_spacedim; ++d)
+    {
+        for (int p = 0; p < npts; ++p)
+        {
+            fluxes[ee_idx][d][p] =
+                this->adv_vel[ee_idx][d][p] * field_vals[ee_idx][p];
+        }
+    }
+    // Omega flux
+    for (int d = 0; d < m_spacedim; ++d)
+    {
+        Vmath::Vcopy(npts, this->omega_flux[d], 1, fluxes[omega_idx][d], 1);
     }
 }
 

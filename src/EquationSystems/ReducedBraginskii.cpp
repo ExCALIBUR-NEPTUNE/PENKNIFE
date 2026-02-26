@@ -271,7 +271,7 @@ void ReducedBraginskii::DoAdvection(
     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
     const Array<OneD, Array<OneD, NekDouble>> &pBwd)
 {
-    int nvariables = this->adv_vel.size();
+    int nvariables = this->advected_fields.size();
     int npointsIn  = GetNpoints();
     int npointsOut = npointsIn;
     int nTracePts  = GetTraceTotPoints();
