@@ -42,18 +42,6 @@ protected:
                   const NekDouble time);
 
     /// Advection functions
-    void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                     Array<OneD, Array<OneD, NekDouble>> &outarray,
-                     const NekDouble time,
-                     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-                     const Array<OneD, Array<OneD, NekDouble>> &pBwd);
-
-    void DoExtra(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                 Array<OneD, Array<OneD, NekDouble>> &outarray);
-
-    void DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                     Array<OneD, Array<OneD, NekDouble>> &outarray);
-
     void CalcInitPhi();
     void CalcInitOmega();
     void SolvePhi(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
@@ -69,21 +57,19 @@ protected:
                                 &outarray = NullNekDoubleArrayOfArray);
     void CalcOmegaFlux(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                        Array<OneD, Array<OneD, NekDouble>> &omega_flux);
-
-    Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
-    Array<OneD, NekDouble> &GetOmegaFlux();
-
     // Advective Flux vector
     void GetFluxVector(
         const Array<OneD, Array<OneD, NekDouble>> &field_vals,
         Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
-
-    /// Diffusion functions
-    void DoDiffusion(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+    Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
+    Array<OneD, NekDouble> &GetOmegaFlux();
+    void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                      Array<OneD, Array<OneD, NekDouble>> &outarray,
+                     const NekDouble time,
                      const Array<OneD, Array<OneD, NekDouble>> &pFwd,
                      const Array<OneD, Array<OneD, NekDouble>> &pBwd);
 
+    /// Diffusion functions
     void CalcKPar();
     void CalcKPerp();
     void CalcDiffTensor();
@@ -95,9 +81,16 @@ protected:
         const Array<OneD, Array<OneD, NekDouble>> &in_arr,
         const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &q_field,
         Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
+    void DoDiffusion(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                     Array<OneD, Array<OneD, NekDouble>> &outarray,
+                     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
+                     const Array<OneD, Array<OneD, NekDouble>> &pBwd);
 
     void AddNeutralSources(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
                            Array<OneD, Array<OneD, NekDouble>> &outarray);
+
+    void DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                     Array<OneD, Array<OneD, NekDouble>> &outarray);
 
     // Functions for the Implicit Solve
     void DoOdeImplicitRhs(
@@ -146,10 +139,7 @@ private:
     Array<OneD, NekDouble> v_e_par;
     // Ion parallel velocities
     std::vector<Array<OneD, NekDouble>> v_i_par;
-    // Electron diamagnetic drift velocity
-    Array<OneD, Array<OneD, NekDouble>> v_de;
-    // Ion diamagnetic drift velocities
-    std::vector<Array<OneD, Array<OneD, NekDouble>>> v_di;
+
     // Per field advection velocities
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel;
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel_trace;
