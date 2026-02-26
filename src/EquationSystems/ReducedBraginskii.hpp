@@ -40,6 +40,7 @@ protected:
                   const NekDouble time);
 
     /// Advection functions
+    void InitAdvection();
     void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                      Array<OneD, Array<OneD, NekDouble>> &outarray,
                      const NekDouble time,

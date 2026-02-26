@@ -63,6 +63,7 @@ protected:
         Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
     Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
     Array<OneD, NekDouble> &GetOmegaFlux();
+    void InitAdvection();
     void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                      Array<OneD, Array<OneD, NekDouble>> &outarray,
                      const NekDouble time,
