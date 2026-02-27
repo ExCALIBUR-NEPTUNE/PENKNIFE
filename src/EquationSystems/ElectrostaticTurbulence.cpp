@@ -212,6 +212,8 @@ void ElectrostaticTurbulence::InitAdvection()
 
     // Create Riemann solver and set normal velocity
     // callback functions
+    m_session->LoadSolverInfo("UpwindType", this->riemann_solver_type,
+                              "VorticityUpwind");
     this->riemann_solver = SU::GetRiemannSolverFactory().CreateInstance(
         this->riemann_solver_type, m_session);
     auto t = std::dynamic_pointer_cast<PlasmaSolver>(this->riemann_solver);
@@ -1513,11 +1515,7 @@ void ElectrostaticTurbulence::v_SetInitialConditions(NekDouble init_time,
 void ElectrostaticTurbulence::load_params()
 {
     PlasmaSystem::load_params();
-    // Type of advection to use. Default is DG.
-    m_session->LoadSolverInfo("AdvectionType", this->adv_type, "WeakDG");
-    // Type of Riemann solver to use. Default = "Upwind"
-    m_session->LoadSolverInfo("UpwindType", this->riemann_solver_type,
-                              "VorticityUpwind");
+
     std::string boussinesq_str;
     m_session->LoadSolverInfo("Boussinesq Approximation", boussinesq_str, "On");
     this->m_boussinesq = (boussinesq_str == "On");
