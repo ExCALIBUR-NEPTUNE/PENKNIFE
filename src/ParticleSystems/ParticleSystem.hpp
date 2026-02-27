@@ -570,17 +570,6 @@ protected:
         apply_timestep_reset(g);
 
         apply_timestep_inner(static_particle_sub_group(g), dt);
-        // for (auto &[k, v] : this->species_map)
-        // {
-        //     if (v.charge == 0)
-        //     {
-        //         apply_neutral_timestep(particle_sub_group(v.sub_group), dt);
-        //     }
-        //     else
-        //     {
-        //         apply_ion_timestep(particle_sub_group(v.sub_group), dt);
-        //     }
-        // }
     }
 
     /**

@@ -298,17 +298,22 @@ void ParticleSystem::set_up_species()
                 this->total_num_particles_added += N;
             }
         }
-
-        int state = s;
-        ParticleSubGroupSharedPtr sub_group =
-            std::make_shared<ParticleSubGroup>(
-                this->particle_group,
-                [state](auto sid) { return sid[0] == state; },
-                Access::read(Sym<INT>("INTERNAL_STATE")));
-        species_map[k] =
-            SpeciesInfo{state, particle_mass, particle_charge, sub_group};
         s++;
     }
+    auto partitions = particle_group_partition(this->particle_group,
+                                               Sym<INT>("INTERNAL_STATE"), s);
+
+    s = 0;
+    for (const auto &[k, v] : this->config->get_particle_species())
+    {
+        double particle_mass, particle_charge;
+        this->config->load_particle_species_parameter(k, "Mass", particle_mass,
+                                                      1.0);
+        this->config->load_particle_species_parameter(k, "Charge",
+                                                      particle_charge, 0.0);
+        species_map[k] = SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
+    }
+
     set_up_boundaries();
 }
 
@@ -628,12 +633,14 @@ void ParticleSystem::add_sources(double time, double dt)
                 }
             }
         }
-        int s = v.id;
-        ParticleSubGroupSharedPtr sub_group =
-            std::make_shared<ParticleSubGroup>(
-                this->particle_group, [s](auto sid) { return sid[0] == s; },
-                Access::read(Sym<INT>("INTERNAL_STATE")));
-        v.sub_group = sub_group;
+    }
+    auto partitions = particle_group_partition(this->particle_group,
+                                               Sym<INT>("INTERNAL_STATE"), species_map.size());
+
+    int s = 0;
+    for (auto &[k, v] : this->species_map)
+    {
+        v.sub_group = partitions[s++];
     }
 
     r.end();
