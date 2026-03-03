@@ -61,6 +61,139 @@ inline auto get_normal_rng_kernel(SYCLTargetSharedPtr sycl_target, REAL mean,
     return rng_kernel;
 }
 
+/**
+ * @brief On device: Reaction data that just extracts values of a real particle
+ * dat
+ *
+ */
+struct Extractor2DataOnDevice : public ReactionDataBaseOnDevice<1>
+{
+
+    Extractor2DataOnDevice() = default;
+
+    /**
+     * @brief Function to extract particle dat values into an array
+     *
+     * @param index Read-only accessor to a loop index for a ParticleLoop
+     * inside which calc_data is called. Access using either
+     * index.get_loop_linear_index(), index.get_local_linear_index(),
+     * index.get_sub_linear_index() as required.
+     * @param req_int_props Vector of symbols for integer-valued properties that
+     * need to be used for the reaction rate calculation.
+     * @param req_real_props Vector of symbols for real-valued properties that
+     * need to be used for the reaction rate calculation.
+     * @param kernel The random number generator kernel potentially used in the
+     * calculation
+     *
+     * @return A REAL-valued array of size ncomp containing the extracted data
+     */
+    std::array<REAL, 1> calc_data(
+        const Access::LoopIndex::Read &index,
+        const Access::SymVector::Write<INT> &req_int_props,
+        const Access::SymVector::Read<REAL> &req_real_props,
+        typename ReactionDataBaseOnDevice<1>::RNG_KERNEL_TYPE::KernelType
+            &kernel) const
+    {
+
+        std::array<REAL, 1> result;
+
+        result[0] = req_real_props.at(this->prop_ind, index, 2);
+
+        return result;
+    }
+
+public:
+    int prop_ind;
+};
+
+namespace temp
+{
+struct ComponentDataOnDevice : public ReactionDataBaseOnDevice<1>
+{
+
+    ComponentDataOnDevice() = default;
+
+    /**
+     * @brief Function to extract particle dat values into an array
+     *
+     * @param index Read-only accessor to a loop index for a ParticleLoop
+     * inside which calc_data is called. Access using either
+     * index.get_loop_linear_index(), index.get_local_linear_index(),
+     * index.get_sub_linear_index() as required.
+     * @param req_int_props Vector of symbols for integer-valued properties that
+     * need to be used for the reaction rate calculation.
+     * @param req_real_props Vector of symbols for real-valued properties that
+     * need to be used for the reaction rate calculation.
+     * @param kernel The random number generator kernel potentially used in the
+     * calculation
+     *
+     * @return A REAL-valued array of containing the extracted data
+     */
+    std::array<REAL, 1> calc_data(
+        const Access::LoopIndex::Read &index,
+        const Access::SymVector::Write<INT> &req_int_props,
+        const Access::SymVector::Read<REAL> &req_real_props,
+        typename ReactionDataBaseOnDevice<1>::RNG_KERNEL_TYPE::KernelType
+            &kernel) const
+    {
+
+        std::array<REAL, 1> result;
+
+        result[0] = req_real_props.at(this->prop_ind, index, this->comp_ind);
+
+        return result;
+    }
+
+public:
+    int prop_ind;
+    int comp_ind;
+};
+
+/**
+ * @brief Reaction data used to extract real valued ParticleDat
+ */
+struct ComponentData : public ReactionDataBase<ComponentDataOnDevice, 1>
+{
+
+    /**
+     * @brief Constructor for ComponentData.
+     *
+     * @param extracted_sym The Sym<REAL> corresponding to the ParticleDat whose
+     * components should be extracted
+     * @param comp The component of the ParticleDat to be extracted
+     */
+    ComponentData(const Sym<REAL> &extracted_sym, const int comp)
+        : ReactionDataBase<ComponentDataOnDevice, 1>(),
+          extracted_sym(extracted_sym)
+    {
+
+        this->required_real_props.add(extracted_sym.name);
+        this->on_device_obj = ComponentDataOnDevice();
+
+        this->on_device_obj->comp_ind = comp;
+        this->index_on_device_object();
+    }
+
+    /**
+     * @brief Index the particle weight on the on-device object
+     */
+    void index_on_device_object()
+    {
+
+        this->on_device_obj->prop_ind =
+            this->required_real_props.find_index(this->extracted_sym.name);
+    };
+
+private:
+    Sym<REAL> extracted_sym;
+};
+
+auto inline component(const std::string &name, const int comp)
+{
+
+    return ComponentData(Sym<REAL>(name), comp);
+}
+} // namespace temp
 template <size_t ndim>
 inline auto specular_reflection(SYCLTargetSharedPtr sycl_target,
                                 Species reflected_species, REAL rate)
@@ -68,36 +201,30 @@ inline auto specular_reflection(SYCLTargetSharedPtr sycl_target,
 
     auto rate_data = FixedRateData(rate);
 
-    // auto properties_map = PropertiesMap();
-    // properties_map[VANTAGE::Reactions::default_properties.source_momentum] =
-    //     "SURFACE_MOMENTUM_SOURCE";
-    // properties_map[VANTAGE::Reactions::default_properties.source_energy] =
-    //     "SURFACE_ENERGY_SOURCE";
+    auto properties_map = PropertiesMap();
+    properties_map[VANTAGE::Reactions::default_properties.source_momentum] =
+        "SURFACE_MOMENTUM_SOURCE";
+    properties_map[VANTAGE::Reactions::default_properties.source_energy] =
+        "SURFACE_ENERGY_SOURCE";
 
-    // auto velocity_data = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
+    auto velocity_data   = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
+    auto velocity_data_2 = temp::ComponentData(Sym<REAL>("VELOCITY"), 2);
 
-    // auto specular_reflection = SpecularReflectionData<ndim>();
+    auto specular_reflection = SpecularReflectionData<ndim>();
 
-    // auto pipeline = PipelineData(velocity_data, specular_reflection);
+    auto pipeline = PipelineData(velocity_data, specular_reflection);
+    auto concat   = ConcatenatorData(pipeline, velocity_data_2);
 
-    // auto reflection_kernels = LinearScatteringKernels<ndim>(
-    //     reflected_species, properties_map.get_map());
-    // auto data_calculator = DataCalculator<decltype(pipeline)>(pipeline);
+    auto reflection_kernels =
+        LinearScatteringKernels<3>(reflected_species, properties_map.get_map());
+    auto data_calculator = DataCalculator<decltype(concat)>(concat);
 
-    // auto reflection = std::make_shared<
-    //     LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
-    //                        decltype(data_calculator)>>(
-    //     sycl_target, reflected_species.get_id(),
-    //     std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
-    //     rate_data, reflection_kernels, data_calculator);
-    // return reflection;
-
-    auto reflection_kernels = SpecularReflectionKernels<ndim>();
-
-    auto reflection= std::make_shared<
-        LinearReactionBase<0, FixedRateData, SpecularReflectionKernels<ndim>>>(
-        sycl_target, reflected_species.get_id(), std::array<int, 0>{},
-        rate_data, reflection_kernels);
+    auto reflection = std::make_shared<
+        LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
+                           decltype(data_calculator)>>(
+        sycl_target, reflected_species.get_id(),
+        std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
+        rate_data, reflection_kernels, data_calculator);
     return reflection;
 }
 

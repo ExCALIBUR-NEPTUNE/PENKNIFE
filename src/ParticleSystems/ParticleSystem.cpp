@@ -35,7 +35,7 @@ void ParticleSystem::init_spec()
         ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
-        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->ndim),
+        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), 3),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRIC_FIELD"), 3),
         ParticleProp(Sym<REAL>("MAGNETIC_FIELD"), 3),
@@ -48,7 +48,7 @@ void ParticleSystem::init_spec()
         this->particle_spec.push(
             ParticleProp(Sym<REAL>(k + "_SOURCE_ENERGY"), 1));
         this->particle_spec.push(
-            ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), this->ndim));
+            ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), 3));
     }
     this->particle_spec.push(ParticleProp(Sym<REAL>("WEIGHT"), 1));
     this->particle_spec.push(ParticleProp(Sym<REAL>("TOT_REACTION_RATE"), 1));
@@ -69,14 +69,13 @@ void ParticleSystem::init_spec()
     this->particle_spec.push(
         ParticleProp(Sym<REAL>("SURFACE_DENSITY_SOURCE"), 1));
     this->particle_spec.push(
-        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), this->ndim));
+        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), 3));
     this->particle_spec.push(
         ParticleProp(Sym<REAL>("SURFACE_ENERGY_SOURCE"), 1));
 }
 
 void ParticleSystem::init_object()
 {
-    PartSysBase::init_object();
     config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
     config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
     config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
@@ -84,8 +83,11 @@ void ParticleSystem::init_object()
 
     this->omega_c =
         constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
+    PartSysBase::init_object();
+
     this->particle_remover =
         std::make_shared<ParticleRemover>(this->sycl_target);
+    this->particle_group_temporary = std::make_shared<ParticleGroupTemporary>();
 
     this->transfer_particles();
     pre_advection(particle_sub_group(this->particle_group));
@@ -169,7 +171,7 @@ void ParticleSystem::set_up_species()
                                            (particle_mass * constants::m_p)) /
                                  (mesh_length * omega_c);
                     velocities = NESO::Particles::normal_distribution(
-                        N, ndim, 0.0, vth, this->rng_phasespace);
+                        N, 3, 0.0, vth, this->rng_phasespace);
                 }
 
                 else if (auto v = vmap.find(std::pair("Tin", 0));
@@ -311,9 +313,9 @@ void ParticleSystem::set_up_species()
                                                       1.0);
         this->config->load_particle_species_parameter(k, "Charge",
                                                       particle_charge, 0.0);
-        species_map[k] = SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
+        species_map[k] =
+            SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
     }
-
     set_up_boundaries();
 }
 
@@ -473,7 +475,7 @@ void ParticleSystem::add_sources(double time, double dt)
                                       (particle_mass * constants::m_p)) /
                             (mesh_length * omega_c);
                         velocities = NESO::Particles::normal_distribution(
-                            N, ndim, 0.0, vth, this->rng_phasespace);
+                            N, 3, 0.0, vth, this->rng_phasespace);
                     }
 
                     else if (auto v = vmap.find(std::pair("Tin", 0));
@@ -634,8 +636,8 @@ void ParticleSystem::add_sources(double time, double dt)
             }
         }
     }
-    auto partitions = particle_group_partition(this->particle_group,
-                                               Sym<INT>("INTERNAL_STATE"), species_map.size());
+    auto partitions = particle_group_partition(
+        this->particle_group, Sym<INT>("INTERNAL_STATE"), species_map.size());
 
     int s = 0;
     for (auto &[k, v] : this->species_map)
