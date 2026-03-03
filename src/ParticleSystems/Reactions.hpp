@@ -269,7 +269,7 @@ inline auto thermal_reflection(SYCLTargetSharedPtr sycl_target,
 
     auto cartesian_reflection = CartesianBasisReflectionData();
 
-    auto reflection_kernels = LinearScatteringKernels<ndim>(
+    auto reflection_kernels = LinearScatteringKernels<3>(
         reflected_species, properties_map.get_map());
 
     auto sampler1 =

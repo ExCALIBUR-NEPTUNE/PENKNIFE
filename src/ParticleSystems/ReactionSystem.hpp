@@ -51,6 +51,14 @@ public:
         this->boundary->execute(sg, cg, dt);
     };
 
+    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+                                const double dt_inner) override
+    {
+        ParticleSystem::integrate_inner(sg, dt_inner);
+        if (this->config->get_reactions().size())
+            reaction_controller->apply(sg, dt_inner);
+    }
+
     void finish_setup(std::vector<std::shared_ptr<DisContField>> &src_fields,
                       std::vector<Sym<REAL>> &syms,
                       std::vector<int> &components) override;

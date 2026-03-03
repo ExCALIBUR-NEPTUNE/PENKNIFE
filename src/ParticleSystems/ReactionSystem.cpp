@@ -192,7 +192,7 @@ void ReactionSystem::finish_setup(
     auto remove_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
             make_direct_marking_strategy(
-                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                "very_low_weight", [](auto w) { return w[0] < 1e-12; },
                 Access::read(Sym<REAL>("WEIGHT")))},
         make_transformation_strategy<SimpleRemovalTransformationStrategy>());
 
@@ -212,7 +212,7 @@ void ReactionSystem::finish_setup(
     auto merge_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
             make_direct_marking_strategy(
-                "very_low_weight", [](auto w) { return w[0] < 1e-12; },
+                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
                 Access::read(Sym<REAL>("WEIGHT")))},
         merge_transform);
 

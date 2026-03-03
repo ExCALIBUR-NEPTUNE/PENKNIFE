@@ -146,14 +146,14 @@
             </KN>
         </SPECIES>
         <VANTAGE>
-            <!-- <R TYPE="Ionisation" SPECIES="D">
-                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+            <R TYPE="Ionisation" SPECIES="D">
+                <RATE TYPE="Fixed" VALUE="0.0000001"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
             </R>
             <R TYPE="Ionisation" SPECIES="T">
-                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <RATE TYPE="Fixed" VALUE="0.0000001"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-            </R> -->
+            </R>
             <!-- <R TYPE="Recombination" SPECIES="0">
                 <RATE TYPE="AMJUEL" VALUE="1.0"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>

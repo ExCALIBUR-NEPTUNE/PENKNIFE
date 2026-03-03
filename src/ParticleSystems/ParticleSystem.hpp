@@ -425,7 +425,7 @@ protected:
         }
     }
 
-    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+    virtual inline void integrate_inner(ParticleSubGroupSharedPtr sg,
                                 const double dt_inner)
     {
         auto ions = particle_sub_group(
