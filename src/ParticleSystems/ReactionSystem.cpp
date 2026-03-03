@@ -191,9 +191,10 @@ void ReactionSystem::finish_setup(
         std::make_shared<SimpleRemovalTransformationStrategy>();
     auto remove_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 1e-10)},
-        std::dynamic_pointer_cast<TransformationStrategy>(remove_transform));
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-12; },
+                Access::read(Sym<REAL>("WEIGHT")))},
+        make_transformation_strategy<SimpleRemovalTransformationStrategy>());
 
     std::shared_ptr<TransformationStrategy> merge_transform;
 
@@ -210,8 +211,9 @@ void ReactionSystem::finish_setup(
 
     auto merge_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 0.0000000001)},
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                Access::read(Sym<REAL>("WEIGHT")))},
         merge_transform);
 
     std::vector<std::string> src_names{"ELECTRON_SOURCE_DENSITY",
@@ -256,10 +258,11 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
     : time_step_prop_sym(time_step_prop_sym), sycl_target(sycl_target),
       ndim(mesh->get_ndim()), config(config)
 {
-    auto reflection_removal_wrapper = std::make_shared<TransformationWrapper>(
+    this->remove_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 1.0e-12)},
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                Access::read(Sym<REAL>("WEIGHT")))},
         make_transformation_strategy<SimpleRemovalTransformationStrategy>());
     config->read_boundary_regions();
 
@@ -312,7 +315,7 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
 
                     if (this->ndim == 2)
                     {
-                        auto reaction = thermal_reflection<2>(
+                        auto reaction = thermal_reflection<3>(
                             this->sycl_target, thermal_species, rate, T);
 
                         this->reaction_controllers[b_id]->add_reaction(
@@ -366,7 +369,5 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
     this->boundary_truncation =
         std::make_shared<BoundaryTruncation>(this->ndim, this->reset_distance);
 }
-
-
 
 } // namespace PENKNIFE
