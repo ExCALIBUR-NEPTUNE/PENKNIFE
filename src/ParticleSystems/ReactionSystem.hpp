@@ -26,14 +26,26 @@ public:
 
     ~ReactionSystem() override = default;
 
-    std::shared_ptr<TransformationWrapper> zeroer_transform_wrapper;
+    std::shared_ptr<ParticleDatZeroer<REAL>> zeroer_transform;
 
     inline void integrate(const double time_end, const double dt) override
     {
-        this->zeroer_transform_wrapper->transform(this->particle_group);
         ParticleSystem::integrate(time_end, dt);
-        this->field_project->project(this->particle_group, this->src_syms,
-                                     this->src_components);
+    }
+
+    inline void apply_timestep(const double dt) override
+    {
+        ParticleSystem::apply_timestep(dt);
+        if (this->config->get_reactions().size())
+        {
+            reaction_controller->apply(this->particle_group, dt);
+        }
+    }
+
+    inline virtual void zero_source_dats() override
+    {
+        this->zeroer_transform->transform(
+            particle_sub_group(this->particle_group));
     }
 
     void set_up_reactions();
@@ -55,8 +67,6 @@ public:
                                 const double dt_inner) override
     {
         ParticleSystem::integrate_inner(sg, dt_inner);
-        if (this->config->get_reactions().size())
-            reaction_controller->apply(sg, dt_inner);
     }
 
     void finish_setup(std::vector<std::shared_ptr<DisContField>> &src_fields,
@@ -122,7 +132,8 @@ public:
         std::map<int, std::shared_ptr<ReactionController>> reaction_controllers;
         std::shared_ptr<TransformationWrapper> remove_wrapper;
 
-        int ndim;
+        const int ndim;
+        const int vdim;
         REAL reset_distance;
 
         NESOReaderSharedPtr config;

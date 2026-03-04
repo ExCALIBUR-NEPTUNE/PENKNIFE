@@ -29,7 +29,7 @@ static SU::EquationSystemSharedPtr create(
 }
 
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
-                             const SD::MeshGraphSharedPtr &graph)
+                           const SD::MeshGraphSharedPtr &graph)
     : TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>(session, graph)
 {
 }
@@ -647,9 +647,11 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         }
         for (auto &fld : this->src_fields)
         {
-            Vmath::Zero(fld->GetNpoints(), fld->UpdatePhys(), 1);
+            Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
         }
+        this->particle_sys->zero_source_dats();
         this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
+        this->particle_sys->project_source_terms();    
     }
 
     return UnsteadySystem::v_PreIntegrate(step);
@@ -691,7 +693,7 @@ NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
  * @brief After reading ICs, calculate phi and grad(phi)
  */
 void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                           [[maybe_unused]] const int domain)
+                                          [[maybe_unused]] const int domain)
 {
     if (m_session->DefinesFunction("InitialConditions"))
     {
@@ -840,6 +842,17 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         }
         s++;
     }
+    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+    for (const auto &[s, v] : GetIons())
+    {
+        int ni_idx = v.fields.at(field_to_index.at("n"));
+
+        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+                     1);
+    }
+    m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
+
     if (m_session->GetComm()->GetRank() == 0)
     {
         std::cout << "============================================="

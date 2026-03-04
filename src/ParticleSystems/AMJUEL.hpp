@@ -1,13 +1,13 @@
 #ifndef AMJUEL_HPP
 #define AMJUEL_HPP
 
+#include "../Misc/Constants.hpp"
 #include <cmath>
 #include <fstream>
+#include <reactions/reactions.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <reactions/reactions.hpp>
-#include "../Misc/Constants.hpp"
 
 namespace PENKNIFE
 {
@@ -20,7 +20,9 @@ struct norm
     static constexpr double dens        = 1e18;
     static constexpr double mass_amu    = 1.0;
     static constexpr double mass_amu_SI = constants::m_p_si * mass_amu;
-    static inline const double vel      = std::sqrt((2 * constants::e) / constants::m_p_si);
+    // static inline const double vel      = std::sqrt((2 * constants::e) /
+    // constants::m_p_si);
+    static inline const double vel = constants::qeomp;
     static inline const double potential_energy =
         13.6 * constants::e / (mass_amu_SI * vel * vel);
 };
