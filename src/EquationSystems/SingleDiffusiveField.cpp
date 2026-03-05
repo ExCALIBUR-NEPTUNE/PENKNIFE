@@ -100,7 +100,7 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
         }
 
         this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->ee, this->ve);
+                                                  this->Te, this->ve);
 
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);

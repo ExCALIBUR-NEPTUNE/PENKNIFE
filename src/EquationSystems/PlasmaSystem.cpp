@@ -623,7 +623,7 @@ bool PlasmaSystem::v_PreIntegrate(int step)
     {
         // Integrate the particle system to the requested time.
         this->particle_sys->evaluate_fields(this->E, this->B, this->ne,
-                                            this->ee, this->ve);
+                                            this->Te, this->ve);
         if (particle_output_freq > 0 && (step % particle_output_freq) == 0)
         {
             this->particle_sys->write(step);
