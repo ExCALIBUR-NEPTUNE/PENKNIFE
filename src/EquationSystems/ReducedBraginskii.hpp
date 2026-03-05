@@ -34,6 +34,7 @@ protected:
     void v_InitObject(bool DeclareFields = true) override;
     void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                                 const int domain) override;
+    bool v_PreIntegrate(int step) override;
     bool v_PostIntegrate(int step) override;
     void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
                   Array<OneD, Array<OneD, NekDouble>> &outarray,

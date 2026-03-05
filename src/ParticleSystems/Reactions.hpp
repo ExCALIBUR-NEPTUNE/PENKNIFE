@@ -61,53 +61,9 @@ inline auto get_normal_rng_kernel(SYCLTargetSharedPtr sycl_target, REAL mean,
     return rng_kernel;
 }
 
-/**
- * @brief On device: Reaction data that just extracts values of a real particle
- * dat
- *
- */
-struct Extractor2DataOnDevice : public ReactionDataBaseOnDevice<1>
-{
-
-    Extractor2DataOnDevice() = default;
-
-    /**
-     * @brief Function to extract particle dat values into an array
-     *
-     * @param index Read-only accessor to a loop index for a ParticleLoop
-     * inside which calc_data is called. Access using either
-     * index.get_loop_linear_index(), index.get_local_linear_index(),
-     * index.get_sub_linear_index() as required.
-     * @param req_int_props Vector of symbols for integer-valued properties that
-     * need to be used for the reaction rate calculation.
-     * @param req_real_props Vector of symbols for real-valued properties that
-     * need to be used for the reaction rate calculation.
-     * @param kernel The random number generator kernel potentially used in the
-     * calculation
-     *
-     * @return A REAL-valued array of size ncomp containing the extracted data
-     */
-    std::array<REAL, 1> calc_data(
-        const Access::LoopIndex::Read &index,
-        const Access::SymVector::Write<INT> &req_int_props,
-        const Access::SymVector::Read<REAL> &req_real_props,
-        typename ReactionDataBaseOnDevice<1>::RNG_KERNEL_TYPE::KernelType
-            &kernel) const
-    {
-
-        std::array<REAL, 1> result;
-
-        result[0] = req_real_props.at(this->prop_ind, index, 2);
-
-        return result;
-    }
-
-public:
-    int prop_ind;
-};
-
 namespace temp
 {
+// Temporary until component extraction is added to Reactions
 struct ComponentDataOnDevice : public ReactionDataBaseOnDevice<1>
 {
 
@@ -194,7 +150,8 @@ auto inline component(const std::string &name, const int comp)
     return ComponentData(Sym<REAL>(name), comp);
 }
 } // namespace temp
-template <size_t ndim>
+
+template <size_t ndim, size_t vdim>
 inline auto specular_reflection(SYCLTargetSharedPtr sycl_target,
                                 Species reflected_species, REAL rate)
 {
@@ -207,28 +164,41 @@ inline auto specular_reflection(SYCLTargetSharedPtr sycl_target,
     properties_map[VANTAGE::Reactions::default_properties.source_energy] =
         "SURFACE_ENERGY_SOURCE";
 
-    auto velocity_data   = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
-    auto velocity_data_2 = temp::ComponentData(Sym<REAL>("VELOCITY"), 2);
-
+    auto velocity_data       = ExtractorData<ndim>(Sym<REAL>("VELOCITY"));
     auto specular_reflection = SpecularReflectionData<ndim>();
+    auto pipeline            = PipelineData(velocity_data, specular_reflection);
+    auto reflection_kernels  = LinearScatteringKernels<vdim>(
+        reflected_species, properties_map.get_map());
 
-    auto pipeline = PipelineData(velocity_data, specular_reflection);
-    auto concat   = ConcatenatorData(pipeline, velocity_data_2);
+    if constexpr (ndim == 2 && vdim == 3)
+    {
+        auto velocity_data_2 = temp::ComponentData(Sym<REAL>("VELOCITY"), 2);
+        auto concat          = ConcatenatorData(pipeline, velocity_data_2);
+        auto data_calculator = DataCalculator<decltype(concat)>(concat);
 
-    auto reflection_kernels =
-        LinearScatteringKernels<3>(reflected_species, properties_map.get_map());
-    auto data_calculator = DataCalculator<decltype(concat)>(concat);
+        auto reflection = std::make_shared<
+            LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
+                               decltype(data_calculator)>>(
+            sycl_target, reflected_species.get_id(),
+            std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
+            rate_data, reflection_kernels, data_calculator);
+        return reflection;
+    }
+    else
+    {
+        auto data_calculator = DataCalculator<decltype(pipeline)>(pipeline);
 
-    auto reflection = std::make_shared<
-        LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
-                           decltype(data_calculator)>>(
-        sycl_target, reflected_species.get_id(),
-        std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
-        rate_data, reflection_kernels, data_calculator);
-    return reflection;
+        auto reflection = std::make_shared<
+            LinearReactionBase<1, FixedRateData, decltype(reflection_kernels),
+                               decltype(data_calculator)>>(
+            sycl_target, reflected_species.get_id(),
+            std::array<int, 1>{static_cast<int>(reflected_species.get_id())},
+            rate_data, reflection_kernels, data_calculator);
+        return reflection;
+    }
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto surface_absorption(SYCLTargetSharedPtr sycl_target,
                                Species absorbed_species, REAL rate)
 {
@@ -242,7 +212,7 @@ inline auto surface_absorption(SYCLTargetSharedPtr sycl_target,
     properties_map[VANTAGE::Reactions::default_properties.source_energy] =
         "SURFACE_ENERGY_SOURCE";
 
-    auto absorption_kernels = GeneralAbsorptionKernels<ndim>(
+    auto absorption_kernels = GeneralAbsorptionKernels<vdim>(
         absorbed_species, properties_map.get_map());
 
     auto absorption = std::make_shared<
@@ -252,7 +222,7 @@ inline auto surface_absorption(SYCLTargetSharedPtr sycl_target,
     return absorption;
 }
 
-template <size_t ndim>
+template <size_t ndim, size_t vdim>
 inline auto thermal_reflection(SYCLTargetSharedPtr sycl_target,
                                Species reflected_species, REAL rate,
                                REAL std_dev)
@@ -269,7 +239,7 @@ inline auto thermal_reflection(SYCLTargetSharedPtr sycl_target,
 
     auto cartesian_reflection = CartesianBasisReflectionData();
 
-    auto reflection_kernels = LinearScatteringKernels<3>(
+    auto reflection_kernels = LinearScatteringKernels<vdim>(
         reflected_species, properties_map.get_map());
 
     auto sampler1 =
@@ -300,7 +270,7 @@ inline auto thermal_reflection(SYCLTargetSharedPtr sycl_target,
     return reflection;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto ionise_reaction_amjuel(SYCLTargetSharedPtr sycl_target,
                                    const Species &target_species,
                                    const Species &electron_species)
@@ -309,14 +279,14 @@ inline auto ionise_reaction_amjuel(SYCLTargetSharedPtr sycl_target,
     auto ionise_energy_data = AMJUEL::ionise_energy_data();
 
     auto ionise_reaction = std::make_shared<ElectronImpactIonisation<
-        decltype(ionise_rate_data), decltype(ionise_energy_data), ndim>>(
+        decltype(ionise_rate_data), decltype(ionise_energy_data), vdim>>(
         sycl_target, ionise_rate_data, ionise_energy_data, target_species,
         electron_species);
 
     return ionise_reaction;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto ionise_reaction_fixed(SYCLTargetSharedPtr sycl_target,
                                   const Species &target_species,
                                   const Species &electron_species, REAL rate,
@@ -325,14 +295,14 @@ inline auto ionise_reaction_fixed(SYCLTargetSharedPtr sycl_target,
     auto ionise_rate_data   = FixedRateData(rate);
     auto ionise_energy_data = FixedRateData(energy_rate);
     auto ionise_reaction    = std::make_shared<ElectronImpactIonisation<
-           decltype(ionise_rate_data), decltype(ionise_energy_data), ndim>>(
+           decltype(ionise_rate_data), decltype(ionise_energy_data), vdim>>(
         sycl_target, ionise_rate_data, ionise_energy_data, target_species,
         electron_species);
 
     return ionise_reaction;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto cx_reaction_amjuel(
     SYCLTargetSharedPtr sycl_target,
     std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
@@ -345,7 +315,7 @@ inline auto cx_reaction_amjuel(
     auto cross_section = AMJUEL::amjuel_fit_cross_section(reduced_mass);
 
     auto data_calc_sampler =
-        FilteredMaxwellianSampler<2, decltype(cross_section)>(
+        FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
                 (child_mass * norm::mass_amu_SI * norm::vel * norm::vel),
             cross_section, rng_kernel);
@@ -356,7 +326,7 @@ inline auto cx_reaction_amjuel(
     // The charge-exchange kernel, handles the descendant products and how
     // parent_species and descendant_species are modified by the reaction.
     auto cx_reaction_kernel =
-        CXReactionKernels<ndim>(descendant_species, parent_species);
+        CXReactionKernels<vdim>(descendant_species, parent_species);
 
     // Designate that descendant particles have a "INTERNAL_STATE" that
     // corresponds to descendant_species
@@ -373,7 +343,7 @@ inline auto cx_reaction_amjuel(
     return cx_reaction;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto cx_reaction_fixed(
     SYCLTargetSharedPtr sycl_target,
     std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
@@ -387,7 +357,7 @@ inline auto cx_reaction_fixed(
     auto reduced_mass = (parent_mass * child_mass) / (parent_mass + child_mass);
 
     auto data_calc_sampler =
-        FilteredMaxwellianSampler<2, decltype(cross_section)>(
+        FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
                 (child_mass * norm::mass_amu_SI * norm::vel * norm::vel),
             cross_section, rng_kernel);
@@ -398,7 +368,7 @@ inline auto cx_reaction_fixed(
     // The charge-exchange kernel, handles the descendant products and how
     // parent_species and descendant_species are modified by the reaction.
     auto cx_reaction_kernel =
-        CXReactionKernels<ndim>(descendant_species, parent_species);
+        CXReactionKernels<vdim>(descendant_species, parent_species);
 
     // Designate that descendant particles have a "INTERNAL_STATE" that
     // corresponds to descendant_species
@@ -415,7 +385,7 @@ inline auto cx_reaction_fixed(
     return cx_reaction;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto recombination_reaction_amjuel(
     SYCLTargetSharedPtr sycl_target,
     std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
@@ -427,7 +397,7 @@ inline auto recombination_reaction_amjuel(
 
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
     auto recomb_data_calc_sampler =
-        FilteredMaxwellianSampler<ndim, decltype(constant_rate_cross_section)>(
+        FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
                 (marker_species.get_mass() * norm::mass_amu_SI * norm::vel *
                  norm::vel),
@@ -437,7 +407,7 @@ inline auto recombination_reaction_amjuel(
                        decltype(recomb_data_calc_sampler)>(
             recomb_energy_data, recomb_data_calc_sampler);
 
-    auto recomb_reaction_kernel = RecombReactionKernels<ndim>(
+    auto recomb_reaction_kernel = RecombReactionKernels<vdim>(
         marker_species, electron_species, norm::potential_energy);
 
     const int out_state                  = neutral_species.get_id();
@@ -452,7 +422,7 @@ inline auto recombination_reaction_amjuel(
     return recomb_reaction;
 }
 
-template <size_t ndim>
+template <size_t vdim>
 inline auto recombination_reaction_fixed(
     SYCLTargetSharedPtr sycl_target,
     std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
@@ -464,7 +434,7 @@ inline auto recombination_reaction_fixed(
 
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
     auto recomb_data_calc_sampler =
-        FilteredMaxwellianSampler<ndim, decltype(constant_rate_cross_section)>(
+        FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
                 (marker_species.get_mass() * norm::mass_amu_SI * norm::vel *
                  norm::vel),
@@ -474,7 +444,7 @@ inline auto recombination_reaction_fixed(
                        decltype(recomb_data_calc_sampler)>(
             recomb_energy_data, recomb_data_calc_sampler);
 
-    auto recomb_reaction_kernel = RecombReactionKernels<ndim>(
+    auto recomb_reaction_kernel = RecombReactionKernels<vdim>(
         marker_species, electron_species, norm::potential_energy);
 
     const int out_state                  = neutral_species.get_id();

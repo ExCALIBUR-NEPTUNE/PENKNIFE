@@ -53,15 +53,15 @@ void DoubleDiffusiveField::v_InitObject(bool DeclareFields)
     this->m_kcross = Array<OneD, NekDouble>(npts, 0.0);
     this->m_kperp  = Array<OneD, NekDouble>(npts, 0.0);
 
-    // this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
-    // this->Te = MemoryManager<MR::DisContField>::AllocateSharedPtr(*ne);
-
-    pe_idx = m_indfields.size() - this->n_indep_fields;
+    ee_idx = m_indfields.size() - this->n_indep_fields;
 
     m_ode.DefineOdeRhs(&DoubleDiffusiveField::DoOdeRhs, this);
 
     if (this->particles_enabled)
     {
+        this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
+        this->Te = MemoryManager<MR::DisContField>::AllocateSharedPtr(
+            *std::dynamic_pointer_cast<MR::DisContField>(m_fields[1]));
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
         this->src_fields.emplace_back(
@@ -197,6 +197,19 @@ void DoubleDiffusiveField::ImplicitTimeIntCG(
     }
 }
 
+bool DoubleDiffusiveField::v_PreIntegrate(int step)
+{
+    if (this->particles_enabled)
+    {
+        Vmath::Vdiv(this->n_pts, m_indfields[ee_idx]->GetPhys(), 1,
+                    m_fields[0]->GetPhys(), 1, Te->UpdatePhys(), 1);
+        Vmath::Smul(this->n_pts, 2.0 / 3.0, Te->GetPhys(), 1, Te->UpdatePhys(),
+                    1);
+    }
+
+    return PlasmaSystem::v_PreIntegrate(step);
+}
+
 void DoubleDiffusiveField::CalcK(
     const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f)
 {
@@ -209,12 +222,12 @@ void DoubleDiffusiveField::CalcK(
 
     for (int p = 0; p < npoints; ++p)
     {
-        m_kpar[p] = this->k_ci * this->k_par * pow(in_arr[pe_idx][p], 2.5) /
+        m_kpar[p] = this->k_ci * this->k_par * pow(in_arr[ee_idx][p], 2.5) /
                     (Z * Z * in_arr[ni_idx][p]);
         m_kperp[p] = this->k_perp * Z * Z * std::sqrt(A) * in_arr[ni_idx][p] /
-                     (sqrt(in_arr[pe_idx][p]) * this->mag_B[p]);
+                     (sqrt(in_arr[ee_idx][p]) * this->mag_B[p]);
         m_kcross[p] =
-            this->k_cross * ne[p] * in_arr[pe_idx][p] / (sqrt(this->mag_B[p]));
+            this->k_cross * ne[p] * in_arr[ee_idx][p] / (sqrt(this->mag_B[p]));
     }
 }
 
@@ -262,10 +275,10 @@ void DoubleDiffusiveField::CalcKappa(
     auto ne     = this->m_fields[0]->GetPhys();
     for (int p = 0; p < npoints; ++p)
     {
-        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[pe_idx][p], 2.5);
+        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[ee_idx][p], 2.5);
         this->m_kperp[p] = this->kappa_e_perp * ne[p] * ne[p] /
-                           (this->mag_B[p] * sqrt(in_arr[pe_idx][p]));
-        this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[pe_idx][p] /
+                           (this->mag_B[p] * sqrt(in_arr[ee_idx][p]));
+        this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[ee_idx][p] /
                             (sqrt(this->mag_B[p]));
     }
 }
@@ -374,7 +387,7 @@ void DoubleDiffusiveField::DoDiffusion(
     }
 
     // Extract temperature
-    m_varConv->GetElectronTemperature(inarray, inarrayDiff[pe_idx]);
+    m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
 
     for (const auto &[s, v] : this->GetSpecies())
     {
@@ -392,8 +405,8 @@ void DoubleDiffusiveField::DoDiffusion(
     }
     else
     {
-        m_varConv->GetElectronTemperature(pFwd, inFwd[pe_idx]);
-        m_varConv->GetElectronTemperature(pBwd, inBwd[pe_idx]);
+        m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
+        m_varConv->GetElectronTemperature(pBwd, inBwd[ee_idx]);
 
         for (const auto &[s, v] : this->GetSpecies())
         {
@@ -483,19 +496,19 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
 
     if (nDim == 3)
     {
-        Vmath::Vvtvvtm(nPts, b_unit[1], 1, qfield[2][pe_idx], 1, b_unit[2], 1,
-                       qfield[1][pe_idx], 1, fluxes[0][pe_idx], 1);
-        Vmath::Vvtvvtm(nPts, b_unit[2], 1, qfield[0][pe_idx], 1, b_unit[0], 1,
-                       qfield[2][pe_idx], 1, fluxes[1][pe_idx], 1);
-        Vmath::Vvtvvtm(nPts, b_unit[0], 1, qfield[1][pe_idx], 1, b_unit[1], 1,
-                       qfield[0][pe_idx], 1, fluxes[2][pe_idx], 1);
+        Vmath::Vvtvvtm(nPts, b_unit[1], 1, qfield[2][ee_idx], 1, b_unit[2], 1,
+                       qfield[1][ee_idx], 1, fluxes[0][ee_idx], 1);
+        Vmath::Vvtvvtm(nPts, b_unit[2], 1, qfield[0][ee_idx], 1, b_unit[0], 1,
+                       qfield[2][ee_idx], 1, fluxes[1][ee_idx], 1);
+        Vmath::Vvtvvtm(nPts, b_unit[0], 1, qfield[1][ee_idx], 1, b_unit[1], 1,
+                       qfield[0][ee_idx], 1, fluxes[2][ee_idx], 1);
     }
     else
     {
-        Vmath::Vmul(nPts, b_unit[2], 1, qfield[1][pe_idx], 1, fluxes[0][pe_idx],
+        Vmath::Vmul(nPts, b_unit[2], 1, qfield[1][ee_idx], 1, fluxes[0][ee_idx],
                     1);
-        Vmath::Neg(nPts, fluxes[0][pe_idx], 1);
-        Vmath::Vmul(nPts, b_unit[2], 1, qfield[0][pe_idx], 1, fluxes[1][pe_idx],
+        Vmath::Neg(nPts, fluxes[0][ee_idx], 1);
+        Vmath::Vmul(nPts, b_unit[2], 1, qfield[0][ee_idx], 1, fluxes[1][ee_idx],
                     1);
     }
 
@@ -503,12 +516,12 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
     CalcDiffTensor();
     for (unsigned int j = 0; j < nDim; ++j)
     {
-        Vmath::Vmul(nPts, m_kcross, 1, fluxes[j][pe_idx], 1, fluxes[j][pe_idx],
+        Vmath::Vmul(nPts, m_kcross, 1, fluxes[j][ee_idx], 1, fluxes[j][ee_idx],
                     1);
         for (unsigned int k = 0; k < nDim; ++k)
         {
-            Vmath::Vvtvp(nPts, m_D[vc[j][k]].GetValue(), 1, qfield[k][pe_idx],
-                         1, fluxes[j][pe_idx], 1, fluxes[j][pe_idx], 1);
+            Vmath::Vvtvp(nPts, m_D[vc[j][k]].GetValue(), 1, qfield[k][ee_idx],
+                         1, fluxes[j][ee_idx], 1, fluxes[j][ee_idx], 1);
         }
     }
 }
@@ -572,8 +585,16 @@ void DoubleDiffusiveField::load_params()
 
 bool DoubleDiffusiveField::v_PostIntegrate(int step)
 {
+    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+    for (const auto &[s, v] : GetIons())
+    {
+        int ni_idx = v.fields.at(field_to_index.at("n"));
+
+        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+                     1);
+    }
     m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
-    m_fields[1]->FwdTrans(m_fields[1]->GetPhys(), m_fields[1]->UpdateCoeffs());
 
     // Writes a step of the particle trajectory.
 
@@ -585,8 +606,17 @@ void DoubleDiffusiveField::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nPhys   = m_fields[0]->GetNpoints();
     const int nCoeffs = m_fields[0]->GetNcoeffs();
+
+    variables.push_back("Te");
+    Array<OneD, NekDouble> Fwd(nCoeffs);
+    Array<OneD, NekDouble> tmp(this->n_pts);
+    Vmath::Vdiv(this->n_pts, m_indfields[ee_idx]->GetPhys(), 1,
+                m_fields[0]->GetPhys(), 1, tmp, 1);
+    Vmath::Smul(this->n_pts, 2.0 / 3.0, tmp, 1, tmp, 1);
+    m_indfields[ee_idx]->FwdTransLocalElmt(tmp, Fwd);
+    fieldcoeffs.push_back(Fwd);
+
     if (this->particles_enabled)
     {
         int i = 0;

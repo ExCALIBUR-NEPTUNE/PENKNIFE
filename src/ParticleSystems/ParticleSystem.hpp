@@ -138,10 +138,10 @@ public:
 
         this->field_project->project(this->particle_group, this->src_syms,
                                      this->src_components);
-
-        // remove fully ionised particles from the simulation
-        remove_marked_particles();
     }
+
+    inline virtual void zero_source_dats()
+    {}
 
     virtual void setup_evaluate_fields(
         Array<OneD, std::shared_ptr<DisContField>> &E,
@@ -442,6 +442,8 @@ protected:
     const long rank;
     std::mt19937 rng_phasespace;
 
+    const int vdim;
+
     uint64_t total_num_particles_added = 0;
 
     const int particle_remove_key = -1;
@@ -539,7 +541,7 @@ protected:
         }
     }
 
-    inline void apply_timestep(const double dt)
+    virtual inline void apply_timestep(const double dt)
     {
         apply_timestep_reset();
 

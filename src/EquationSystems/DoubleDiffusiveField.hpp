@@ -32,6 +32,7 @@ protected:
     DoubleDiffusiveField(const LU::SessionReaderSharedPtr &session,
                          const SD::MeshGraphSharedPtr &graph);
     void v_InitObject(bool DeclareFields = true) override;
+    bool v_PreIntegrate(int step) override;
     bool v_PostIntegrate(int step) override;
 
     void ImplicitTimeIntCG(
@@ -64,7 +65,7 @@ protected:
                           std::vector<std::string> &variables) override;
 
 private:
-    int pe_idx;
+    int ee_idx;
 
     std::vector<int> ni_src_idx;
     std::vector<int> ei_src_idx;

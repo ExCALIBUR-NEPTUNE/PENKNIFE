@@ -152,19 +152,11 @@ void PlasmaSystem::v_ExtraFldOutput(
                 fieldcoeffs.emplace_back(Fwd);
             }
         }
-        if (Te)
-        {
-            variables.emplace_back("Te");
-            Array<OneD, NekDouble> Fwd(nCoeffs);
-            this->Te->FwdTransLocalElmt(this->Te->GetPhys(), Fwd);
-            fieldcoeffs.emplace_back(Fwd);
-        }
     }
 
     m_session->MatchSolverInfo("OutputEMFields", "True", extraFields, true);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
 
         variables.emplace_back("Bx");
@@ -200,10 +192,9 @@ void PlasmaSystem::v_ExtraFldOutput(
     m_session->MatchSolverInfo("OutputPartitions", "True", extraFields, false);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
         variables.emplace_back("Rank");
-        Array<OneD, NekDouble> Rank(nPhys,
+        Array<OneD, NekDouble> Rank(this->n_pts,
                                     this->m_session->GetComm()->GetRank());
         Array<OneD, NekDouble> RankFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(Rank, RankFwd);
@@ -629,14 +620,6 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         this->mag_field->Update(m_time);
     }
 
-    if (this->Te)
-    {
-        Vmath::Vdiv(n_pts,
-                    m_indfields[m_indfields.size() - n_indep_fields]->GetPhys(),
-                    1, m_fields[0]->GetPhys(), 1, Te->UpdatePhys(), 1);
-        Te->FwdTransLocalElmt(this->Te->GetPhys(), Te->UpdateCoeffs());
-    }
-
     if (this->particles_enabled)
     {
         // Integrate the particle system to the requested time.
@@ -648,9 +631,11 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         }
         for (auto &fld : this->src_fields)
         {
-            Vmath::Zero(fld->GetNpoints(), fld->UpdatePhys(), 1);
+            Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
         }
+        this->particle_sys->zero_source_dats();
         this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
+        this->particle_sys->project_source_terms();    
     }
 
     return UnsteadySystem::v_PreIntegrate(step);
@@ -841,6 +826,17 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         }
         s++;
     }
+    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+    for (const auto &[s, v] : GetIons())
+    {
+        int ni_idx = v.fields.at(field_to_index.at("n"));
+
+        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+                     1);
+    }
+    m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
+
     if (m_session->GetComm()->GetRank() == 0)
     {
         std::cout << "============================================="
