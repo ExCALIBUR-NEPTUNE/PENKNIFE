@@ -196,7 +196,7 @@ bool ReducedBraginskii::v_PreIntegrate(int step)
 {
     if (this->particles_enabled)
     {
-        Vmath::Vdiv(this->n_pts, m_indfields[pe_idx]->GetPhys(), 1,
+        Vmath::Vdiv(this->n_pts, m_indfields[ee_idx]->GetPhys(), 1,
                     m_fields[0]->GetPhys(), 1, Te->UpdatePhys(), 1);
         Vmath::Smul(this->n_pts, 2.0 / 3.0, Te->GetPhys(), 1, Te->UpdatePhys(),
                     1);
