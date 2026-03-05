@@ -57,7 +57,7 @@ public:
         v_ApplyBwdWeight();
     }
 
-    int pe_idx;
+    int ee_idx;
     int omega_idx;
     int phi_idx;
 
