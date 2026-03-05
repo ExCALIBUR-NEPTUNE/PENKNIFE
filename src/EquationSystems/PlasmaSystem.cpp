@@ -151,19 +151,11 @@ void PlasmaSystem::v_ExtraFldOutput(
                 fieldcoeffs.push_back(Fwd);
             }
         }
-        if (Te)
-        {
-            variables.push_back("Te");
-            Array<OneD, NekDouble> Fwd(nCoeffs);
-            this->Te->FwdTransLocalElmt(this->Te->GetPhys(), Fwd);
-            fieldcoeffs.push_back(Fwd);
-        }
     }
 
     m_session->MatchSolverInfo("OutputEMFields", "True", extraFields, true);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
 
         variables.push_back("Bx");
@@ -199,10 +191,9 @@ void PlasmaSystem::v_ExtraFldOutput(
     m_session->MatchSolverInfo("OutputPartitions", "True", extraFields, false);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
         variables.push_back("Rank");
-        Array<OneD, NekDouble> Rank(nPhys,
+        Array<OneD, NekDouble> Rank(this->n_pts,
                                     this->m_session->GetComm()->GetRank());
         Array<OneD, NekDouble> RankFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(Rank, RankFwd);
@@ -628,19 +619,11 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         this->mag_field->Update(m_time);
     }
 
-    if (this->Te)
-    {
-        Vmath::Vdiv(n_pts,
-                    m_indfields[m_indfields.size() - n_indep_fields]->GetPhys(),
-                    1, m_fields[0]->GetPhys(), 1, Te->UpdatePhys(), 1);
-        Te->FwdTransLocalElmt(this->Te->GetPhys(), Te->UpdateCoeffs());
-    }
-
     if (this->particles_enabled)
     {
         // Integrate the particle system to the requested time.
         this->particle_sys->evaluate_fields(this->E, this->B, this->ne,
-                                            this->Te, this->ve);
+                                            this->ee, this->ve);
         if (particle_output_freq > 0 && (step % particle_output_freq) == 0)
         {
             this->particle_sys->write(step);

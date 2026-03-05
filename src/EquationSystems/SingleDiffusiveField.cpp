@@ -33,7 +33,6 @@ SingleDiffusiveField::SingleDiffusiveField(
 void SingleDiffusiveField::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
-    this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
 
     int npoints = m_indfields[0]->GetNpoints();
     m_kpar      = Array<OneD, NekDouble>(npoints);
@@ -87,6 +86,8 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
     }
     if (this->particles_enabled)
     {
+        this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
+
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
         for (auto &[k, v] : this->particle_sys->get_species())
@@ -99,7 +100,7 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
         }
 
         this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->Te, this->ve);
+                                                  this->ee, this->ve);
 
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);

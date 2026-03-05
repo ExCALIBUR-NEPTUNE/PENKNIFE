@@ -131,7 +131,7 @@ protected:
     SU::DiffusionSharedPtr m_diffusion;
 
     MR::DisContFieldSharedPtr ne;
-    MR::DisContFieldSharedPtr Te;
+    MR::DisContFieldSharedPtr ee;
     Array<OneD, MR::DisContFieldSharedPtr> ve;
 
     Array<OneD, MR::ExpListSharedPtr> m_allfields;

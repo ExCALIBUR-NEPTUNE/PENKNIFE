@@ -64,10 +64,10 @@ protected:
                           std::vector<std::string> &variables) override;
 
 private:
-    int pe_idx;
+    int ee_idx;
 
     std::vector<int> ni_src_idx;
-    std::vector<int> pi_src_idx;
+    std::vector<int> ei_src_idx;
 
     // For Diffusion
     StdRegions::ConstFactorMap m_factors;
