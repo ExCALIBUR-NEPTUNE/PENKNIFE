@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 import pandas as pd
 from pdfminer.high_level import extract_text
+from pdfminer.layout import LAParams
 
 # -----------------------------
 # Config
@@ -17,7 +18,7 @@ SECTION_MATRIX = {
     "H.2": (1, 9),
     "H.3": (9, 9),
     "H.4": (9, 9),
-    "H.5": (9, 9),
+    "H.5": (1, 9),
     "H.6": (9, 9),
     "H.7": (9, 9),
     "H.8": (1, 9),
@@ -32,7 +33,7 @@ SECTION_MATRIX = {
 # -----------------------------
 section_pattern = re.compile(r"H\.\d+")
 reaction_pattern = re.compile(r"Reaction\s+(\S+)")
-coef_pattern = re.compile(r"[-+]?\d+\.\d+D[-+]\d+")
+coef_pattern = re.compile(r"[-+]?\d+\.\d+[eEdD][-+]\d+")
 
 # -----------------------------
 # Helpers
@@ -43,13 +44,17 @@ def convert_fortran(n):
 
 def build_matrix(values, rows, cols):
     """Convert flat list into matrix."""
-    return [values[i*cols:(i+1)*cols] for i in range(rows)]
+    return [[v for c in range(3) for v in values[c*27+i*3:c*27+i*3+3]] for i in range(rows)]
+
+def build_vector(values, rows):
+    """Convert flat list into matrix."""
+    return [values[:rows]]
 
 def safe_filename(name):
     """Make filename filesystem-safe."""
     return re.sub(r"[^\w.-]", "_", name)
 
-def save_matrix(section, reaction, matrix, outdir, headers=None):
+def save_matrix(section, reaction, matrix, outdir):
     """Save matrix to CSV according to AMJUEL rules."""
     filename = outdir / f"{section}_{safe_filename(reaction)}.csv"
     df = pd.DataFrame(matrix)
@@ -57,37 +62,35 @@ def save_matrix(section, reaction, matrix, outdir, headers=None):
     rows, cols = SECTION_MATRIX[section]
 
     if rows == 1:
-        # Use headers from PDF if provided
-        if headers and len(headers) <= df.shape[1]:
-            df.columns = headers
-        elif headers and len(headers) < df.shape[1]:
-            extra = [f"extra{i}" for i in range(df.shape[1] - len(headers))]
-            df.columns = headers + extra
-        else:
-            df.columns = [f"a{i}" for i in range(df.shape[1])]
-        df.to_csv(filename, index=False)
+        df = df.T
+        df.to_csv(filename, header=False, index=False, float_format="%.12e")
 
     else:
         # transpose + no headers
-        df = df.T
         df.to_csv(filename, header=False, index=False, float_format="%.12e")
 
 # -----------------------------
 # Parse PDF
 # -----------------------------
 print("Reading AMJUEL PDF...")
-text = extract_text(PDF_FILE)
-lines = text.split("\n")
+laparams = LAParams(
+    line_margin=0.2,
+    char_margin=3.0,
+    word_margin=0.1,
+    boxes_flow=None  # controls column detection
+)
+text = extract_text(PDF_FILE, laparams= laparams)
+lines = text.splitlines()
 
-current_section = None
-current_reaction = None
+current_section = ""
+current_reaction = ""
 coeffs = []
-current_headers = []
 
 database = {}
 
 def store_reaction():
     """Store reaction if enough coefficients collected."""
+
     if current_section not in SECTION_MATRIX:
         return
 
@@ -96,9 +99,11 @@ def store_reaction():
 
     # allow extra coefficients for 1-row sections
     if rows == 1 and len(coeffs) >= cols:
-        matrix = build_matrix(coeffs, rows, len(coeffs))
+    # if rows == 1:
+        matrix = build_vector(coeffs, len(coeffs))
         database.setdefault(current_section, {}).setdefault(current_reaction, []).append(matrix)
-    elif len(coeffs) >= needed:
+    # elif len(coeffs) >= needed:
+    else:
         matrix = build_matrix(coeffs[:needed], rows, cols)
         database.setdefault(current_section, {}).setdefault(current_reaction, []).append(matrix)
 
@@ -107,32 +112,24 @@ for idx, line in enumerate(lines):
     if not line:
         continue
 
+
     # detect section
     sec = section_pattern.search(line)
     if sec:
-        store_reaction()
-        current_section = sec.group()
+        if current_reaction!="":
+            store_reaction()
+        current_reaction=""
         coeffs = []
-        current_headers = []
+        current_section = sec.group()
         continue
 
     # detect reaction
     reac = reaction_pattern.search(line)
     if reac:
-        store_reaction()
+        if current_reaction!="":
+            store_reaction()
         current_reaction = reac.group(1)
         coeffs = []
-        current_headers = []
-
-        # grab headers for 1-row sections
-        rows, cols = SECTION_MATRIX.get(current_section, (0,0))
-        if rows == 1:
-            # look ahead for the next non-empty line
-            for header_line in lines[idx+1:]:
-                header_line = header_line.strip()
-                if header_line:
-                    current_headers = header_line.split()
-                    break
         continue
 
     # extract coefficients
@@ -162,7 +159,6 @@ for section, reactions in database.items():
                 reaction,
                 matrix,
                 section_dir,
-                headers=current_headers if SECTION_MATRIX[section][0] == 1 else None
             )
 
 print("\nFinished.")
