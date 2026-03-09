@@ -18,6 +18,10 @@ static constexpr double qeomp = e / m_p_si;
 static constexpr double k_B = 1.380649e-23;
 static constexpr double temp_SI     = 11604.51812;
 
+static constexpr double mass_amu    = 1.0;
+static constexpr double mass_amu_SI = 1.66053904e-27;
+
+
 
 } // namespace constants
 

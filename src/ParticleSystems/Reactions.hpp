@@ -320,7 +320,7 @@ inline auto cx_reaction_amjuel(
     auto data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (child_mass * norm::mass_amu_SI * vel * vel),
+                (child_mass * constants::mass_amu_SI * vel * vel),
             cross_section, rng_kernel);
 
     auto data_calculator =
@@ -362,7 +362,7 @@ inline auto cx_reaction_fixed(
     auto data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (child_mass * norm::mass_amu_SI * vel * vel),
+                (child_mass * constants::mass_amu_SI * vel * vel),
             cross_section, rng_kernel);
 
     auto data_calculator =
@@ -402,7 +402,7 @@ inline auto recombination_reaction_amjuel(
     auto recomb_data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (marker_species.get_mass() * norm::mass_amu_SI * vel * vel),
+                (marker_species.get_mass() * constants::mass_amu_SI * vel * vel),
             constant_rate_cross_section, rng_kernel);
     auto recomb_data_calc_obj =
         DataCalculator<decltype(recomb_energy_data),
@@ -410,7 +410,7 @@ inline auto recombination_reaction_amjuel(
             recomb_energy_data, recomb_data_calc_sampler);
 
     double potential_energy =
-        13.6 * constants::e / (norm::mass_amu_SI * vel * vel);
+        13.6 * constants::e / (constants::mass_amu_SI * vel * vel);
 
     auto recomb_reaction_kernel = RecombReactionKernels<vdim>(
         marker_species, electron_species, potential_energy);
@@ -441,15 +441,18 @@ inline auto recombination_reaction_fixed(
     auto recomb_data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (marker_species.get_mass() * norm::mass_amu_SI * vel * vel),
+                (marker_species.get_mass() * constants::mass_amu_SI * vel * vel),
             constant_rate_cross_section, rng_kernel);
     auto recomb_data_calc_obj =
         DataCalculator<decltype(recomb_energy_data),
                        decltype(recomb_data_calc_sampler)>(
             recomb_energy_data, recomb_data_calc_sampler);
 
+        double potential_energy =
+        13.6 * constants::e / (constants::mass_amu_SI * vel * vel);
+
     auto recomb_reaction_kernel = RecombReactionKernels<vdim>(
-        marker_species, electron_species, norm::potential_energy);
+        marker_species, electron_species, potential_energy);
 
     const int out_state                  = neutral_species.get_id();
     std::array<int, 1> recomb_out_states = {out_state};

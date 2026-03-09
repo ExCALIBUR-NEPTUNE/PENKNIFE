@@ -12,20 +12,6 @@
 namespace PENKNIFE
 {
 using namespace VANTAGE::Reactions;
-struct norm
-{
-    static constexpr double time        = 1.0E-8;
-    static constexpr double length      = -1;
-    static constexpr double temp        = 1.0;
-    static constexpr double dens        = 1e18;
-    static constexpr double mass_amu    = 1.0;
-    static constexpr double mass_amu_SI = constants::m_p_si * mass_amu;
-    // static inline const double vel      = std::sqrt((2 * constants::e) /
-    // constants::m_p_si);
-    static inline const double vel = constants::qeomp;
-    static inline const double potential_energy =
-        13.6 * constants::e / (mass_amu_SI * vel * vel);
-};
 
 class AMJUEL
 {
@@ -105,7 +91,7 @@ public:
             fetch_amjuel_coeffs<num_coeffs_np, num_coeffs_T>(filename);
 
         return AMJUEL2DData<num_coeffs_T, num_coeffs_np>(
-            norm::mass_amu * vel * vel, dens, temp, time,
+            constants::mass_amu * vel * vel, dens, temp, time,
             h10_2_1_5_coeffs);
     }
 
@@ -175,7 +161,7 @@ public:
         const auto h10_2_1_8_coeffs =
             fetch_amjuel_coeffs<num_coeffs_T, num_coeffs_np>(filename);
         return AMJUEL2DData<num_coeffs_T, num_coeffs_np>(
-            norm::mass_amu * vel * vel, dens, temp, time, h10_2_1_8_coeffs);
+            constants::mass_amu * vel * vel, dens, temp, time, h10_2_1_8_coeffs);
     }
 };
 } // namespace PENKNIFE
