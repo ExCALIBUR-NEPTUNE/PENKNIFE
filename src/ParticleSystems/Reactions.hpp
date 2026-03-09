@@ -271,12 +271,13 @@ inline auto thermal_reflection(SYCLTargetSharedPtr sycl_target,
 }
 
 template <size_t vdim>
-inline auto ionise_reaction_amjuel(SYCLTargetSharedPtr sycl_target,
+inline auto ionise_reaction_amjuel(SYCLTargetSharedPtr sycl_target, double dens,
+                                   double temp, double time, double vel,
                                    const Species &target_species,
                                    const Species &electron_species)
 {
-    auto ionise_rate_data   = AMJUEL::ionise_rate_data();
-    auto ionise_energy_data = AMJUEL::ionise_energy_data();
+    auto ionise_rate_data   = AMJUEL::ionise_rate_data(dens, temp, time);
+    auto ionise_energy_data = AMJUEL::ionise_energy_data(dens, temp, time, vel);
 
     auto ionise_reaction = std::make_shared<ElectronImpactIonisation<
         decltype(ionise_rate_data), decltype(ionise_energy_data), vdim>>(
@@ -305,19 +306,21 @@ inline auto ionise_reaction_fixed(SYCLTargetSharedPtr sycl_target,
 template <size_t vdim>
 inline auto cx_reaction_amjuel(
     SYCLTargetSharedPtr sycl_target,
-    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
-    const Species &parent_species, const Species &descendant_species)
+    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel, double dens,
+    double temp, double time, double vel, const Species &parent_species,
+    const Species &descendant_species)
 {
     auto parent_mass  = parent_species.get_mass();
     auto child_mass   = descendant_species.get_mass();
     auto reduced_mass = (parent_mass * child_mass) / (parent_mass + child_mass);
-    auto rate_data    = AMJUEL::cx_rate_data(parent_mass, child_mass);
-    auto cross_section = AMJUEL::amjuel_fit_cross_section(reduced_mass);
+    auto rate_data =
+        AMJUEL::cx_rate_data(parent_mass, child_mass, dens, temp, time, vel);
+    auto cross_section = AMJUEL::amjuel_fit_cross_section(reduced_mass, vel);
 
     auto data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (child_mass * norm::mass_amu_SI * norm::vel * norm::vel),
+                (child_mass * norm::mass_amu_SI * vel * vel),
             cross_section, rng_kernel);
 
     auto data_calculator =
@@ -346,7 +349,7 @@ inline auto cx_reaction_amjuel(
 template <size_t vdim>
 inline auto cx_reaction_fixed(
     SYCLTargetSharedPtr sycl_target,
-    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
+    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel, double vel,
     const Species &parent_species, const Species &descendant_species, REAL rate,
     REAL sigma)
 {
@@ -359,7 +362,7 @@ inline auto cx_reaction_fixed(
     auto data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (child_mass * norm::mass_amu_SI * norm::vel * norm::vel),
+                (child_mass * norm::mass_amu_SI * vel * vel),
             cross_section, rng_kernel);
 
     auto data_calculator =
@@ -388,27 +391,29 @@ inline auto cx_reaction_fixed(
 template <size_t vdim>
 inline auto recombination_reaction_amjuel(
     SYCLTargetSharedPtr sycl_target,
-    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
-    const Species &marker_species, const Species &electron_species,
-    const Species &neutral_species)
+    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel, double dens,
+    double temp, double time, double vel, const Species &marker_species,
+    const Species &electron_species, const Species &neutral_species)
 {
-    auto recomb_data        = AMJUEL::recomb_rate_data();
-    auto recomb_energy_data = AMJUEL::recomb_energy_data();
+    auto recomb_data        = AMJUEL::recomb_rate_data(dens, temp, time);
+    auto recomb_energy_data = AMJUEL::recomb_energy_data(dens, temp, time, vel);
 
     auto constant_rate_cross_section = ConstantRateCrossSection(1.0);
     auto recomb_data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (marker_species.get_mass() * norm::mass_amu_SI * norm::vel *
-                 norm::vel),
+                (marker_species.get_mass() * norm::mass_amu_SI * vel * vel),
             constant_rate_cross_section, rng_kernel);
     auto recomb_data_calc_obj =
         DataCalculator<decltype(recomb_energy_data),
                        decltype(recomb_data_calc_sampler)>(
             recomb_energy_data, recomb_data_calc_sampler);
 
+    double potential_energy =
+        13.6 * constants::e / (norm::mass_amu_SI * vel * vel);
+
     auto recomb_reaction_kernel = RecombReactionKernels<vdim>(
-        marker_species, electron_species, norm::potential_energy);
+        marker_species, electron_species, potential_energy);
 
     const int out_state                  = neutral_species.get_id();
     std::array<int, 1> recomb_out_states = {out_state};
@@ -425,7 +430,7 @@ inline auto recombination_reaction_amjuel(
 template <size_t vdim>
 inline auto recombination_reaction_fixed(
     SYCLTargetSharedPtr sycl_target,
-    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel,
+    std::shared_ptr<HostAtomicBlockKernelRNG<REAL>> rng_kernel, double vel,
     const Species &marker_species, const Species &electron_species,
     const Species &neutral_species, REAL rate, REAL energy_rate)
 {
@@ -436,8 +441,7 @@ inline auto recombination_reaction_fixed(
     auto recomb_data_calc_sampler =
         FilteredMaxwellianSampler<vdim, decltype(constant_rate_cross_section)>(
             (constants::temp_SI * constants::k_B) /
-                (marker_species.get_mass() * norm::mass_amu_SI * norm::vel *
-                 norm::vel),
+                (marker_species.get_mass() * norm::mass_amu_SI * vel * vel),
             constant_rate_cross_section, rng_kernel);
     auto recomb_data_calc_obj =
         DataCalculator<decltype(recomb_energy_data),

@@ -87,24 +87,26 @@ private:
     // Ionisation
 public:
     static inline const auto ionise_rate_data(
+        double dens, double temp, double time,
         const std::string &filename = "data/H.4_2.1.5.csv")
     {
         const auto h4_2_1_5_coeffs =
             fetch_amjuel_coeffs<num_coeffs_n, num_coeffs_T>(filename);
 
-        return AMJUEL2DData<num_coeffs_T, num_coeffs_n>(
-            1.0, norm::dens, norm::temp, norm::time, h4_2_1_5_coeffs);
+        return AMJUEL2DData<num_coeffs_T, num_coeffs_n>(1.0, dens, temp, time,
+                                                        h4_2_1_5_coeffs);
     }
 
     static inline const auto ionise_energy_data(
+        double dens, double temp, double time, double vel,
         const std::string &filename = "data/H.10_2.1.8.csv")
     {
         const auto h10_2_1_5_coeffs =
             fetch_amjuel_coeffs<num_coeffs_np, num_coeffs_T>(filename);
 
         return AMJUEL2DData<num_coeffs_T, num_coeffs_np>(
-            norm::mass_amu * norm::vel * norm::vel, norm::dens, norm::temp,
-            norm::time, h10_2_1_5_coeffs);
+            norm::mass_amu * vel * vel, dens, temp, time,
+            h10_2_1_5_coeffs);
     }
 
     // Charge Exchange
@@ -132,45 +134,48 @@ private:
 
 public:
     static inline const auto cx_rate_data(
-        double parent_mass, double child_mass,
+        double parent_mass, double child_mass, double dens, double temp,
+        double time, double vel,
         const std::string &filename = "data/H.3_3.1.8.csv")
     {
         const auto h3_3_1_8_coeffs =
             fetch_amjuel_coeffs<num_coeffs_E, num_coeffs_T>(filename);
         return AMJUEL2DDataH3<num_coeffs_T, num_coeffs_E, 2>(
-            1.0, norm::dens, norm::temp / child_mass, norm::time, norm::vel,
-            parent_mass, h3_3_1_8_coeffs);
+            1.0, dens, temp / child_mass, time, vel, parent_mass,
+            h3_3_1_8_coeffs);
     }
 
-    static inline const auto amjuel_fit_cross_section(double reduced_mass)
+    static inline const auto amjuel_fit_cross_section(double reduced_mass,
+                                                      double vel)
     {
         static constexpr double amjuel_cs_norm = 1E-4;
 
         return AMJUELFitCrossSection<h1_3_1_8_num_coeffs, h1_3_1_8_num_l_coeffs,
                                      h1_3_1_8_num_r_coeffs>(
-            norm::vel, amjuel_cs_norm, reduced_mass, h1_3_1_8_coeffs,
+            vel, amjuel_cs_norm, reduced_mass, h1_3_1_8_coeffs,
             h1_3_1_8_l_coeffs, h1_3_1_8_r_coeffs, h1_3_1_8_elabmin,
             h1_3_1_8_elabmax, h1_3_1_8_emax);
     }
 
     // Recombination
     static inline const auto recomb_rate_data(
+        double dens, double temp, double time,
         const std::string &filename = "data/H.4_2.1.8.csv")
     {
         const auto h4_2_1_8_coeffs =
             fetch_amjuel_coeffs<num_coeffs_T, num_coeffs_n>(filename);
-        return AMJUEL2DData<num_coeffs_T, num_coeffs_n>(
-            1.0, norm::dens, norm::temp, norm::time, h4_2_1_8_coeffs);
+        return AMJUEL2DData<num_coeffs_T, num_coeffs_n>(1.0, dens, temp, time,
+                                                        h4_2_1_8_coeffs);
     }
 
     static inline const auto recomb_energy_data(
+         double dens, double temp, double time,double vel,
         const std::string &filename = "data/H.10_2.1.8.csv")
     {
         const auto h10_2_1_8_coeffs =
             fetch_amjuel_coeffs<num_coeffs_T, num_coeffs_np>(filename);
         return AMJUEL2DData<num_coeffs_T, num_coeffs_np>(
-            norm::mass_amu * norm::vel * norm::vel, norm::dens, norm::temp,
-            norm::time, h10_2_1_8_coeffs);
+            norm::mass_amu * vel * vel, dens, temp, time, h10_2_1_8_coeffs);
     }
 };
 } // namespace PENKNIFE

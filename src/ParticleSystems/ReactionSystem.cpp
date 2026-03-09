@@ -66,12 +66,16 @@ void ReactionSystem::set_up_reactions()
                 if (this->vdim == 2)
                 {
                     reaction = ionise_reaction_amjuel<2>(
-                        this->sycl_target, target_species, electron_species);
+                        this->sycl_target, Nnorm, Tnorm, 1. / omega_c,
+                        mesh_length * omega_c, target_species,
+                        electron_species);
                 }
                 else if (this->vdim == 3)
                 {
                     reaction = ionise_reaction_amjuel<3>(
-                        this->sycl_target, target_species, electron_species);
+                        this->sycl_target, Nnorm, Tnorm, 1. / omega_c,
+                        mesh_length * omega_c, target_species,
+                        electron_species);
                 }
             }
         }
@@ -96,14 +100,16 @@ void ReactionSystem::set_up_reactions()
                 if (this->vdim == 2)
                 {
                     reaction = recombination_reaction_fixed<2>(
-                        this->sycl_target, rng_kernel, marker_species,
-                        electron_species, neutral_species, rate, energy_rate);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        marker_species, electron_species, neutral_species, rate,
+                        energy_rate);
                 }
                 else if (this->vdim == 3)
                 {
                     reaction = recombination_reaction_fixed<3>(
-                        this->sycl_target, rng_kernel, marker_species,
-                        electron_species, neutral_species, rate, energy_rate);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        marker_species, electron_species, neutral_species, rate,
+                        energy_rate);
                 }
             }
             else if (std::get<2>(v).first == "AMJUEL")
@@ -111,13 +117,15 @@ void ReactionSystem::set_up_reactions()
                 if (this->vdim == 2)
                 {
                     reaction = recombination_reaction_amjuel<2>(
-                        this->sycl_target, rng_kernel, marker_species,
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, marker_species,
                         electron_species, neutral_species);
                 }
                 else if (this->vdim == 3)
                 {
                     reaction = recombination_reaction_amjuel<3>(
-                        this->sycl_target, rng_kernel, marker_species,
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, marker_species,
                         electron_species, neutral_species);
                 }
             }
@@ -141,29 +149,33 @@ void ReactionSystem::set_up_reactions()
                 if (this->vdim == 2)
                 {
                     reaction = cx_reaction_fixed<2>(
-                        this->sycl_target, rng_kernel, target_species,
-                        projectile_species, rate, cross_section);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        target_species, projectile_species, rate,
+                        cross_section);
                 }
                 else if (this->vdim == 3)
                 {
                     reaction = cx_reaction_fixed<3>(
-                        this->sycl_target, rng_kernel, target_species,
-                        projectile_species, rate, cross_section);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        target_species, projectile_species, rate,
+                        cross_section);
                 }
             }
             else if (std::get<2>(v).first == "AMJUEL")
             {
                 if (this->vdim == 2)
                 {
-                    reaction = cx_reaction_amjuel<2>(this->sycl_target,
-                                                     rng_kernel, target_species,
-                                                     projectile_species);
+                    reaction = cx_reaction_amjuel<2>(
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, target_species,
+                        projectile_species);
                 }
                 else if (this->vdim == 3)
                 {
-                    reaction = cx_reaction_amjuel<3>(this->sycl_target,
-                                                     rng_kernel, target_species,
-                                                     projectile_species);
+                    reaction = cx_reaction_amjuel<3>(
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, target_species,
+                        projectile_species);
                 }
             }
         }
