@@ -64,17 +64,16 @@ private:
         const std::string &filename)
     {
         std::ifstream input{filename};
-
         std::vector<float> row;
-        for (std::string value; std::getline(ss, value, ',');)
+        for (std::string line; std::getline(input, line);)
         {
-            row.push_back(std::move(strtod(value.c_str(), 0)));
+            row.push_back(std::move(strtod(line.c_str(), 0)));
         }
 
         std::array<double, n> arr;
         for (int j = 0; j < n; ++j)
         {
-            arr[i] = rows[i];
+            arr[j] = row[j];
         }
 
         return arr;
