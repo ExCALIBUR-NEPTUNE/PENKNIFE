@@ -42,7 +42,7 @@ public:
         }
     }
 
-    inline virtual void zero_source_dats() override
+    inline void zero_source_dats() override
     {
         this->zeroer_transform->transform(
             particle_sub_group(this->particle_group));

@@ -29,16 +29,16 @@
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
             <P> TimeStep       = 957.883316               </P>
-            <P> NumSteps      = 200              </P>
+            <P> NumSteps      = 2000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
-            <P> IO_CheckSteps  = 10                </P>
-            <P> IO_InfoSteps   = 10                </P>
+            <P> IO_CheckSteps  = 100                </P>
+            <P> IO_InfoSteps   = 100                </P>
             <P> epsilon        = 1.0               </P>
 
             <!-- Coulomb logarithm -->
             <P> lambda    = 13          </P>
-            <P> k_c       = 3.19        </P>
+            <P> k_c       = 0        </P>
             <!-- Background temperature in Tnorm eV -->
             <P> T_bg      = 10         </P>
 
@@ -58,7 +58,7 @@
             <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
             <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
 
-            <P> particle_output_freq = 1              </P>
+            <P> particle_output_freq = 10              </P>
         </PARAMETERS>
 
         <VARIABLES>
@@ -92,7 +92,7 @@
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
                     <E VAR="n"  DOMAIN="0" VALUE="2" />
-                    <E VAR="n"  DOMAIN="1" VALUE="0.1" />
+                    <E VAR="n"  DOMAIN="1" VALUE="0.000001" />
                 </FUNCTION>
             </I>
             <KN NAME="D">
@@ -117,7 +117,11 @@
         <VANTAGE>
             <S TYPE="Specular" SPECIES="D">
                 <REGION REF="3"/>
-                <RATE TYPE="Constant" VALUE="1.0"/>
+                <RATE TYPE="Constant" VALUE="0.9"/>
+            </S>
+            <S TYPE="Absorption" SPECIES="D">
+                <REGION REF="3"/>
+                <RATE TYPE="Constant" VALUE="0.1"/>
             </S>
             <R TYPE="Ionisation" SPECIES="D">
                 <RATE TYPE="AMJUEL" VALUE="1"/>

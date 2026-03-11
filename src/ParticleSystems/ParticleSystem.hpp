@@ -508,7 +508,7 @@ protected:
 
     auto find_partial_moves(ParticleSubGroupSharedPtr sg, const double dt)
     {
-        return particle_sub_group(
+        return static_particle_sub_group(
             sg, [=](auto TSP) { return TSP.at(0) < dt; },
             Access::read(Sym<REAL>("TSP")));
     };
@@ -517,14 +517,14 @@ protected:
     {
         auto child_group =
             this->particle_group_temporary->get(this->particle_group);
-        auto sg = particle_sub_group(this->particle_group);
+        auto sg = static_particle_sub_group(this->particle_group);
         pre_advection(sg);
         integrate_inner(sg, dt);
         apply_boundary_conditions(sg, child_group, dt);
         this->particle_group->add_particles_local(child_group);
         this->particle_group_temporary->restore(this->particle_group,
                                                 child_group);
-        sg = particle_sub_group(this->particle_group);
+        sg = static_particle_sub_group(this->particle_group);
         sg = find_partial_moves(sg, dt);
         while (get_npart_global(sg) > 0)
         {
@@ -536,7 +536,7 @@ protected:
             this->particle_group->add_particles_local(child_group);
             this->particle_group_temporary->restore(this->particle_group,
                                                     child_group);
-            sg = particle_sub_group(this->particle_group);
+            sg = static_particle_sub_group(this->particle_group);
             sg = find_partial_moves(sg, dt);
         }
     }

@@ -711,7 +711,7 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         {
             for (int i = 0; i < m_fields.size(); ++i)
             {
-                m_fields[i]->LocalToGlobal();
+                m_fields[i]->AvgAssemble();
                 m_fields[i]->GlobalToLocal();
                 m_fields[i]->BwdTrans(m_fields[i]->GetCoeffs(),
                                       m_fields[i]->UpdatePhys());
@@ -786,7 +786,7 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                     (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
                 {
 
-                    m_indfields[fi]->LocalToGlobal();
+                    m_indfields[fi]->AvgAssemble();
                     m_indfields[fi]->GlobalToLocal();
                     m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
                                               m_indfields[fi]->UpdatePhys());
