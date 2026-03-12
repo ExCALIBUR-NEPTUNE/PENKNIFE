@@ -264,7 +264,7 @@ void ReducedBraginskii::DoOdeRhs(
     }
 
     // Perform Diffusion
-    DoDiffusion(inarray, outarray, Fwd, Bwd);
+    //DoDiffusion(inarray, outarray, Fwd, Bwd);
 
     if (this->particles_enabled)
     {
@@ -304,13 +304,16 @@ void ReducedBraginskii::DoAdvection(
 
     for (int i = 0; i < nvariables; ++i)
     {
-        inarrayAdv[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
-        inFwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
-        inBwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
+        // inarrayAdv[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+        // inFwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
+        // inBwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
+        inarrayAdv[i] = inarray[advected_fields[i]];
+        inFwd[i]      = pFwd[advected_fields[i]];
+        inBwd[i]      = pBwd[advected_fields[i]];
     }
 
     m_advection->Advect(nvariables, m_advfields, advVel, inarrayAdv,
-                        outarrayAdv, time, pFwd, pBwd);
+                        outarrayAdv, time, inFwd, inBwd);
 
     for (int i = 0; i < nvariables; ++i)
     {

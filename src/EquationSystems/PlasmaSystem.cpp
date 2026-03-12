@@ -635,7 +635,7 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         }
         this->particle_sys->zero_source_dats();
         this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
-        this->particle_sys->project_source_terms();    
+        this->particle_sys->project_source_terms();
     }
 
     return UnsteadySystem::v_PreIntegrate(step);
