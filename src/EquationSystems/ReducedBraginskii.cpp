@@ -36,6 +36,8 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
 
+    InitBraginskii();
+
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
     m_diffusion =
@@ -264,7 +266,7 @@ void ReducedBraginskii::DoOdeRhs(
     }
 
     // Perform Diffusion
-    //DoDiffusion(inarray, outarray, Fwd, Bwd);
+    DoDiffusion(inarray, outarray, Fwd, Bwd);
 
     if (this->particles_enabled)
     {
@@ -304,9 +306,6 @@ void ReducedBraginskii::DoAdvection(
 
     for (int i = 0; i < nvariables; ++i)
     {
-        // inarrayAdv[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
-        // inFwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
-        // inBwd[i]      = Array<OneD, NekDouble>(nTracePts, 0.0);
         inarrayAdv[i] = inarray[advected_fields[i]];
         inFwd[i]      = pFwd[advected_fields[i]];
         inBwd[i]      = pBwd[advected_fields[i]];
@@ -568,7 +567,10 @@ void ReducedBraginskii::DoDiffusion(
 
     for (const auto &[s, v] : this->GetIons())
     {
+        int ni_idx = v.fields.at(field_to_index["n"]);
         int ei_idx = v.fields.at(field_to_index["e"]);
+
+        inarrayDiff[ni_idx] = inarray[ni_idx];
         m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
     }
 
@@ -584,7 +586,11 @@ void ReducedBraginskii::DoDiffusion(
         m_varConv->GetElectronTemperature(pBwd, inBwd[ee_idx]);
         for (const auto &[s, v] : this->GetIons())
         {
-            int ei_idx = v.fields.at(field_to_index["e"]);
+            int ni_idx    = v.fields.at(field_to_index["n"]);
+            int ei_idx    = v.fields.at(field_to_index["e"]);
+            inFwd[ni_idx] = pFwd[ni_idx];
+            inBwd[ni_idx] = pBwd[ni_idx];
+
             m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
             m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
         }
@@ -620,6 +626,137 @@ void ReducedBraginskii::CalcDiffTensor()
     }
 }
 
+inline double CoulombLog_ii(double Nnorm, double ni1, double ni2, double Ti1,
+                            double Ti2, double A1, double A2, double Z1,
+                            double Z2)
+{
+    return 29.91 - log(sqrt(Nnorm)) -
+           log((Z1 * Z2 * (A1 + A2)) / (A1 * Ti2 + A2 * Ti1) *
+               sqrt(ni1 * Z1 * Z1 / Ti1 + ni2 * Z2 * Z2 / Ti2));
+}
+
+inline double CoulombLog_ee(double Nnorm, double Tnorm, double ne, double Te)
+{
+    double logTe = log(Tnorm * Te);
+    return 30.4 - 0.5 * log(ne) - 0.5 * log(Nnorm) + (5. / 4) * logTe -
+           sqrt(1e-5 + (logTe - 2) * (logTe - 2) / 16.);
+}
+
+inline double CoulombLog_ei(double Nnorm, double Tnorm, double ni, double ne,
+                            double Ti, double Te, double Ai, double Zi)
+{
+    if ((Te * Tnorm < 0.1) || (ni * Nnorm < 1e10) || (ne * Nnorm < 1e10))
+        return 10;
+    else if (Te < Ti * constants::m_e_m_p / Ai)
+        return 23 - 0.5 * log(ni) + 1.5 * log(Ti) - log(Zi * Zi * Ai) -
+               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
+    else if (Te * Tnorm < exp(2) * Zi * Zi)
+        return 30.0 - 0.5 * log(ne) - log(Zi) + 1.5 * log(Te) -
+               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
+    else
+        return 31.0 - 0.5 * log(ne) + log(Te) - 0.5 * log(Nnorm) + log(Tnorm);
+}
+
+void ReducedBraginskii::InitBraginskii()
+{
+    this->nu_ee = Array<OneD, NekDouble>(this->n_pts);
+    this->nu_e  = Array<OneD, NekDouble>(this->n_pts);
+    for (const auto &[s, v] : this->GetIons())
+    {
+        this->nu_i[s]  = Array<OneD, NekDouble>(this->n_pts);
+        this->nu_ei[s] = Array<OneD, NekDouble>(this->n_pts);
+        for (const auto &[s2, v2] : this->GetIons())
+        {
+            this->nu_ii[std::minmax(s, s2)] =
+                Array<OneD, NekDouble>(this->n_pts);
+        }
+    }
+}
+
+void ReducedBraginskii::CalcCollisionFrequencies(
+    const Array<OneD, Array<OneD, NekDouble>> &in_arr)
+{
+    auto ne = this->m_fields[0]->GetPhys();
+    for (int p = 0; p < this->n_pts; ++p)
+    {
+        const double v1sq =
+            2 * in_arr[ee_idx][p] * constants::e / constants::m_e_si;
+        double coulomb_log =
+            CoulombLog_ee(Nnorm, Tnorm, ne[p], in_arr[ee_idx][p]);
+
+        // Electon collision frequency
+        double nu = pow(constants::e, 4) * ne[p] * coulomb_log * 2 /
+                    (3 * pow(M_PI * 2 * v1sq, 1.5) *
+                     pow(constants::epsilon_0_si * constants::m_e_si, 2));
+        this->nu_ee[p] = nu / omega_c;
+        this->nu_e[p]  = this->nu_ee[p];
+    }
+    for (const auto &[s, v] : this->GetIons())
+    {
+        double Z   = this->m_ions[s].charge;
+        double A   = this->m_ions[s].mass;
+        int ni_idx = v.fields.at(field_to_index["n"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
+        for (int p = 0; p < this->n_pts; ++p)
+        {
+            const double vesq =
+                2 * in_arr[ei_idx][p] * constants::e / constants::m_e_si;
+            const double visq =
+                2 * in_arr[ei_idx][p] * constants::e / (A * constants::m_p_si);
+            double coulomb_log =
+                CoulombLog_ei(Nnorm, Tnorm, in_arr[ni_idx][p], ne[p],
+                              in_arr[ei_idx][p], in_arr[ee_idx][p], A, Z);
+            // Collision frequency
+            double nu = Z * Z * pow(constants::e, 4) * in_arr[ni_idx][p] *
+                        coulomb_log * (1. + constants::m_e_m_p) /
+                        (3 * pow(M_PI * (vesq + visq), 1.5) *
+                         pow(constants::epsilon_0_si * constants::m_e_si, 2));
+            nu /= omega_c;
+            this->nu_ei[s][p] = nu;
+            this->nu_e[p] += nu;
+            this->nu_i[s][p] =
+                constants::m_e_m_p * ne[p] * nu / in_arr[ni_idx][p];
+        }
+    }
+    for (const auto &[s, v] : this->GetIons())
+    {
+        double Z   = this->m_ions[s].charge;
+        double A   = this->m_ions[s].mass;
+        int ni_idx = v.fields.at(field_to_index["n"]);
+        int ei_idx = v.fields.at(field_to_index["e"]);
+        for (const auto &[s2, v2] : this->GetIons())
+        {
+            if (s2 > s)
+                continue;
+            double Z2   = this->m_ions[s2].charge;
+            double A2   = this->m_ions[s2].mass;
+            int ni_idx2 = v2.fields.at(field_to_index["n"]);
+            int ei_idx2 = v2.fields.at(field_to_index["e"]);
+            for (int p = 0; p < this->n_pts; ++p)
+            {
+                double coulomb_log = CoulombLog_ii(
+                    Nnorm, in_arr[ni_idx][p], in_arr[ni_idx2][p],
+                    in_arr[ei_idx][p], in_arr[ei_idx2][p], A, A2, Z, Z2);
+
+                const double v1sq = 2 * in_arr[ei_idx][p] * constants::e /
+                                    (A * constants::m_p_si);
+                const double v2sq = 2 * in_arr[ei_idx2][p] * constants::e /
+                                    (A2 * constants::m_p_si);
+                double nu =
+                    Z * Z * Z2 * Z2 * pow(constants::e, 4) *
+                    in_arr[ni_idx2][p] * coulomb_log * (1. + A / A2) /
+                    (3 * pow(M_PI * (v1sq + v2sq), 1.5) *
+                     pow(constants::epsilon_0_si * A * constants::m_p_si, 2));
+                nu /= omega_c;
+                this->nu_ii[std::minmax(s, s2)][p] = nu;
+                this->nu_i[s][p] += nu;
+                this->nu_i[s2][p] +=
+                    (A / A2) * nu * in_arr[ni_idx][p] / in_arr[ni_idx][p];
+            }
+        }
+    }
+}
+
 void ReducedBraginskii::CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
                               int f)
 {
@@ -637,6 +774,16 @@ void ReducedBraginskii::CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
         m_kcross[p] =
             this->k_cross * ne[p] * in_arr[ee_idx][p] / (sqrt(this->mag_B[p]));
     }
+    if (m_session->DefinesParameter("k_perp"))
+    {
+        double k = m_session->GetParameter("k_perp");
+        Vmath::Fill(this->n_pts, k, m_kperp, 1);
+    }
+    if (m_session->DefinesParameter("k_par"))
+    {
+        double k = m_session->GetParameter("k_par");
+        Vmath::Fill(this->n_pts, k, m_kpar, 1);
+    }
 }
 
 // Ion thermal conductivity
@@ -648,27 +795,26 @@ void ReducedBraginskii::CalcKappa(
     int ei_idx = this->m_ions[f].fields[field_to_index["e"]];
     int ni_idx = this->m_ions[f].fields[field_to_index["n"]];
 
-    Array<OneD, NekDouble> tmp(this->n_pts, 0.0);
-    for (const auto &[s2, v2] : this->GetIons())
-    {
-        double Z2   = this->m_ions[s2].charge;
-        double A2   = this->m_ions[s2].mass;
-        int ni_idx2 = this->m_ions[s2].fields.at(field_to_index["n"]);
-
-        for (int p = 0; p < this->n_pts; ++p)
-        {
-            tmp[p] += Z2 * Z2 * sqrt(A2 / (A + A2)) * in_arr[ni_idx2][p];
-        }
-    }
     for (int p = 0; p < this->n_pts; ++p)
     {
-        this->m_kpar[p] = this->kappa_i_par * in_arr[ni_idx][p] *
-                          (in_arr[ei_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
-        this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
-                           in_arr[ni_idx][p] /
-                           (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
-        this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
-                            in_arr[ei_idx][p] / (Z * sqrt(this->mag_B[p]));
+        this->m_kpar[p] =
+            k_ci * in_arr[ee_idx][p] * in_arr[ni_idx][p] / nu_i[f][p];
+
+        // this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
+        //                    in_arr[ni_idx][p] /
+        //                    (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
+        // this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
+        //                     in_arr[ei_idx][p] / (Z * sqrt(this->mag_B[p]));
+    }
+    if (m_session->DefinesParameter("kappa_perp"))
+    {
+        double k = m_session->GetParameter("kappa_perp");
+        Vmath::Fill(this->n_pts, k, m_kperp, 1);
+    }
+    if (m_session->DefinesParameter("kappa_par"))
+    {
+        double k = m_session->GetParameter("kappa_par");
+        Vmath::Fill(this->n_pts, k, m_kpar, 1);
     }
 }
 
@@ -679,7 +825,8 @@ void ReducedBraginskii::CalcKappa(
     auto ne = this->m_fields[0]->GetPhys();
     for (int p = 0; p < this->n_pts; ++p)
     {
-        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[ee_idx][p], 2.5);
+        this->m_kpar[p] = k_ce * in_arr[ee_idx][p] * ne[p] / nu_e[p];
+
         this->m_kperp[p] = this->kappa_e_perp * ne[p] * ne[p] /
                            (this->mag_B[p] * sqrt(in_arr[ee_idx][p]));
         this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[ee_idx][p] /
@@ -697,47 +844,48 @@ void ReducedBraginskii::GetFluxVectorDiff(
 {
     unsigned int nDim = qfield.size();
     unsigned int nFld = qfield[0].size();
+    CalcCollisionFrequencies(in_arr);
 
     for (const auto &[s, v] : this->GetIons())
     {
         int ni_idx = v.fields.at(field_to_index["n"]);
         int ei_idx = v.fields.at(field_to_index["e"]);
 
-        CalcK(in_arr, s);
-        CalcDiffTensor();
+        // CalcK(in_arr, s);
+        // CalcDiffTensor();
 
-        for (unsigned int j = 0; j < nDim; ++j)
-        {
-            for (unsigned int k = 0; k < nDim; ++k)
-            {
-                const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
-                for (int p = 0; p < this->n_pts; ++p)
-                {
-                    fluxes[j][ni_idx][p] += D[p] * qfield[k][ni_idx][p];
-                }
-            }
-        }
+        // for (unsigned int j = 0; j < nDim; ++j)
+        // {
+        //     for (unsigned int k = 0; k < nDim; ++k)
+        //     {
+        //         const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
+        //         for (int p = 0; p < this->n_pts; ++p)
+        //         {
+        //             fluxes[j][ni_idx][p] += D[p] * qfield[k][ni_idx][p];
+        //         }
+        //     }
+        // }
 
-        if (nDim == 3)
-        {
-            for (int p = 0; p < this->n_pts; ++p)
-            {
-                fluxes[0][ei_idx][p] = b_unit[1][p] * qfield[2][ei_idx][p] -
-                                       b_unit[2][p] * qfield[1][ei_idx][p];
-                fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p] -
-                                       b_unit[0][p] * qfield[2][ei_idx][p];
-                fluxes[2][ei_idx][p] = b_unit[0][p] * qfield[1][ei_idx][p] -
-                                       b_unit[1][p] * qfield[0][ei_idx][p];
-            }
-        }
-        else
-        {
-            for (int p = 0; p < this->n_pts; ++p)
-            {
-                fluxes[0][ei_idx][p] = -b_unit[2][p] * qfield[1][ei_idx][p];
-                fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p];
-            }
-        }
+        // if (nDim == 3)
+        // {
+        //     for (int p = 0; p < this->n_pts; ++p)
+        //     {
+        //         fluxes[0][ei_idx][p] = b_unit[1][p] * qfield[2][ei_idx][p] -
+        //                                b_unit[2][p] * qfield[1][ei_idx][p];
+        //         fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p] -
+        //                                b_unit[0][p] * qfield[2][ei_idx][p];
+        //         fluxes[2][ei_idx][p] = b_unit[0][p] * qfield[1][ei_idx][p] -
+        //                                b_unit[1][p] * qfield[0][ei_idx][p];
+        //     }
+        // }
+        // else
+        // {
+        //     for (int p = 0; p < this->n_pts; ++p)
+        //     {
+        //         fluxes[0][ei_idx][p] = -b_unit[2][p] * qfield[1][ei_idx][p];
+        //         fluxes[1][ei_idx][p] = b_unit[2][p] * qfield[0][ei_idx][p];
+        //     }
+        // }
 
         CalcKappa(in_arr, s);
         CalcDiffTensor();
@@ -751,6 +899,20 @@ void ReducedBraginskii::GetFluxVectorDiff(
                 {
                     fluxes[j][ei_idx][p] += D[p] * qfield[k][ei_idx][p];
                 }
+            }
+        }
+    }
+    CalcKappa(in_arr);
+    CalcDiffTensor();
+    for (unsigned int j = 0; j < nDim; ++j)
+    {
+        // Calc diffusion of n with D tensor and n field
+        for (unsigned int k = 0; k < nDim; ++k)
+        {
+            const Array<OneD, NekDouble> &D = m_D[vc[j][k]].GetValue();
+            for (int p = 0; p < this->n_pts; ++p)
+            {
+                fluxes[j][ee_idx][p] += D[p] * qfield[k][ee_idx][p];
             }
         }
     }
@@ -1148,15 +1310,15 @@ void ReducedBraginskii::DoDiffusionCoeff(
     // {
     ASSERTL1(false, "LDGNS not yet validated for implicit compressible "
                     "flow solver");
-    Array<OneD, Array<OneD, NekDouble>> inarrayDiff{nvariables};
-    Array<OneD, Array<OneD, NekDouble>> inFwd{nvariables};
-    Array<OneD, Array<OneD, NekDouble>> inBwd{nvariables};
+    Array<OneD, Array<OneD, NekDouble>> inarrayDiff(nvariables);
+    Array<OneD, Array<OneD, NekDouble>> inFwd(nvariables);
+    Array<OneD, Array<OneD, NekDouble>> inBwd(nvariables);
 
     for (int i = 0; i < nvariables; ++i)
     {
-        inarrayDiff[i] = Array<OneD, NekDouble>{this->n_pts};
-        inFwd[i]       = Array<OneD, NekDouble>{nTracePts};
-        inBwd[i]       = Array<OneD, NekDouble>{nTracePts};
+        inarrayDiff[i] = Array<OneD, NekDouble>(this->n_pts);
+        inFwd[i]       = Array<OneD, NekDouble>(nTracePts);
+        inBwd[i]       = Array<OneD, NekDouble>(nTracePts);
     }
 
     // Extract temperature

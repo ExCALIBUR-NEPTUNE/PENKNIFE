@@ -68,6 +68,9 @@ protected:
                      const Array<OneD, Array<OneD, NekDouble>> &pFwd,
                      const Array<OneD, Array<OneD, NekDouble>> &pBwd);
 
+    void InitBraginskii();
+
+    void CalcCollisionFrequencies(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
     void CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
     void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
     void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
@@ -184,6 +187,13 @@ private:
     NekDouble kappa_e_cross;
     NekDouble k_ci;
     NekDouble k_ce;
+
+    std::map<std::pair<int, int>, Array<OneD, NekDouble>> nu_ii;
+    std::map<int, Array<OneD, NekDouble>> nu_ei;
+    Array<OneD, NekDouble> nu_ee;
+
+    std::map<int, Array<OneD, NekDouble>> nu_i;
+    Array<OneD, NekDouble> nu_e;
 
     Array<OneD, NekDouble> m_kpar;
     Array<OneD, NekDouble> m_kperp;

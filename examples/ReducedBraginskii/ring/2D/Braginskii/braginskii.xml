@@ -23,7 +23,7 @@
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
-            <P> mesh_length = 1 </P> 
+            <P> mesh_length = 1 </P>
             <!-- Normalised temperature in eV -->
             <P> Tnorm = 1 </P>
             <!-- Normalised density in m^-3 -->
@@ -31,30 +31,32 @@
             <!-- Normalised magnetic field in T -->
             <P> Bnorm = 1.0 </P>
             <!-- Time step in gyro times -->
-            <P> TimeStep = 0.0001 </P>
+            <P> TimeStep = 0.01 </P>
             <P> NumSteps = 1000 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 10                </P>
-            <P> IO_InfoSteps   = 10                </P>
+            <P> IO_CheckSteps  = 1                </P>
+            <P> IO_InfoSteps   = 1                </P>
 
             <!-- Coulomb logarithm -->
             <P> lambda    = 13          </P>
             <P> k_c       = 3.19        </P>
             <!-- Background temperature in Tnorm eV -->
             <P> T_bg      = 10         </P>
-            <P> kappa_par       = 0.001        </P>
-            <P> kappa_perp       = 0.0001        </P>
+            <!-- <P> k_par       = 0.00001        </P>
+            <P> k_perp       = 0.0000001        </P>
+            <P> kappa_par       = 0.00001        </P>
+            <P> kappa_perp       = 0.0000001        </P> -->
 
             <!-- Scaling factor for ICs -->
             <P> rc = 2 </P>
             <P> ri = 0.5 </P>
             <P> ro = 1 </P>
-            <P> yc = 0 </P>                     
+            <P> yc = 0 </P>
             <P> rs = 0.75 </P>
             <P> ys = 0 </P>
             <P> sr = 0.05 </P>
             <P> sy = 0.05 </P>
-            
+
             <!-- Implicit solve params -->
             <P> IterativeSolverTolerance  = 1.0E-6  </P>
             <P> NekNonlinSysMaxIterations = 30       </P>
@@ -76,18 +78,18 @@
 
         <BOUNDARYCONDITIONS>
             <REGION REF="1">
-                <D VAR="n"  VALUE="1.0" />
+                <N VAR="n"  VALUE="0.0" />
                 <N VAR="v"  VALUE="0" />
-                <D VAR="e"  VALUE="1.0" />
+                <N VAR="e"  VALUE="0.0" />
             </REGION>
             <REGION REF="2">
-                <D VAR="n"  VALUE="1.0" />
+                <N VAR="n"  VALUE="0.0" />
                 <N VAR="v"  VALUE="0" />
-                <D VAR="e"  VALUE="1.0" />
+                <N VAR="e"  VALUE="0.0" />
             </REGION>
         </BOUNDARYCONDITIONS>
         <FUNCTION NAME="InitialConditions">
-            <E VAR="n"  DOMAIN="0" VALUE="0" />
+            <E VAR="n"  DOMAIN="0" VALUE="1" />
             <E VAR="v"  DOMAIN="0" VALUE="0" />
             <E VAR="e"  DOMAIN="0" VALUE="1-0.1*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
         </FUNCTION>
@@ -105,11 +107,14 @@
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
                     <E VAR="n"  DOMAIN="0" VALUE="1+0.01*sin(4*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" />
-                    <E VAR="v"  DOMAIN="0" VALUE="50-5*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
+                    <!-- <E VAR="n"  DOMAIN="0" VALUE="1-0.1*(sqrt((x-rc)^2+(y-yc)^2)-ri)" /> -->
+
+                    <!-- <E VAR="v"  DOMAIN="0" VALUE="50-5*(sqrt((x-rc)^2+(y-yc)^2)-ri)" /> -->
+                    <E VAR="v"  DOMAIN="0" VALUE="0" />
                     <E VAR="e"  DOMAIN="0" VALUE="1-0.1*(sqrt((x-rc)^2+(y-yc)^2)-ri)" />
                 </FUNCTION>
             </I>
-        </SPECIES> 
+        </SPECIES>
     </NESO>
 </NEKTAR>
 
