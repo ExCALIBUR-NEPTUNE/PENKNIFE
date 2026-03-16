@@ -176,6 +176,8 @@ private:
     //
     StdRegions::ConstFactorMap m_factors;
 
+    ClosureSharedPtr m_closure;
+
     NekDouble k_par;
     NekDouble k_perp;
     NekDouble k_cross;
@@ -188,18 +190,8 @@ private:
     NekDouble k_ci;
     NekDouble k_ce;
 
-    std::map<std::pair<int, int>, Array<OneD, NekDouble>> nu_ii;
-    std::map<int, Array<OneD, NekDouble>> nu_ei;
-    Array<OneD, NekDouble> nu_ee;
-
-    std::map<int, Array<OneD, NekDouble>> nu_i;
-    Array<OneD, NekDouble> nu_e;
-
-    Array<OneD, NekDouble> m_kpar;
-    Array<OneD, NekDouble> m_kperp;
-    Array<OneD, NekDouble> m_kcross;
-
     StdRegions::VarCoeffMap m_D;
+    Array<OneD, Array<OneD, NekDouble>> friction;
 
     Array<OneD, NekDouble> kIZ;
     Array<OneD, NekDouble> kCX;
