@@ -5,7 +5,7 @@
 
 namespace PENKNIFE
 {
-// [omega, {n, mnv, 1.5p}_e, {n, mnv, 1.5p}_i, ...]
+// [{n, mnv, 1.5p}_i,..., 1.5p_e]
 class ReducedBraginskii : public PlasmaSystem
 {
 public:
@@ -137,7 +137,6 @@ protected:
         Array<OneD, Array<OneD, NekDouble>> &outarray,
         const Array<OneD, const Array<OneD, NekDouble>> &pFwd,
         const Array<OneD, const Array<OneD, NekDouble>> &pBwd);
-    void load_params() override;
 
     void v_ExtraFldOutput(std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
                           std::vector<std::string> &variables) override;
@@ -178,19 +177,6 @@ private:
 
     ClosureSharedPtr m_closure;
 
-    NekDouble k_par;
-    NekDouble k_perp;
-    NekDouble k_cross;
-    NekDouble kappa_i_par;
-    NekDouble kappa_i_perp;
-    NekDouble kappa_i_cross;
-    NekDouble kappa_e_par;
-    NekDouble kappa_e_perp;
-    NekDouble kappa_e_cross;
-    NekDouble k_ci;
-    NekDouble k_ce;
-
-    StdRegions::VarCoeffMap m_D;
     Array<OneD, Array<OneD, NekDouble>> friction;
 
     Array<OneD, NekDouble> kIZ;

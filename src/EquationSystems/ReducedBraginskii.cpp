@@ -1127,64 +1127,6 @@ void ReducedBraginskii::v_SetInitialConditions(NekDouble init_time,
     Checkpoint_Output(0);
 }
 
-void ReducedBraginskii::load_params()
-{
-    PlasmaSystem::load_params();
-
-    NekDouble lambda;
-
-    m_session->LoadParameter("k_ci", this->k_ci, 3.9);
-    m_session->LoadParameter("k_ce", this->k_ce, 3.16);
-    m_session->LoadParameter("lambda", lambda);
-
-    double scaling_constant =
-        this->omega_c * this->mesh_length * this->mesh_length;
-
-    double tau_const = 6.0 * (sqrt(2.0 * pow(M_PI, 3)) / lambda) *
-                       constants::epsilon_0 * constants::epsilon_0 * 1e12 *
-                       pow(this->Tnorm, 1.5) / (constants::c * this->Nnorm);
-    // multiply by sqrt(m in eV) * (T in eV)^1.5 * (n in Nnorm)^-1 for collision
-    // time in s
-
-    double t_const = 1.0 / (constants::c * constants::c);
-    // multiply by (m in eV)/(B in T)  for gyrotime in s
-
-    k_par = this->k_ce * 1.5 * this->Tnorm * this->Nnorm * tau_const /
-            sqrt(constants::m_e);
-    // Convert to solver length and time scale
-    k_par /= scaling_constant;
-    // multiply k_par by Z^-2 n^-1 T^2.5 in solver
-
-    k_perp = 1.5 * this->Tnorm * this->Nnorm * t_const * t_const / tau_const;
-    k_perp /= scaling_constant;
-    // multiply k_perp by A^0.5 Z^2 n B^-2 T^-0.5 in solver
-
-    k_cross = 3.75 * this->Tnorm * this->Nnorm * t_const / this->Bnorm;
-    k_cross /= scaling_constant;
-
-    kappa_i_par = this->k_ci * 1.5 * this->Tnorm * this->Nnorm * tau_const /
-                  sqrt(constants::m_p);
-    kappa_i_par /= scaling_constant;
-
-    kappa_i_perp = 2 * 1.5 * this->Tnorm * this->Nnorm * t_const * t_const *
-                   sqrt(constants::m_p) / tau_const;
-    kappa_i_perp /= scaling_constant;
-
-    kappa_i_cross = 3.75 * this->Tnorm * this->Nnorm * t_const / this->Bnorm;
-    kappa_i_cross /= scaling_constant;
-
-    kappa_e_par = this->k_ce * 1.5 * this->Tnorm * this->Nnorm * tau_const /
-                  sqrt(constants::m_e);
-    kappa_e_par /= scaling_constant;
-
-    kappa_e_perp = (sqrt(2.0) + 3.25) * 1.5 * this->Tnorm * this->Nnorm *
-                   t_const * t_const * sqrt(constants::m_e) / tau_const;
-    kappa_e_perp /= scaling_constant;
-
-    kappa_e_cross = 3.75 * this->Tnorm * this->Nnorm * t_const / this->Bnorm;
-    kappa_e_cross /= scaling_constant;
-}
-
 void ReducedBraginskii::v_ExtraFldOutput(
     std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
     std::vector<std::string> &variables)

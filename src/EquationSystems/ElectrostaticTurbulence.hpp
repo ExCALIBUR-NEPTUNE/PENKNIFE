@@ -5,7 +5,7 @@
 
 namespace PENKNIFE
 {
-// [omega, {n, mnv, 1.5p}_e, {n, mnv, 1.5p}_i, ...]
+// [{n, mnv, 1.5p}_i,..., 1.5p_e, omega, phi]
 class ElectrostaticTurbulence : public PlasmaSystem
 {
 public:
