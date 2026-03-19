@@ -141,29 +141,38 @@ void Zhdanov::CalcCollisionFrequencies(
 }
 
 void Zhdanov::v_EvaluateClosure(
-    const Array<OneD, Array<OneD, NekDouble>> &values,
+    const Array<OneD, Array<OneD, NekDouble>> &vals,
     const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &grads,
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes,
     Array<OneD, Array<OneD, NekDouble>> &frictions,
     const Array<OneD, NekDouble> &ne, const Array<OneD, NekDouble> &ve)
 {
-    CalcCollisionFrequencies(values, ne);
+    CalcCollisionFrequencies(vals, ne);
+
+    Array<OneD, Array<OneD, NekDouble>> values(vals.size() + 2);
+    for (int v = 0; v < vals.size(); v++)
+        values[v] = vals[v];
+    values[vals.size()]     = ne;
+    values[vals.size() + 1] = ve;
 
     for (int p = 0; p < this->n_pts; ++p)
     {
+        double T         = 0;
+        double total_n   = 0;
         double com_v_par = 0.0;
-        double mass      = 0.0;
+        double tot_mass  = 0.0;
 
-        for (const auto &[s, v] : m_system.lock()->GetIons())
+        for (int s = 0; s < Nspec; ++s)
         {
-            int ni_idx = v.fields.at(field_to_index.at("n"));
-            int vi_idx = v.fields.at(field_to_index.at("e"));
-            com_v_par += values[vi_idx][p];
-            mass += v.mass * values[ni_idx][p];
+            com_v_par += values[v_idx[s]][p];
+            tot_mass += mass[s] * values[n_idx[s]][p];
+
+            T += values[e_idx[s]][p];
+            total_n += values[n_idx[s]][p];
         }
-        com_v_par += ve[p];
-        mass += constants::m_e_m_p * ne[p];
-        com_v_par /= mass;
+
+        com_v_par /= tot_mass;
+        T /= total_n;
         double *w_bar_gradTbar =
             (double *)std::malloc(sizeof(double) * 2 * Nchem);
 
@@ -173,6 +182,8 @@ void Zhdanov::v_EvaluateClosure(
         double *n_bar    = (double *)std::malloc(sizeof(double) * Nchem);
         double *p_bar    = (double *)std::malloc(sizeof(double) * Nchem);
         double *Z_sq_bar = (double *)std::malloc(sizeof(double) * Nchem);
+        double *w        = (double *)std::malloc(sizeof(double) * Nspec);
+
         for (int c = 0; c < Nchem; ++c)
         {
             n_bar[c]     = 0.0;
@@ -180,20 +191,23 @@ void Zhdanov::v_EvaluateClosure(
             Z_sq_bar[c]  = 0.0;
             w_bar[c]     = 0.0;
             gradTbar[c]  = 0.0;
+            int i        = 0;
             for (int s = 0; s < specs[c]; ++s)
             {
-                double w = values[vi_idx][p] / (mass[c] * values[ni_idx][p]) -
-                           com_v_par;
+                w[i] = values[v_idx[s]][p] / (mass[c] * values[n_idx[s]][p]) -
+                       com_v_par;
                 double Z = charge[c][s];
-                n_bar[c] += values[ni_idx][p];
-                Z_bar += Z * values[ni_idx][p];
-                Z_sq_bar[c] += Z * Z * values[ni_idx][p];
-                w_bar[c] += w * values[ni_idx][p] * Z * Z;
+                n_bar[c] += values[n_idx[s]][p];
+                Z_bar += Z * values[n_idx[s]][p];
+                Z_sq_bar[c] += Z * Z * values[n_idx[s]][p];
+                w_bar[c] += w[i] * values[n_idx[s]][p] * Z * Z;
                 for (int d = 0; d < m_spacedim; ++d)
                 {
-                    gradTbar[c] += Z * values[ni_idx][p] * grads[d][ei_idx][p];
+                    gradTbar[c] +=
+                        Z * values[n_idx[s]][p] * grads[d][e_idx[s]][p];
                 }
-                p_bar[c] += values[ni_idx][p] * values[ei_idx][p];
+                p_bar[c] += values[n_idx[s]][p] * values[e_idx[s]][p];
+                i++;
             }
             Z_bar /= n_bar[c];
             Z_sq_bar[c] /= n_bar[c];
@@ -202,53 +216,58 @@ void Zhdanov::v_EvaluateClosure(
         }
         double *q_bar_r_bar = (double *)std::malloc(sizeof(double) * 2 * Nchem);
 
-        Solve_qBar_rBar(w_bar_gradTbar, q_bar_r_bar);
+        Solve_qBar_rBar(w_bar_gradTbar, q_bar_r_bar, n_bar, p_bar, T);
         double *q_bar = q_bar_r_bar;
         double *r_bar = q_bar_r_bar + Nchem;
 
+        double *r = (double *)std::malloc(sizeof(double) * Nspec);
+        double *q = (double *)std::malloc(sizeof(double) * Nspec);
+
         for (int c = 0; c < Nchem; ++c)
         {
-            double s11   = S11(mass[c], lambda);
-            double s5    = S5(mass[c], lambda);
-            double s9    = S9(mass[c], lambda);
-            double s2    = S2(mass[c], lambda);
-            double s8    = S8(mass[c], lambda);
-            double nu_aa = nu_ii[c];
-            double nu_a  = nu_i[c];
+            double s2, s5, s8, s9, s11;
+            double lambda;
+            Calc_S_coeffs(lambda, mass[c], &s2, &s5, &s8, &s9, &s11);
+
+            double nu_aa = nu_ii[{c, c}][p];
+            double nu_a  = nu_i[c][p];
             double D_    = D(s5, s11, s9);
             double c_5   = c5(nu_aa, nu_a, s11, D_);
             double c_6   = c6(s2, s11, s8, s9, D_);
 
             double gradTcoeff = n_bar[c] * c_5 * nu_aa / nu_a;
 
-            for (int s = 0; s < Nspecs[c]; ++s)
+            int i = 0;
+            for (int s = 0; s < specs[c]; ++s)
             {
-                double T = values[ei_idx][p];
+                double T = values[e_idx[s]][p];
                 double Z = charge[c][s];
-                double w = values[vi_idx][p] / (mass[c] * values[ni_idx][p]) -
-                           com_v_par;
+                double w =
+                    values[v_idx[s]][p] / (mass[c] * values[n_idx[s]][p]) -
+                    com_v_par;
 
                 double gradTdiff = 0.0;
                 for (int d = 0; d < m_spacedim; ++d)
                 {
-                    gradTdiff += b_unit[d][p] * grads[d][ei_idx][p];
+                    gradTdiff += b_unit[d][p] * grads[d][e_idx[s]][p];
                 }
                 gradTdiff = (Z_sq_bar[c] / Z * Z) * gradTdiff - gradTbar[c];
 
-                double q = gradTcoeff * gradTdiff + c_6 * (w - w_bar[c]) +
-                           q_bar[c] / p_bar[c];
-                double r = T / (mass[c] * s11) *
-                               (-7. * s9 * gradTcoeff * gradTdiff -
-                                (s8 + 7. * s9 * c_6) * (w - w_bar[c])) +
-                           r_bar[c] / p_bar[c];
+                q[i] = gradTcoeff * gradTdiff + c_6 * (w - w_bar[c]) +
+                       q_bar[c] / p_bar[c];
+                r[i] = T / (mass[c] * s11) *
+                           (-7. * s9 * gradTcoeff * gradTdiff -
+                            (s8 + 7. * s9 * c_6) * (w - w_bar[c])) +
+                       r_bar[c] / p_bar[c];
 
-                double pressure = (values[ni_idx] * T);
-                q /= pressure;
-                r /= pressure;
+                double pressure = (values[n_idx[s]][p] * T);
+                q[i] /= pressure;
+                r[i] /= pressure;
                 for (int d = 0; d < m_spacedim; ++d)
                 {
-                    fluxes[d][ei_idx][p] = b_unit[d][p] * q;
+                    fluxes[d][e_idx[s]][p] = b_unit[d][p] * q[i];
                 }
+                i++;
             }
         }
         std::free(p_bar);
@@ -259,26 +278,34 @@ void Zhdanov::v_EvaluateClosure(
         for (int a = 0; a < Nspec; ++a)
         {
             double R = 0;
+            double Q = 0;
             for (int b = 0; b < Nspec; ++b)
             {
                 double lambda;
+                double mu_ = mu(mass[a], mass[b]);
 
-                double g1 = G1(mass[a], mass[b], lambda);
+                double g1 = G1(lambda);
                 double g2 = G2(mass[a], mass[b], lambda);
                 double g8 = G8(mass[a], mass[b], lambda);
                 double R1 = g1 * (w[a] - w[b]);
-                double R2 = g2 * (mu(mass[a], mass[b]) / T) *
-                            (q[a] / (values[na][p] * mass[a]) -
-                             q[b] / (values[nb][p] * mass[b]));
-                double R3 = g8 * (mu(mass[a], mass[b]) / T) *
-                            (mu(mass[a], mass[b]) / T) *
-                            (r[a] / (values[na][p] * mass[a]) -
-                             r[b] / (values[nb][p] * mass[b]));
+                double R2 = g2 * (mu_ / T) *
+                            (q[a] / (values[n_idx[a]][p] * mass[a]) -
+                             q[b] / (values[n_idx[b]][p] * mass[b]));
+                double R3 = g8 * (mu_ * mu_ / (T * T)) *
+                            (r[a] / (values[n_idx[a]][p] * mass[a]) -
+                             r[b] / (values[n_idx[b]][p] * mass[b]));
                 R += (R1 + R2 + R3);
+                Q += R * mu_ * (values[v_idx[b]][p] - values[v_idx[a]][p]);
+                Q += mu_ * nu_ii[{a, b}][p] * values[n_idx[a]][p] *
+                     (values[e_idx[b]][p] - values[e_idx[a]][p]);
             }
 
-            frictions[ei_idx][p] = R;
+            frictions[v_idx[a]][p] = R;
+            frictions[e_idx[a]][p] = Q;
         }
+        std::free(q);
+        std::free(r);
+        std::free(w);
     }
 }
 } // namespace PENKNIFE

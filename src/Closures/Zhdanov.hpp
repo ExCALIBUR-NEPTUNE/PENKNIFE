@@ -42,49 +42,39 @@ private:
         const Array<OneD, Array<OneD, NekDouble>> &in_arr,
         const Array<OneD, NekDouble> &ne);
 
-    void FillM3(double **m3)
+    void FillM3andB(double **m3, double *B, double *n_bar, double *p_bar,
+                    double T)
     {
         for (int a = 0; a < Nchem; ++a)
         {
-            double m_a = masses[a];
+            double m_a = mass[a];
+            double w   = 0;
+
             for (int b = 0; b < Nchem; ++b)
             {
-                double m_b       = masses[b];
-                m3[b][a]         = G6(m_a, m_b, lambda) / pressure[b];
-                m3[b][a + Nchem] = 7. * mu(m_a, m_b) * G10(m_a, m_b, lambda) /
-                                   (m_a * pressure[b]);
-                m3[b + Nchem][a] =
-                    mu(m_a, m_b) * G10(m_a, m_b, lambda) / (T * pressure[b]);
-                m3[b + Nchem][a + Nchem] =
-                    m_b * G12(m_a, m_b, lambda) / (T * pressure[b]);
-
-                m3[a][a] += G5(m_a, m_b, lambda) / pressure[a];
-                m3[a][a + Nchem] += 7. * mu(m_a, m_b) * G9(m_a, m_b, lambda) /
-                                    (m_a * pressure[a]);
-                m3[a + Nchem][a] += 7. * mu(m_a, m_b) * G9(m_a, m_b, lambda) /
-                                    (T * pressure[a]);
-                m3[a + Nchem][a + Nchem] +=
-                    m_a * G11(m_a, m_b, lambda) / (T * pressure[1]);
-            }
-        }
-    }
-    void FillB(double *B)
-    {
-        for (int a = 0; a < Nchem; ++a)
-        {
-            double m_a = masses[a];
-
-            double w = 0;
-            for (int b = 0; b < Nchem; ++b)
-            {
-                double m_b = masses[b];
-
+                double lambda;
+                double m_b = mass[b];
                 double mu_ = mu(m_a, m_b);
+
+                m3[b][a] = G6(m_a, m_b, lambda) / p_bar[b];
+                m3[b][a + Nchem] =
+                    7. * mu_ * G10(m_a, m_b, lambda) / (m_a * p_bar[b]);
+                m3[b + Nchem][a] = mu_ * G10(m_a, m_b, lambda) / (T * p_bar[b]);
+                m3[b + Nchem][a + Nchem] =
+                    m_b * G12(m_a, m_b, lambda) / (T * p_bar[b]);
+
+                m3[a][a] += G5(m_a, m_b, lambda) / p_bar[a];
+                m3[a][a + Nchem] +=
+                    7. * mu_ * G9(m_a, m_b, lambda) / (m_a * p_bar[a]);
+                m3[a + Nchem][a] +=
+                    7. * mu_ * G9(m_a, m_b, lambda) / (T * p_bar[a]);
+                m3[a + Nchem][a + Nchem] +=
+                    m_a * G11(m_a, m_b, lambda) / (T * p_bar[a]);
+
                 w += 2.5 * mu_ * G2(m_a, m_b, lambda) * (B[b] - B[a]) / m_a;
                 w += 17.5 * mu_ * mu_ * G8(m_a, m_b, lambda) *
                      (B[b + Nchem] - B[a + Nchem]) / (m_a * m_a);
             }
-
             B[a + Nchem] = w;
             B[a]         = 2.5 * n_bar[a] * B[a];
         }
@@ -140,9 +130,6 @@ private:
         }
     }
 
-    /* INPUT: A,P filled in LUPDecompose; b - rhs vector; N - dimension
-     * OUTPUT: x - solution vector of A*x=b
-     */
     inline void LUPSolve(double **A, int *P, double *b, int N, double *x)
     {
         for (int i = 0; i < N; i++)
@@ -162,15 +149,14 @@ private:
         }
     }
 
-    inline void Solve_qBar_rBar(double *w_bar_gradTbar, double *q_bar_r_bar)
+    inline void Solve_qBar_rBar(double *w_bar_gradTbar, double *q_bar_r_bar,
+                                double *n_bar, double *p_bar, double T)
     {
-        FillB(w_bar_gradTbar);
-
         double **M3 = (double **)std::malloc(2 * Nchem * sizeof(double *));
         for (int i = 0; i < 2 * Nchem; i++)
             M3[i] = (double *)std::malloc(2 * Nchem * sizeof(double));
 
-        FillM3(M3);
+        FillM3andB(M3, w_bar_gradTbar, n_bar, p_bar, T);
 
         int *P = (int *)std::malloc(sizeof(int) * (Nchem + 1));
         LUPDecompose(M3, Nchem, 1e-10, P);
@@ -262,61 +248,6 @@ private:
         return (24. / 7.) * (m_b / m_a) * kappa(m_a, m_b) * lambda;
     }
 
-    inline double S2(double m_a, double lambda)
-    {
-        double s_2 = 0.0;
-        for (int s = 0; s < Nspec; ++s)
-        {
-            double m_b = masses[s];
-            s_2 += mu(m_a, m_b) * G2(m_a, m_b, lambda) / m_a;
-        }
-        return 2.5 * s_2;
-    }
-
-    inline double S5(double m_a, double lambda)
-    {
-        double s_5 = 0.0;
-        for (int s = 0; s < Nspec; ++s)
-        {
-            double m_b = masses[s];
-            s_5 += G5(m_a, m_b, lambda);
-        }
-        return s_5;
-    }
-
-    inline double S8(double m_a, double lambda)
-    {
-        double s_8 = 0.0;
-        for (int s = 0; s < Nspec; ++s)
-        {
-            double m_b = masses[s];
-            s_8 += mu(m_a, m_b) * mu(m_a, m_b) * G8(m_a, m_b, lambda) /
-                   (m_a * m_a);
-        }
-        return 17.5 * s_8;
-    }
-
-    inline double S9(double m_a, double lambda)
-    {
-        double s_9 = 0.0;
-        for (int s = 0; s < Nspec; ++s)
-        {
-            double m_b = masses[s];
-            s_9 += mu(m_a, m_b) * G9(m_a, m_b, lambda) / m_a;
-        }
-        return s_9;
-    }
-    inline double S11(double m_a, double lambda)
-    {
-        double s_11 = 0.0;
-        for (int s = 0; s < Nspec; ++s)
-        {
-            double m_b = masses[s];
-            s_11 += G11(m_a, m_b, lambda);
-        }
-        return s_11;
-    }
-
     inline double c5(double nu_aa, double nu_a, double s_11, double D)
     {
         return 2.5 * nu_aa * s_11 / (nu_a * D);
@@ -327,7 +258,30 @@ private:
     }
     inline double D(double s_5, double s_11, double s_9)
     {
-        s_5 *s_11 - 7. * s_9;
+        return s_5 * s_11 - 7. * s_9;
+    }
+
+    inline void Calc_S_coeffs(double lambda, double m_a, double *s2, double *s5,
+                              double *s8, double *s9, double *s11)
+    {
+        *s2  = 0.0;
+        *s5  = 0.0;
+        *s8  = 0.0;
+        *s9  = 0.0;
+        *s11 = 0.0;
+
+        for (int s = 0; s < Nspec; ++s)
+        {
+            double m_b = mass[s];
+            double mu_ = mu(m_a, m_b);
+            *s2 += mu_ * G2(m_a, m_b, lambda) / m_a;
+            *s5 += G5(m_a, m_b, lambda);
+            *s8 += mu_ * mu_ * G8(m_a, m_b, lambda) / (m_a * m_a);
+            *s9 += mu_ * G9(m_a, m_b, lambda) / m_a;
+            *s11 += G11(m_a, m_b, lambda);
+        }
+        *s2 *= 2.5;
+        *s8 *= 17.5;
     }
 
     Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim);
@@ -335,8 +289,14 @@ private:
     ~Zhdanov() = default;
 
     int Nchem;
-    int Nspec;
+    double *mass;
     int *specs;
+    double **charge;
+
+    int Nspec;
+    int *n_idx;
+    int *v_idx;
+    int *e_idx;
 
     std::map<std::pair<int, int>, Array<OneD, NekDouble>> nu_ii;
     std::map<int, Array<OneD, NekDouble>> nu_ei;
