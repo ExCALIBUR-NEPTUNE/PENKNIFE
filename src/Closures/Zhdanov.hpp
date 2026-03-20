@@ -41,6 +41,8 @@ private:
     void CalcCollisionFrequencies(
         const Array<OneD, Array<OneD, NekDouble>> &in_arr,
         const Array<OneD, NekDouble> &ne);
+    void CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
+                     const Array<OneD, NekDouble> &ne);
 
     void FillM3andB(double **m3, double *B, double *n_bar, double *p_bar,
                     double T)
@@ -235,7 +237,8 @@ private:
     }
     inline double G14(double m_a, double m_b, double lambda)
     {
-        return -(24. / 35.) * lambda;
+        // (m_b / m_a) not present in some papers?
+        return -(24. / 35.) * (m_b / m_a) * lambda;
     }
     inline double G15(double m_a, double m_b, double lambda)
     {
@@ -261,19 +264,21 @@ private:
         return s_5 * s_11 - 7. * s_9;
     }
 
-    inline void Calc_S_coeffs(double lambda, double m_a, double *s2, double *s5,
-                              double *s8, double *s9, double *s11)
+    inline void Calc_S_coeffs(int p, int a, double *s2, double *s5, double *s8,
+                              double *s9, double *s11)
     {
-        *s2  = 0.0;
-        *s5  = 0.0;
-        *s8  = 0.0;
-        *s9  = 0.0;
-        *s11 = 0.0;
+        *s2        = 0.0;
+        *s5        = 0.0;
+        *s8        = 0.0;
+        *s9        = 0.0;
+        *s11       = 0.0;
+        double m_a = mass[a];
 
-        for (int s = 0; s < Nspec; ++s)
+        for (int b = 0; b < Nchem; ++b)
         {
-            double m_b = mass[s];
-            double mu_ = mu(m_a, m_b);
+            double lambda = this->lambda_ab[{a, b}][p];
+            double m_b    = mass[b];
+            double mu_    = mu(m_a, m_b);
             *s2 += mu_ * G2(m_a, m_b, lambda) / m_a;
             *s5 += G5(m_a, m_b, lambda);
             *s8 += mu_ * mu_ * G8(m_a, m_b, lambda) / (m_a * m_a);
@@ -297,6 +302,9 @@ private:
     int *n_idx;
     int *v_idx;
     int *e_idx;
+
+    std::map<std::pair<int, int>, Array<OneD, NekDouble>> lambda_aZbY;
+    std::map<std::pair<int, int>, Array<OneD, NekDouble>> lambda_ab;
 
     std::map<std::pair<int, int>, Array<OneD, NekDouble>> nu_ii;
     std::map<int, Array<OneD, NekDouble>> nu_ei;

@@ -25,7 +25,7 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     Nchem        = m_system.lock()->GetChem().size();
     this->specs  = (int *)std::malloc(sizeof(int) * (Nchem + 1));
     this->mass   = (double *)std::malloc(sizeof(double) * (Nchem + 1));
-    this->charge = (double **)std::malloc(sizeof(int *) * Nchem);
+    this->charge = (double **)std::malloc(sizeof(double *) * Nchem);
     Nspec        = m_system.lock()->GetIons().size();
     this->n_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
     this->v_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
@@ -56,9 +56,9 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     this->mass[Nchem]      = constants::m_e_m_p;
     this->charge[Nchem][0] = -1;
     Nchem++;
-    e_idx[Nspec]           = ee_idx;
-    n_idx[Nchem - 1]        = m_system.lock()->n_indep_fields;
-    v_idx[Nchem - 1]        = m_system.lock()->n_indep_fields + 1;
+    e_idx[Nspec]     = ee_idx;
+    n_idx[Nchem - 1] = m_system.lock()->n_indep_fields;
+    v_idx[Nchem - 1] = m_system.lock()->n_indep_fields + 1;
     Nspec++;
 }
 
@@ -191,6 +191,61 @@ void Zhdanov::CalcCollisionFrequencies(
     }
 }
 
+void Zhdanov::CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
+                          const Array<OneD, NekDouble> &ne)
+{
+    for (int p = 0; p < this->n_pts; ++p)
+    {
+        for (int a = 0; a < Nchem; ++a)
+        {
+            double A = mass[a];
+            for (int b = 0; b < Nchem; ++b)
+            {
+                if (b > a)
+                    break;
+                double B          = mass[b];
+                double mu_        = mu(A, B);
+                double lambda_tot = 0.0;
+                double n_tot      = 0.0;
+                for (int z = 0; z < specs[a]; ++z)
+                {
+                    double Z = charge[a][z];
+                    for (int y = 0; y < specs[b]; ++y)
+                    {
+                        if (b == a && y > z)
+                            break;
+                        double Y           = charge[b][y];
+                        double coulomb_log = CoulombLog_ii(
+                            Nnorm, in_arr[n_idx[z]][p], in_arr[n_idx[y]][p],
+                            in_arr[e_idx[z]][p], in_arr[e_idx[y]][p], A, B, Z,
+                            Y);
+
+                        const double v1sq = 2 * in_arr[e_idx[z]][p] *
+                                            constants::e /
+                                            (A * constants::m_p_si);
+                        const double v2sq = 2 * in_arr[e_idx[y]][p] *
+                                            constants::e /
+                                            (B * constants::m_p_si);
+
+                        double lambda = Z * Z * Y * Y * sqrt(mu_) *
+                                        pow(constants::e, 4) *
+                                        in_arr[n_idx[z]][p] *
+                                        in_arr[n_idx[y]][p] * coulomb_log /
+                                        (3 * pow(M_PI * (v1sq + v2sq), 1.5) *
+                                         pow(constants::epsilon_0_si, 2));
+                        // lambda /= mesh_length;
+
+                        lambda_aZbY[{z, y}][p] = lambda;
+                        lambda_tot += in_arr[n_idx[z]][p] * lambda;
+                        n_tot += in_arr[n_idx[z]][p];
+                    }
+                }
+                lambda_ab[{a, b}][p] = lambda_tot / n_tot;
+            }
+        }
+    }
+}
+
 void Zhdanov::v_EvaluateClosure(
     const Array<OneD, Array<OneD, NekDouble>> &vals,
     const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &grads,
@@ -205,7 +260,6 @@ void Zhdanov::v_EvaluateClosure(
         values[v] = vals[v];
     values[vals.size()]     = ne;
     values[vals.size() + 1] = ve;
-
 
     for (int p = 0; p < this->n_pts; ++p)
     {
@@ -278,8 +332,7 @@ void Zhdanov::v_EvaluateClosure(
         for (int c = 0; c < Nchem; ++c)
         {
             double s2, s5, s8, s9, s11;
-            double lambda;
-            Calc_S_coeffs(lambda, mass[c], &s2, &s5, &s8, &s9, &s11);
+            Calc_S_coeffs(p, c, &s2, &s5, &s8, &s9, &s11);
 
             double nu_aa = nu_ii[{c, c}][p];
             double nu_a  = nu_i[c][p];
@@ -333,8 +386,8 @@ void Zhdanov::v_EvaluateClosure(
             double Q = 0;
             for (int b = 0; b < Nspec; ++b)
             {
-                double lambda;
-                double mu_ = mu(mass[a], mass[b]);
+                double lambda = this->lambda_aZbY[{a, b}][p];
+                double mu_    = mu(mass[a], mass[b]);
 
                 double g1 = G1(lambda);
                 double g2 = G2(mass[a], mass[b], lambda);
