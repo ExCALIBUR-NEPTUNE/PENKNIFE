@@ -12,9 +12,9 @@
 #include <SolverUtils/Forcing/Forcing.h>
 
 #include "../BoundaryConditions/PlasmaBndConds.hpp"
+#include "../Closures/Closure.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
-#include "../Closures/Closure.hpp"
 #include "ImplicitHelper.hpp"
 #include "MagneticField.hpp"
 
@@ -89,6 +89,19 @@ public:
         return m_ions;
     }
 
+    struct Chem
+    {
+        double mass;
+        std::string name;
+        std::vector<Ion> specs;
+    };
+
+    std::map<int, Chem> m_chem;
+    std::map<int, Chem> &GetChem()
+    {
+        return m_chem;
+    }
+
     struct Neutral : public Species
     {
         int ion;
@@ -98,6 +111,8 @@ public:
     {
         return m_neutrals;
     }
+    int n_species;
+    int n_indep_fields;
 
 protected:
     PlasmaSystem(const LU::SessionReaderSharedPtr &session,
@@ -139,9 +154,6 @@ protected:
     Array<OneD, MR::ExpListSharedPtr> m_allfields;
     Array<OneD, MR::ExpListSharedPtr> m_saved;
     Array<OneD, MR::ExpListSharedPtr> m_indfields;
-    int n_indep_fields;
-    int n_species;
-    int n_fields_per_species;
 
     /** Density source fields cast to DisContFieldSharedPtr for use in
      * particle evaluation/projection methods

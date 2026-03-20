@@ -286,9 +286,12 @@ void PlasmaSystem::v_InitObject(bool create_field)
         else
         {
             Ion ion{spec, charge};
-            m_ions[s_idx]   = ion;
-            ions_by_name[k] = s_idx;
+            m_ions[s_idx]                = ion;
+            ions_by_name[k]              = s_idx;
+            m_chem[ions_by_name[k]].mass = mass;
+            m_chem[ions_by_name[k]].specs.push_back(ion);
         }
+
         m_species[s_idx++] = spec;
     }
 

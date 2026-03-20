@@ -286,7 +286,7 @@ private:
 
     Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim);
 
-    ~Zhdanov() = default;
+    ~Zhdanov();
 
     int Nchem;
     double *mass;
@@ -304,9 +304,6 @@ private:
 
     std::map<int, Array<OneD, NekDouble>> nu_i;
     Array<OneD, NekDouble> nu_e;
-
-    NekDouble k_ci;
-    NekDouble k_ce;
 };
 
 } // namespace PENKNIFE

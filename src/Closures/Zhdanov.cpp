@@ -9,8 +9,7 @@ std::string Zhdanov::className = GetClosureFactory().RegisterCreatorFunction(
 Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     : Closure(pSystem, spaceDim)
 {
-    k_ci        = 3.9;
-    k_ce        = 3.16;
+
     this->nu_ee = Array<OneD, NekDouble>(this->n_pts);
     this->nu_e  = Array<OneD, NekDouble>(this->n_pts);
     for (const auto &[s, v] : m_system.lock()->GetIons())
@@ -23,6 +22,58 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
                 Array<OneD, NekDouble>(this->n_pts);
         }
     }
+    Nchem        = m_system.lock()->GetChem().size();
+    this->specs  = (int *)std::malloc(sizeof(int) * (Nchem + 1));
+    this->mass   = (double *)std::malloc(sizeof(double) * (Nchem + 1));
+    this->charge = (double **)std::malloc(sizeof(int *) * Nchem);
+    Nspec        = m_system.lock()->GetIons().size();
+    this->n_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
+    this->v_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
+    this->e_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
+
+    int speccnt  = 0;
+    int fieldcnt = 0;
+    for (const auto &[c, cv] : m_system.lock()->GetChem())
+    {
+        specs[c]  = 0;
+        charge[c] = (double *)std::malloc(sizeof(double) * cv.specs.size());
+        mass[c]   = cv.mass;
+        for (int s = 0; s < cv.specs.size(); ++s)
+        {
+            specs[c]++;
+            charge[c][s]   = cv.specs[s].charge;
+            n_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("n"));
+            fieldcnt++;
+            v_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("v"));
+            fieldcnt++;
+            e_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("e"));
+            fieldcnt++;
+            speccnt++;
+        }
+    }
+
+    this->specs[Nchem]     = 1;
+    this->mass[Nchem]      = constants::m_e_m_p;
+    this->charge[Nchem][0] = -1;
+    Nchem++;
+    e_idx[Nspec]           = ee_idx;
+    n_idx[Nchem - 1]        = m_system.lock()->n_indep_fields;
+    v_idx[Nchem - 1]        = m_system.lock()->n_indep_fields + 1;
+    Nspec++;
+}
+
+Zhdanov::~Zhdanov()
+{
+    std::free(specs);
+    std::free(mass);
+    for (int c = 0; c < Nchem; ++c)
+    {
+        std::free(charge[c]);
+    }
+    std::free(charge);
+    std::free(n_idx);
+    std::free(v_idx);
+    std::free(e_idx);
 }
 
 inline double CoulombLog_ii(double Nnorm, double ni1, double ni2, double Ti1,
@@ -154,6 +205,7 @@ void Zhdanov::v_EvaluateClosure(
         values[v] = vals[v];
     values[vals.size()]     = ne;
     values[vals.size() + 1] = ve;
+
 
     for (int p = 0; p < this->n_pts; ++p)
     {
