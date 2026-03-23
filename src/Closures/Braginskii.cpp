@@ -26,37 +26,6 @@ Braginskii::Braginskii(const std::weak_ptr<PlasmaSystem> &pSystem,
     }
 }
 
-inline double CoulombLog_ii(double Nnorm, double ni1, double ni2, double Ti1,
-                            double Ti2, double A1, double A2, double Z1,
-                            double Z2)
-{
-    return 29.91 - log(sqrt(Nnorm)) -
-           log((Z1 * Z2 * (A1 + A2)) / (A1 * Ti2 + A2 * Ti1) *
-               sqrt(ni1 * Z1 * Z1 / Ti1 + ni2 * Z2 * Z2 / Ti2));
-}
-
-inline double CoulombLog_ee(double Nnorm, double Tnorm, double ne, double Te)
-{
-    double logTe = log(Tnorm * Te);
-    return 30.4 - 0.5 * log(ne) - 0.5 * log(Nnorm) + (5. / 4) * logTe -
-           sqrt(1e-5 + (logTe - 2) * (logTe - 2) / 16.);
-}
-
-inline double CoulombLog_ei(double Nnorm, double Tnorm, double ni, double ne,
-                            double Ti, double Te, double Ai, double Zi)
-{
-    if ((Te * Tnorm < 0.1) || (ni * Nnorm < 1e10) || (ne * Nnorm < 1e10))
-        return 10;
-    else if (Te < Ti * constants::m_e_m_p / Ai)
-        return 23 - 0.5 * log(ni) + 1.5 * log(Ti) - log(Zi * Zi * Ai) -
-               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
-    else if (Te * Tnorm < exp(2) * Zi * Zi)
-        return 30.0 - 0.5 * log(ne) - log(Zi) + 1.5 * log(Te) -
-               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
-    else
-        return 31.0 - 0.5 * log(ne) + log(Te) - 0.5 * log(Nnorm) + log(Tnorm);
-}
-
 void Braginskii::CalcCollisionFrequencies(
     const Array<OneD, Array<OneD, NekDouble>> &in_arr,
     const Array<OneD, NekDouble> &ne)
@@ -65,8 +34,7 @@ void Braginskii::CalcCollisionFrequencies(
     {
         const double v1sq =
             2 * in_arr[ee_idx][p] * constants::e / constants::m_e_si;
-        double coulomb_log =
-            CoulombLog_ee(Nnorm, Tnorm, ne[p], in_arr[ee_idx][p]);
+        double coulomb_log = CoulombLog_ee(ne[p], in_arr[ee_idx][p]);
 
         // Electon collision frequency
         double nu = pow(constants::e, 4) * ne[p] * coulomb_log * 2 /
@@ -88,8 +56,8 @@ void Braginskii::CalcCollisionFrequencies(
             const double visq =
                 2 * in_arr[ei_idx][p] * constants::e / (A * constants::m_p_si);
             double coulomb_log =
-                CoulombLog_ei(Nnorm, Tnorm, in_arr[ni_idx][p], ne[p],
-                              in_arr[ei_idx][p], in_arr[ee_idx][p], A, Z);
+                CoulombLog_ei(in_arr[ni_idx][p], ne[p], in_arr[ei_idx][p],
+                              in_arr[ee_idx][p], A, Z);
             // Collision frequency
             double nu = Z * Z * pow(constants::e, 4) * in_arr[ni_idx][p] *
                         coulomb_log * (1. + constants::m_e_m_p) /
@@ -119,8 +87,8 @@ void Braginskii::CalcCollisionFrequencies(
             for (int p = 0; p < this->n_pts; ++p)
             {
                 double coulomb_log = CoulombLog_ii(
-                    Nnorm, in_arr[ni_idx][p], in_arr[ni_idx2][p],
-                    in_arr[ei_idx][p], in_arr[ei_idx2][p], A, A2, Z, Z2);
+                    in_arr[ni_idx][p], in_arr[ni_idx2][p], in_arr[ei_idx][p],
+                    in_arr[ei_idx2][p], A, A2, Z, Z2);
 
                 const double v1sq = 2 * in_arr[ei_idx][p] * constants::e /
                                     (A * constants::m_p_si);

@@ -9,19 +9,6 @@ std::string Zhdanov::className = GetClosureFactory().RegisterCreatorFunction(
 Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     : Closure(pSystem, spaceDim)
 {
-
-    this->nu_ee = Array<OneD, NekDouble>(this->n_pts);
-    this->nu_e  = Array<OneD, NekDouble>(this->n_pts);
-    for (const auto &[s, v] : m_system.lock()->GetIons())
-    {
-        this->nu_i[s]  = Array<OneD, NekDouble>(this->n_pts);
-        this->nu_ei[s] = Array<OneD, NekDouble>(this->n_pts);
-        for (const auto &[s2, v2] : m_system.lock()->GetIons())
-        {
-            this->nu_ii[std::make_pair(s, s2)] =
-                Array<OneD, NekDouble>(this->n_pts);
-        }
-    }
     Nchem        = m_system.lock()->GetChem().size();
     this->specs  = (int *)std::malloc(sizeof(int) * (Nchem + 1));
     this->mass   = (double *)std::malloc(sizeof(double) * (Nchem + 1));
@@ -31,8 +18,7 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     this->v_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
     this->e_idx  = (int *)std::malloc(sizeof(int) * (Nspec + 1));
 
-    int speccnt  = 0;
-    int fieldcnt = 0;
+    int cnt = 0;
     for (const auto &[c, cv] : m_system.lock()->GetChem())
     {
         specs[c]  = 0;
@@ -41,17 +27,15 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
         for (int s = 0; s < cv.specs.size(); ++s)
         {
             specs[c]++;
-            charge[c][s]   = cv.specs[s].charge;
-            n_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("n"));
-            fieldcnt++;
-            v_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("v"));
-            fieldcnt++;
-            e_idx[speccnt] = cv.specs[s].fields.at(field_to_index.at("e"));
-            fieldcnt++;
-            speccnt++;
+            charge[c][s] = cv.specs[s].charge;
+            n_idx[cnt]   = cv.specs[s].fields.at(field_to_index.at("n"));
+            v_idx[cnt]   = cv.specs[s].fields.at(field_to_index.at("v"));
+            e_idx[cnt]   = cv.specs[s].fields.at(field_to_index.at("e"));
+            idx[c][s]    = cnt++;
         }
     }
 
+    // Electrons included as "element" with single charge state
     this->specs[Nchem]     = 1;
     this->mass[Nchem]      = constants::m_e_m_p;
     this->charge[Nchem][0] = -1;
@@ -60,8 +44,33 @@ Zhdanov::Zhdanov(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     n_idx[Nchem - 1] = m_system.lock()->n_indep_fields;
     v_idx[Nchem - 1] = m_system.lock()->n_indep_fields + 1;
     Nspec++;
-}
 
+    // Set up maps from indices to collision parameters
+    for (int a = 0; a < Nchem; ++a)
+    {
+        this->nu_a[a] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+
+        for (int b = 0; b < Nchem; ++b)
+        {
+            if (b > a)
+                break;
+            this->lambda_ab[{a, b}] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+
+            for (int z = 0; z < specs[a]; ++z)
+            {
+                for (int y = 0; y < specs[b]; ++y)
+                {
+                    if (b == a && y > z)
+                        break;
+                    int idx1 = idx[a][z];
+                    int idx2 = idx[b][y];
+                    this->lambda_aZbY[{idx1, idx2}] =
+                        Array<OneD, NekDouble>(this->n_pts);
+                }
+            }
+        }
+    }
+}
 Zhdanov::~Zhdanov()
 {
     std::free(specs);
@@ -76,119 +85,10 @@ Zhdanov::~Zhdanov()
     std::free(e_idx);
 }
 
-inline double CoulombLog_ii(double Nnorm, double ni1, double ni2, double Ti1,
-                            double Ti2, double A1, double A2, double Z1,
-                            double Z2)
+inline double CoulombLog(double Nnorm, double Tnorm, double ni1, double ni2,
+                         double Ti1, double Ti2, double A1, double A2,
+                         double Z1, double Z2)
 {
-    return 29.91 - log(sqrt(Nnorm)) -
-           log((Z1 * Z2 * (A1 + A2)) / (A1 * Ti2 + A2 * Ti1) *
-               sqrt(ni1 * Z1 * Z1 / Ti1 + ni2 * Z2 * Z2 / Ti2));
-}
-
-inline double CoulombLog_ee(double Nnorm, double Tnorm, double ne, double Te)
-{
-    double logTe = log(Tnorm * Te);
-    return 30.4 - 0.5 * log(ne) - 0.5 * log(Nnorm) + (5. / 4) * logTe -
-           sqrt(1e-5 + (logTe - 2) * (logTe - 2) / 16.);
-}
-
-inline double CoulombLog_ei(double Nnorm, double Tnorm, double ni, double ne,
-                            double Ti, double Te, double Ai, double Zi)
-{
-    if ((Te * Tnorm < 0.1) || (ni * Nnorm < 1e10) || (ne * Nnorm < 1e10))
-        return 10;
-    else if (Te < Ti * constants::m_e_m_p / Ai)
-        return 23 - 0.5 * log(ni) + 1.5 * log(Ti) - log(Zi * Zi * Ai) -
-               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
-    else if (Te * Tnorm < exp(2) * Zi * Zi)
-        return 30.0 - 0.5 * log(ne) - log(Zi) + 1.5 * log(Te) -
-               0.5 * log(Nnorm) + 1.5 * log(Tnorm);
-    else
-        return 31.0 - 0.5 * log(ne) + log(Te) - 0.5 * log(Nnorm) + log(Tnorm);
-}
-
-void Zhdanov::CalcCollisionFrequencies(
-    const Array<OneD, Array<OneD, NekDouble>> &in_arr,
-    const Array<OneD, NekDouble> &ne)
-{
-    for (int p = 0; p < this->n_pts; ++p)
-    {
-        const double v1sq =
-            2 * in_arr[ee_idx][p] * constants::e / constants::m_e_si;
-        double coulomb_log =
-            CoulombLog_ee(Nnorm, Tnorm, ne[p], in_arr[ee_idx][p]);
-
-        // Electon collision frequency
-        double nu = pow(constants::e, 4) * ne[p] * coulomb_log * 2 /
-                    (3 * pow(M_PI * 2 * v1sq, 1.5) *
-                     pow(constants::epsilon_0_si * constants::m_e_si, 2));
-        this->nu_ee[p] = nu / omega_c;
-        this->nu_e[p]  = this->nu_ee[p];
-    }
-    for (const auto &[s, v] : m_system.lock()->GetIons())
-    {
-        double Z   = v.charge;
-        double A   = v.mass;
-        int ni_idx = v.fields.at(field_to_index.at("n"));
-        int ei_idx = v.fields.at(field_to_index.at("e"));
-        for (int p = 0; p < this->n_pts; ++p)
-        {
-            const double vesq =
-                2 * in_arr[ei_idx][p] * constants::e / constants::m_e_si;
-            const double visq =
-                2 * in_arr[ei_idx][p] * constants::e / (A * constants::m_p_si);
-            double coulomb_log =
-                CoulombLog_ei(Nnorm, Tnorm, in_arr[ni_idx][p], ne[p],
-                              in_arr[ei_idx][p], in_arr[ee_idx][p], A, Z);
-            // Collision frequency
-            double nu = Z * Z * pow(constants::e, 4) * in_arr[ni_idx][p] *
-                        coulomb_log * (1. + constants::m_e_m_p) /
-                        (3 * pow(M_PI * (vesq + visq), 1.5) *
-                         pow(constants::epsilon_0_si * constants::m_e_si, 2));
-            nu /= omega_c;
-            this->nu_ei[s][p] = nu;
-            this->nu_e[p] += nu;
-            this->nu_i[s][p] =
-                constants::m_e_m_p * ne[p] * nu / in_arr[ni_idx][p];
-        }
-    }
-    for (const auto &[s, v] : m_system.lock()->GetIons())
-    {
-        double Z   = v.charge;
-        double A   = v.mass;
-        int ni_idx = v.fields.at(field_to_index.at("n"));
-        int ei_idx = v.fields.at(field_to_index.at("e"));
-        for (const auto &[s2, v2] : m_system.lock()->GetIons())
-        {
-            if (s2 > s)
-                break;
-            double Z2   = v2.charge;
-            double A2   = v2.mass;
-            int ni_idx2 = v2.fields.at(field_to_index.at("n"));
-            int ei_idx2 = v2.fields.at(field_to_index.at("e"));
-            for (int p = 0; p < this->n_pts; ++p)
-            {
-                double coulomb_log = CoulombLog_ii(
-                    Nnorm, in_arr[ni_idx][p], in_arr[ni_idx2][p],
-                    in_arr[ei_idx][p], in_arr[ei_idx2][p], A, A2, Z, Z2);
-
-                const double v1sq = 2 * in_arr[ei_idx][p] * constants::e /
-                                    (A * constants::m_p_si);
-                const double v2sq = 2 * in_arr[ei_idx2][p] * constants::e /
-                                    (A2 * constants::m_p_si);
-                double nu =
-                    Z * Z * Z2 * Z2 * pow(constants::e, 4) *
-                    in_arr[ni_idx2][p] * coulomb_log * (1. + A / A2) /
-                    (3 * pow(M_PI * (v1sq + v2sq), 1.5) *
-                     pow(constants::epsilon_0_si * A * constants::m_p_si, 2));
-                nu /= omega_c;
-                this->nu_ii[std::make_pair(s, s2)][p] = nu;
-                this->nu_i[s][p] += nu;
-                this->nu_i[s2][p] +=
-                    (A / A2) * nu * in_arr[ni_idx][p] / in_arr[ni_idx][p];
-            }
-        }
-    }
 }
 
 void Zhdanov::CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
@@ -198,15 +98,14 @@ void Zhdanov::CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
     {
         for (int a = 0; a < Nchem; ++a)
         {
-            double A = mass[a];
+            double A   = mass[a];
+            nu_a[a][p] = 0.0;
             for (int b = 0; b < Nchem; ++b)
             {
                 if (b > a)
                     break;
-                double B          = mass[b];
-                double mu_        = mu(A, B);
-                double lambda_tot = 0.0;
-                double n_tot      = 0.0;
+                double B   = mass[b];
+                double mu_ = mu(A, B);
                 for (int z = 0; z < specs[a]; ++z)
                 {
                     double Z = charge[a][z];
@@ -214,34 +113,47 @@ void Zhdanov::CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
                     {
                         if (b == a && y > z)
                             break;
+                        int idx1 = idx[a][z];
+                        int idx2 = idx[a][z];
+
                         double Y           = charge[b][y];
-                        double coulomb_log = CoulombLog_ii(
-                            Nnorm, in_arr[n_idx[z]][p], in_arr[n_idx[y]][p],
-                            in_arr[e_idx[z]][p], in_arr[e_idx[y]][p], A, B, Z,
-                            Y);
+                        double coulomb_log = CoulombLog(
+                            in_arr[n_idx[idx1]][p], in_arr[n_idx[idx2]][p],
+                            in_arr[e_idx[idx1]][p], in_arr[e_idx[idx2]][p], A,
+                            B, Z, Y);
 
-                        const double v1sq = 2 * in_arr[e_idx[z]][p] *
-                                            constants::e /
-                                            (A * constants::m_p_si);
-                        const double v2sq = 2 * in_arr[e_idx[y]][p] *
-                                            constants::e /
-                                            (B * constants::m_p_si);
+                        const double v1sq =
+                            2 * Tnorm * in_arr[e_idx[idx1]][p] / A;
+                        const double v2sq =
+                            2 * Tnorm * in_arr[e_idx[idx2]][p] / B;
 
-                        double lambda = Z * Z * Y * Y * sqrt(mu_) *
-                                        pow(constants::e, 4) *
-                                        in_arr[n_idx[z]][p] *
-                                        in_arr[n_idx[y]][p] * coulomb_log /
-                                        (3 * pow(M_PI * (v1sq + v2sq), 1.5) *
-                                         pow(constants::epsilon_0_si, 2));
-                        // lambda /= mesh_length;
+                        double lambda =
+                            Z * Z * Y * Y * in_arr[n_idx[idx1]][p] *
+                            in_arr[n_idx[idx2]][p] * coulomb_log /
+                            (3 * mu_ * pow(M_PI * (v1sq + v2sq), 1.5) *
+                             pow(constants::epsilon_0, 2));
 
-                        lambda_aZbY[{z, y}][p] = lambda;
-                        lambda_tot += in_arr[n_idx[z]][p] * lambda;
-                        n_tot += in_arr[n_idx[z]][p];
+                        lambda *= (sqrt(constants::m_p) / constants::c) *
+                                  Nnorm * Nnorm / 1e12;
+                        lambda *= (pow(mesh_length, 3) / omega_c);
+
+                        lambda_aZbY[{idx1, idx2}][p] = lambda;
+                        lambda_ab[{a, b}][p] += lambda;
+                        if (b == a && y < z)
+                            lambda_ab[{a, b}][p] += lambda;
                     }
                 }
-                lambda_ab[{a, b}][p] = lambda_tot / n_tot;
+                nu_a[a][p] += lambda_ab[{a, b}][p];
+                if (b < a)
+                    nu_a[b][p] += lambda_ab[{a, b}][p];
             }
+            double n_tot = 0.0;
+            for (int z = 0; z < specs[a]; ++z)
+            {
+                int idx = this->idx[a][z];
+                n_tot += in_arr[n_idx[idx]][p];
+            }
+            nu_a[a][p] /= (n_tot * mass[a]);
         }
     }
 }
@@ -253,13 +165,13 @@ void Zhdanov::v_EvaluateClosure(
     Array<OneD, Array<OneD, NekDouble>> &frictions,
     const Array<OneD, NekDouble> &ne, const Array<OneD, NekDouble> &ve)
 {
-    CalcCollisionFrequencies(vals, ne);
-
+    // Append electron data to ion data
     Array<OneD, Array<OneD, NekDouble>> values(vals.size() + 2);
     for (int v = 0; v < vals.size(); v++)
         values[v] = vals[v];
     values[vals.size()]     = ne;
     values[vals.size() + 1] = ve;
+    CalcLambdas(values, ne);
 
     for (int p = 0; p < this->n_pts; ++p)
     {
@@ -322,7 +234,7 @@ void Zhdanov::v_EvaluateClosure(
         }
         double *q_bar_r_bar = (double *)std::malloc(sizeof(double) * 2 * Nchem);
 
-        Solve_qBar_rBar(w_bar_gradTbar, q_bar_r_bar, n_bar, p_bar, T);
+        Solve_qBar_rBar(p, w_bar_gradTbar, q_bar_r_bar, n_bar, p_bar, T);
         double *q_bar = q_bar_r_bar;
         double *r_bar = q_bar_r_bar + Nchem;
 
@@ -334,8 +246,8 @@ void Zhdanov::v_EvaluateClosure(
             double s2, s5, s8, s9, s11;
             Calc_S_coeffs(p, c, &s2, &s5, &s8, &s9, &s11);
 
-            double nu_aa = nu_ii[{c, c}][p];
-            double nu_a  = nu_i[c][p];
+            double nu_aa = 2 * lambda_ab[{c, c}][p] / (n_bar[c] * mass[c]);
+            double nu_a  = this->nu_a[c][p];
             double D_    = D(s5, s11, s9);
             double c_5   = c5(nu_aa, nu_a, s11, D_);
             double c_6   = c6(s2, s11, s8, s9, D_);
@@ -366,8 +278,8 @@ void Zhdanov::v_EvaluateClosure(
                        r_bar[c] / p_bar[c];
 
                 double pressure = (values[n_idx[s]][p] * T);
-                q[i] /= pressure;
-                r[i] /= pressure;
+                q[i] *= pressure;
+                r[i] *= pressure;
                 for (int d = 0; d < m_spacedim; ++d)
                 {
                     fluxes[d][e_idx[s]][p] = b_unit[d][p] * q[i];
@@ -400,9 +312,14 @@ void Zhdanov::v_EvaluateClosure(
                             (r[a] / (values[n_idx[a]][p] * mass[a]) -
                              r[b] / (values[n_idx[b]][p] * mass[b]));
                 R += (R1 + R2 + R3);
-                Q += R * mu_ * (values[v_idx[b]][p] - values[v_idx[a]][p]);
-                Q += mu_ * nu_ii[{a, b}][p] * values[n_idx[a]][p] *
-                     (values[e_idx[b]][p] - values[e_idx[a]][p]);
+
+                // Frictional heat exchange
+                Q += R * (mu_ / mass[a]) *
+                     (values[v_idx[b]][p] / (values[n_idx[b]][p] * mass[b]) -
+                      values[v_idx[a]][p] / (values[n_idx[a]][p] * mass[a]));
+                // Thermal heat exchange
+                Q += 3 * lambda * (values[e_idx[b]][p] - values[e_idx[a]][p]) /
+                     (mass[a] + mass[b]);
             }
 
             frictions[v_idx[a]][p] = R;

@@ -44,7 +44,7 @@ private:
     void CalcLambdas(const Array<OneD, Array<OneD, NekDouble>> &in_arr,
                      const Array<OneD, NekDouble> &ne);
 
-    void FillM3andB(double **m3, double *B, double *n_bar, double *p_bar,
+    void FillM3andB(int p, double **m3, double *B, double *n_bar, double *p_bar,
                     double T)
     {
         for (int a = 0; a < Nchem; ++a)
@@ -54,9 +54,9 @@ private:
 
             for (int b = 0; b < Nchem; ++b)
             {
-                double lambda;
-                double m_b = mass[b];
-                double mu_ = mu(m_a, m_b);
+                double lambda = this->lambda_ab[{a, b}][p];
+                double m_b    = mass[b];
+                double mu_    = mu(m_a, m_b);
 
                 m3[b][a] = G6(m_a, m_b, lambda) / p_bar[b];
                 m3[b][a + Nchem] =
@@ -151,14 +151,15 @@ private:
         }
     }
 
-    inline void Solve_qBar_rBar(double *w_bar_gradTbar, double *q_bar_r_bar,
-                                double *n_bar, double *p_bar, double T)
+    inline void Solve_qBar_rBar(int p, double *w_bar_gradTbar,
+                                double *q_bar_r_bar, double *n_bar,
+                                double *p_bar, double T)
     {
         double **M3 = (double **)std::malloc(2 * Nchem * sizeof(double *));
         for (int i = 0; i < 2 * Nchem; i++)
             M3[i] = (double *)std::malloc(2 * Nchem * sizeof(double));
 
-        FillM3andB(M3, w_bar_gradTbar, n_bar, p_bar, T);
+        FillM3andB(p, M3, w_bar_gradTbar, n_bar, p_bar, T);
 
         int *P = (int *)std::malloc(sizeof(int) * (Nchem + 1));
         LUPDecompose(M3, Nchem, 1e-10, P);
@@ -293,25 +294,25 @@ private:
 
     ~Zhdanov();
 
-    int Nchem;
-    double *mass;
-    int *specs;
-    double **charge;
+    int Nchem;       // Number of elements
+    double *mass;    // Mass of the indexed element
+    int *specs;      // Number of charge states of the indexed element
+    int **idx;       // Global index of the indexed element and charge state
+    double **charge; // Charge of the indexed element and charge state
 
-    int Nspec;
-    int *n_idx;
-    int *v_idx;
-    int *e_idx;
+    int Nspec;  // Total number of species
+    int *n_idx; // Field index of the indexed species' density
+    int *v_idx; // Field index of the indexed species' momentum
+    int *e_idx; // Field index of the indexed species' temperature
 
+    // collision lambda between two species indexed by idx
     std::map<std::pair<int, int>, Array<OneD, NekDouble>> lambda_aZbY;
+    // collision lambda between two elements
     std::map<std::pair<int, int>, Array<OneD, NekDouble>> lambda_ab;
-
-    std::map<std::pair<int, int>, Array<OneD, NekDouble>> nu_ii;
-    std::map<int, Array<OneD, NekDouble>> nu_ei;
-    Array<OneD, NekDouble> nu_ee;
-
-    std::map<int, Array<OneD, NekDouble>> nu_i;
-    Array<OneD, NekDouble> nu_e;
+    // Total collision frequency of each element
+    // nu_ab = lambda_ab/(n_a mu_ab)
+    // nu_a = sum_b(nu_ab mu_ab / m_a) = sum_b(lambda_ab) / (n_a m_a)
+    std::map<int, Array<OneD, NekDouble>> nu_a;
 };
 
 } // namespace PENKNIFE
