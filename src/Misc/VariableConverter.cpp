@@ -15,8 +15,6 @@ VariableConverter::VariableConverter(
       field_to_index(pSystem.lock()->field_to_index)
 {
     m_eos     = GetEquationOfStateFactory().CreateInstance("IdealGas");
-    omega_idx = field_to_index.get_idx("w");
-    ee_idx    = field_to_index.get_idx("e");
 }
 
 void VariableConverter::GetElectronDensity(

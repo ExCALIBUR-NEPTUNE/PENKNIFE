@@ -47,6 +47,7 @@ public:
         return v_EvaluateClosure(values, grads, fluxes, frictions, ne, ve);
     };
 
+    int ee_idx;
 protected:
     virtual void v_EvaluateClosure(
         const Array<OneD, Array<OneD, NekDouble>> &values,
@@ -60,13 +61,15 @@ protected:
     const Array<OneD, Array<OneD, NekDouble>> &b_unit;
     const Array<OneD, NekDouble> &mag_B;
     int omega_idx;
-    int ee_idx;
+    
     int n_pts;
     size_t m_spacedim;
 
     double Nnorm;
     double Tnorm;
     double omega_c;
+    double mesh_length;
+    double scaling;
 };
 
 } // namespace PENKNIFE

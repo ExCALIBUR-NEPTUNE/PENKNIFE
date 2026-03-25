@@ -37,6 +37,11 @@ ElectrostaticTurbulence::ElectrostaticTurbulence(
 void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
+    ee_idx    = m_indfields.size() - this->n_indep_fields;
+    omega_idx = m_indfields.size() - this->n_indep_fields + 1;
+    phi_idx   = m_indfields.size() - this->n_indep_fields + 2;
+
+    m_varConv->ee_idx = this->ee_idx;
 
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
@@ -55,9 +60,6 @@ void ElectrostaticTurbulence::v_InitObject(bool DeclareFields)
     m_diffusion->InitObject(m_session, m_difffields);
 
     // Create storage for velocities
-    ee_idx    = m_indfields.size() - this->n_indep_fields;
-    omega_idx = m_indfields.size() - this->n_indep_fields + 1;
-    phi_idx   = m_indfields.size() - this->n_indep_fields + 2;
 
     // ExB velocity
     this->v_ExB = Array<OneD, Array<OneD, NekDouble>>(m_spacedim);

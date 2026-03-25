@@ -35,11 +35,14 @@ ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
 void ReducedBraginskii::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
+    this->ee_idx = m_indfields.size() - this->n_indep_fields;
+    m_varConv->ee_idx = this->ee_idx;
 
     std::string closureName;
     m_session->LoadSolverInfo("Closure", closureName, "Braginskii");
     m_closure = GetClosureFactory().CreateInstance(
         closureName, as<PlasmaSystem>(), m_spacedim);
+    m_closure->ee_idx = this->ee_idx;
 
     std::string diffName;
     m_session->LoadSolverInfo("DiffusionType", diffName, "LDG");
@@ -58,7 +61,6 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
     }
 
     m_diffusion->InitObject(m_session, m_difffields);
-    this->ee_idx = m_indfields.size() - this->n_indep_fields;
 
     InitAdvection();
 
