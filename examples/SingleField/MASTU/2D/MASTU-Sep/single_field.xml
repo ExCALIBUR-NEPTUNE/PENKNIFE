@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<NEKTAR>
+    <COLLECTIONS DEFAULT="auto" />
+    <EXPANSIONS>
+        <E COMPOSITE="C[1]" NUMMODES="4" TYPE="MODIFIED" FIELDS="n" />
+        <E COMPOSITE="C[2]" NUMMODES="4" TYPE="MODIFIED" FIELDS="n" />
+    </EXPANSIONS>
+
+    <CONDITIONS>
+        <SOLVERINFO>      
+            <I PROPERTY="EQTYPE"                        VALUE="SingleDiffusiveField" />
+            <I PROPERTY="Projection"                    VALUE="Continuous" />
+            <I PROPERTY="TimeIntegrationMethod"         VALUE="IMEXOrder2" />
+            <I PROPERTY="LinSysIterSolverTypeInNonlin"  VALUE="GMRES"/>
+            <I PROPERTY="Preconditioner"                VALUE="Diagonal"/>
+            <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
+            <I PROPERTY="OutputPartitions"          VALUE="True"/>
+        </SOLVERINFO>
+
+        <PARAMETERS>        
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 0.01</P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1</P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18</P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0</P>
+            <!-- Time step in cyclotron units -->
+            <P> TimeStep       = 95.7883316               </P>
+            <P> NumSteps      = 200              </P>
+            <P> TFinal        = NumSteps*TimeStep </P>
+            <!-- ~957883.316 -->
+            <P> IO_CheckSteps  = 1                </P>
+            <P> IO_InfoSteps   = 1                </P>
+            <P> epsilon        = 1.0               </P>
+
+            <!-- Coulomb logarithm -->
+            <P> lambda    = 13          </P>
+            <P> k_c       = 3.19        </P>
+            <!-- Background temperature in Tnorm eV -->
+            <P> T_bg      = 10         </P>
+
+            <!-- Scaling factor for ICs -->
+            <P> sx        = 30 </P>
+            <P> sy        = 60 </P>
+            <P> xc         = 93      </P>
+            <P> yc         = 0.0      </P>
+            <P> xs         = 0.0      </P>
+            <P> ys         = 0        </P>
+
+
+            <!-- Implicit solve params -->
+            <P> IterativeSolverTolerance  = 1.0E-3  </P>
+            <P> NekNonlinSysMaxIterations = 10       </P>
+            <P> NewtonRelativeIteTol      = 1.0E-4  </P>
+            <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
+            <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
+
+        </PARAMETERS>
+
+        <VARIABLES>
+            <V ID="0"> n </V>
+        </VARIABLES>
+
+        <BOUNDARYREGIONS>
+            <B ID="3"> C[3] </B>
+        </BOUNDARYREGIONS>
+        <BOUNDARYCONDITIONS>
+            <REGION REF="3">
+                <N VAR="n" VALUE="0"/>
+            </REGION>         
+        </BOUNDARYCONDITIONS>
+        
+        <FUNCTION NAME="InitialConditions">
+            <E VAR="n"  DOMAIN="0" VALUE="1+exp(-(x-xc-xs)*(x-xc-xs)/(sx*sx)-(y-yc-ys)*(y-yc-ys)/(sy*sy))" />
+            <E VAR="n"  DOMAIN="1" VALUE="0" />
+        </FUNCTION>
+        <FUNCTION NAME="BodyForce">
+            <E VAR="n" EVARS="n" VALUE="0.1*exp(-(x-xc-xs)*(x-xc-xs)/(sx*sx)-(y-yc-ys)*(y-yc-ys)/(sy*sy))" />
+        </FUNCTION>
+        
+        <FUNCTION NAME="MagneticField">
+            <F VAR="Bx,By,Bz"  FILE="B.pts"  />
+        </FUNCTION>
+
+    </CONDITIONS>
+
+    <NESO>
+        <SPECIES>
+            <I NAME="D+" FIELDS="n">
+                <P> Mass = 2.0 </P>
+                <P> Charge = 1.0 </P>
+                <FUNCTION NAME="InitialConditions">
+                    <E VAR="n"  DOMAIN="0" VALUE="0.01+2*exp(-(x-xc-xs)*(x-xc-xs)/(sx*sx)-(y-yc-ys)*(y-yc-ys)/(sy*sy))" />
+                    <E VAR="n"  DOMAIN="1" VALUE="0.01" />
+                </FUNCTION>
+            </I>
+        </SPECIES>
+
+    </NESO>
+</NEKTAR>

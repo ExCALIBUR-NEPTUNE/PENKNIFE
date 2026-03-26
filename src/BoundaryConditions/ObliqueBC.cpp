@@ -77,7 +77,7 @@ void ObliqueBC::v_Apply(
                          result, 1);
         }
 
-        LibUtilities::Equation cond =
+        LibUtilities::EquationSharedPtr cond =
             std::static_pointer_cast<SpatialDomains::NeumannBoundaryCondition>(
                 m_fields[ni_idx]->GetBndConditions()[m_bcRegion])
                 ->m_neumannCondition;
@@ -89,7 +89,7 @@ void ObliqueBC::v_Apply(
         m_bndExp[ni_idx]->GetCoords(x0, x1, x2);
 
         Array<OneD, NekDouble> a(m_nEdgePts, 0.0);
-        cond.Evaluate(x0, x1, x2, time, a);
+        cond->Evaluate(x0, x1, x2, time, a);
 
         Vmath::Vsub(m_nEdgePts, a, 1, result, 1, result, 1);
 

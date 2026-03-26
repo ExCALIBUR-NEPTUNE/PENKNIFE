@@ -165,8 +165,8 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
         }
         CalcDiffTensor(s);
         StdRegions::VarCoeffMap varcoeffs;
-        MultiRegions::VarFactorsMap varfactors =
-            MultiRegions::NullVarFactorsMap;
+        StdRegions::VarFactorsMap varfactors =
+            StdRegions::NullVarFactorsMap;
 
         for (int i = 0; i < 3; i++)
         {
