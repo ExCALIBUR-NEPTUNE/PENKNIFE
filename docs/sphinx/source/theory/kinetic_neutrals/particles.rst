@@ -15,7 +15,7 @@ Each species must have mass and charge fields, as well as initial conditions, an
 Initial Conditions
 ------------------
 
-The species initial conditions are specified in the :code:`<INITIAL N="num">`field.
+The species initial conditions are specified in the :code:`<INITIAL N="num">` field.
 
 The density field can be specified by an analytic function for a probability distribution (everywhere between 0 and 1).
 During initialisation, `num` particles are created using adaptive rejection sampling over this distribution.

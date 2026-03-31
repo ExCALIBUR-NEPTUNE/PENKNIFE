@@ -8,9 +8,10 @@ PENKNIFE documentation
    :caption: Contents:
    :glob:
 
-   static_rst/intro.rst
-   static_rst/equation_systems/*
-   static_rst/particle_systems/*
+   intro.rst
+   user_guide.rst
+   developer_guide
+   theory.rst
 
 Indices and tables
 ==================
