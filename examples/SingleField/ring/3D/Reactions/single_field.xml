@@ -11,6 +11,7 @@
     <CONDITIONS>
         <SOLVERINFO>
             <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
+            <I PROPERTY="PARTTYPE"                       VALUE="ReactionSystem"/>
             <I PROPERTY="Projection"                   VALUE="Continuous" />
             <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
             <I PROPERTY="Preconditioner"               VALUE="Diagonal"/>
@@ -32,10 +33,12 @@
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
             <P> TimeStep       = 0.01               </P>
-            <P> NumSteps      = 100              </P>
+            <P> NumSteps      = 15              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_CheckSteps  = 1                </P>
             <P> IO_InfoSteps   = 1                </P>
+            <P> particle_output_freq = 1          </P>
+
             <!-- Coulomb logarithm -->
             <P> lambda    = 13          </P>
             <P> k_c       = 3.19        </P>
@@ -97,14 +100,28 @@
     </CONDITIONS>
     <NESO>
         <SPECIES>
-            <I NAME="D" FIELDS="n">
+            <I NAME="D+" FIELDS="n">
                 <P> Mass = 2.0 </P>
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
                     <E VAR="n"  DOMAIN="0" VALUE="1+exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />  
                 </FUNCTION>
             </I>
+            <KN NAME="D">
+                <P> Mass = 2.0 </P>
+                <INITIAL N="1000">
+                    <E VAR="W" VALUE="0.000005"/>
+                    <E VAR="n" VALUE="exp((-(sqrt(x*x+z*z)-rc-rs)*(sqrt(x*x+z*z)-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                    <E VAR="V" VALUE="1"/>
+                </INITIAL>
+            </KN>
         </SPECIES> 
+        <VANTAGE>
+            <S TYPE="Specular" SPECIES="D">
+                <REGION REF="1,2,3,4"/>
+                <RATE TYPE="Constant" VALUE="1"/>
+            </S>
+        </VANTAGE>
     </NESO>
 </NEKTAR>
 
