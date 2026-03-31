@@ -10,16 +10,18 @@
             <I PROPERTY="EQTYPE"                       VALUE="ReducedBraginskii"/>
             <I PROPERTY="Projection"                   VALUE="DisContinuous" />
             <I PROPERTY="UpwindType"                   VALUE="MultiFieldUpwind"        />
-            <I PROPERTY="TimeIntegrationMethod"        VALUE="IMEXOrder2"    />
             <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
             <I PROPERTY="Preconditioner"               VALUE="Diagonal"/>
             <I PROPERTY="DiffusionAdvancement"         VALUE="Implicit"/>
             <I PROPERTY="AdvectionType"                VALUE="WeakDG"/>
         </SOLVERINFO>
-            <TIMEINTEGRATIONSCHEME>
+        <TIMEINTEGRATIONSCHEME>
             <METHOD> DIRK </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">1</PARAM> 
+        </FILTER> 
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
@@ -34,7 +36,6 @@
             <P> TimeStep = 0.00001 </P>
             <P> NumSteps = 1000 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 1                </P>
             <P> IO_InfoSteps   = 1                </P>
 
             <P>LDGc11 = 100</P>
