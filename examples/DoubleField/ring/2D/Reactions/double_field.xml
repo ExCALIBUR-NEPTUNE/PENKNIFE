@@ -21,7 +21,9 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">1</PARAM> 
+        </FILTER> 
         <GLOBALSYSSOLNINFO>
             <V VAR="u">
                 <I PROPERTY="GlobalSysSoln"             VALUE="XxtMultiLevelStaticCond"/>
@@ -41,7 +43,6 @@
             <P> NumSteps      = 50              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 1     </P>
-            <P> IO_CheckSteps = 1     </P>
             <P> particle_output_freq = 1          </P>
 
             <P> epsilon         = 1.0   </P>

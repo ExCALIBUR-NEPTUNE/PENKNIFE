@@ -23,14 +23,24 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">10</PARAM> 
+        </FILTER> 
 
         <PARAMETERS>
+            <!-- Conversion of mesh unit to m -->
+            <P> mesh_length = 1 </P> 
+            <!-- Normalised temperature in eV -->
+            <P> Tnorm = 1 </P>
+            <!-- Normalised density in m^-3 -->
+            <P> Nnorm = 1e18 </P>
+            <!-- Normalised magnetic field in T -->
+            <P> Bnorm = 1.0 </P>
             <!-- Timestepping and output options -->
             <P> TimeStep      = 5            </P>
-            <P> NumSteps      = 300              </P>
+            <P> NumSteps      = 30              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 10     </P>
-            <P> IO_CheckSteps = 10     </P>
             <P> particle_output_freq = 1          </P>
 
             <P> epsilon         = 1.0   </P>
@@ -39,18 +49,13 @@
             <P> k_c       = 3.19        </P>
             <P> T_bg      = 10         </P>
 
-            <P> k_par           = 1e-3   </P>
-            <P> k_perp          = 1e-6   </P>
-            <P> TCore           = 300.0 </P>
-            <P> T_bnd            = 1.0 </P>
-
             <!-- Scaling factor for ICs -->
             <P> rc = 2 </P>
             <P> yc = 0 </P>                     
             <P> rs = 0.75 </P>
             <P> ys = 0 </P>
-            <P> sr = 0.1 </P>
-            <P> sy = 0.1 </P>
+            <P> sr = 0.05 </P>
+            <P> sy = 0.05 </P>
             
             <!-- Implicit solve params -->
             <P> IterativeSolverTolerance  = 1.0E-8  </P>
@@ -58,8 +63,6 @@
             <P> NewtonRelativeIteTol      = 1.0E-10  </P>
             <P> NonlinIterTolRelativeL2   = 1.0E-10  </P>
             <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
-
-            <P> num_particles_total = 1 </P>
         </PARAMETERS>
 
         <VARIABLES>
@@ -80,12 +83,12 @@
         </BOUNDARYCONDITIONS>
 
         <FUNCTION NAME="InitialConditions">
-            <E VAR="n"  DOMAIN="0" VALUE="0.1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+            <E VAR="n"  DOMAIN="0" VALUE="2" />
         </FUNCTION>
         <FUNCTION NAME="MagneticField">
             <E VAR="Bx" VALUE="(y-yc)/sqrt((x-rc)*(x-rc)+(y-yc)*(y-yc))" />
             <E VAR="By" VALUE="-(x-rc)/sqrt((x-rc)*(x-rc)+(y-yc)*(y-yc))" />
-            <E VAR="Bz" VALUE="0" />
+            <E VAR="Bz" VALUE="10" />
         </FUNCTION>
     </CONDITIONS>
     <NESO>
@@ -101,17 +104,18 @@
                 <P> Mass = 1.0 </P>
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
-                    <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                    <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc+rs)*(x-rc+rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
                 </FUNCTION>
             </I>
             <KN NAME="D">
                 <P> Mass = 2.0 </P>
                 <INITIAL N="1000">
-                    <E VAR="W" VALUE="0.00005"/>
-                    <E VAR="X" VALUE="2.75"/>
-                    <E VAR="Y" VALUE="0"/>
-                    <!-- <E VAR="n" VALUE="sin(4*x)*sin(4*x)"/> -->
-                    <E VAR="Vin" VALUE="0.00001"/>
+                    <E VAR="W" VALUE="0.000005"/>
+                    <!-- <E VAR="X" VALUE="2.75"/> -->
+                    <!-- <E VAR="Y" VALUE="0"/> -->
+                    <E VAR="n" VALUE="exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                    <!-- <E VAR="T" VALUE="10"/> -->
+                    <E VAR="V" VALUE="0.001"/>
                 </INITIAL>
                 <!-- <SOURCES>
                     <P N="100">
@@ -126,11 +130,12 @@
             <KN NAME="T">
                 <P> Mass = 3.0 </P>
                 <INITIAL N="1000">
-                    <E VAR="W" VALUE="0.00005"/>
-                    <E VAR="X" VALUE="2.75"/>
-                    <E VAR="Y" VALUE="0"/>
-                    <E VAR="Vin" VALUE="0.00001"/>
-
+                    <E VAR="W" VALUE="0.000005"/>
+                    <!-- <E VAR="X" VALUE="1.25"/> -->
+                    <!-- <E VAR="Y" VALUE="0"/> -->
+                    <E VAR="n" VALUE="exp((-(x-rc+rs)*(x-rc+rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
+                    <!-- <E VAR="T" VALUE="10"/> -->
+                    <E VAR="V" VALUE="0.001"/>
                 </INITIAL>
                 <!-- <SOURCES>
                     <P N="100">
@@ -144,34 +149,42 @@
             </KN>
         </SPECIES>
         <VANTAGE>
-            <!-- <R TYPE="Ionisation" SPECIES="D">
-                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+            <R TYPE="Ionisation" SPECIES="D">
+                <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
             </R>
             <R TYPE="Ionisation" SPECIES="T">
-                <RATE TYPE="AMJUEL" VALUE="1.0"/>
+                <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-            </R> -->
-            <!-- <R TYPE="Recombination" SPECIES="0">
+            </R>
+            <!-- <R TYPE="Recombination" SPECIES="D">
                 <RATE TYPE="AMJUEL" VALUE="1.0"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
             </R>
-            <R ID="3" TYPE="Recombination" SPECIES="1">
+            <R ID="3" TYPE="Recombination" SPECIES="T">
                 <RATE TYPE="AMJUEL" VALUE="1.0"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
             </R> -->
-            <!-- <R ID="4" TYPE="ChargeExchange" SPECIES="0,1">
-                <RATE TYPE="Fixed" VALUE="1.0"/>
-                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
+            <R TYPE="ChargeExchange" SPECIES="D,T">
+                <RATE TYPE="AMJUEL" VALUE="1"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1"/>
             </R>
-            <R ID="5" TYPE="ChargeExchange" SPECIES="1,0">
-                <RATE TYPE="Fixed" VALUE="1.0"/>
-                <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-            </R> -->
+            <R TYPE="ChargeExchange" SPECIES="T,D">
+                <RATE TYPE="AMJUEL" VALUE="1"/>
+                <CROSSSECTION TYPE="Constant" VALUE="1"/>
+            </R>
             <S TYPE="Specular" SPECIES="D,T">
                 <REGION REF="1,2"/>
-                <RATE TYPE="Constant" VALUE="1.0"/>
+                <RATE TYPE="Constant" VALUE="0.9"/>
             </S>
+            <S TYPE="Absorption" SPECIES="D,T">
+                <REGION REF="1,2"/>
+                <RATE TYPE="Constant" VALUE="0.1"/>
+            </S>
+            <!-- <S TYPE="Thermal" SPECIES="D,T">
+                <REGION REF="1,2"/>
+                <RATE TYPE="Constant" VALUE="0.5"/>
+            </S> -->
         </VANTAGE>
     </NESO>
 </NEKTAR>

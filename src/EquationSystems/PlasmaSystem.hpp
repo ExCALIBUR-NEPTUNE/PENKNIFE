@@ -14,6 +14,7 @@
 #include "../BoundaryConditions/PlasmaBndConds.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
+#include "../Closures/Closure.hpp"
 #include "ImplicitHelper.hpp"
 #include "MagneticField.hpp"
 
@@ -40,6 +41,7 @@ class PlasmaSystem
     friend class MagneticField;
     friend class PlasmaBaseBndCond;
     friend class VariableConverter;
+    friend class Closure;
 
 public:
     friend class MemoryManager<PlasmaSystem>;

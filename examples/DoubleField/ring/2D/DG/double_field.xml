@@ -20,6 +20,9 @@
             <METHOD> DIRK </METHOD>
             <ORDER> 3 </ORDER>
         </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">1</PARAM> 
+        </FILTER> 
         <GLOBALSYSSOLNINFO>
             <V VAR="n,e">
                 <I PROPERTY="GlobalSysSoln"             VALUE="XxtMultiLevelStaticCond"/>
@@ -46,7 +49,6 @@
             <P> TimeStep = 1 </P>
             <P> NumSteps = 100 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 1                </P>
             <P> IO_InfoSteps   = 1                </P>
 
             <P> particle_output_freq = 1          </P>

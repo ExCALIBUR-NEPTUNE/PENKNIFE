@@ -94,7 +94,7 @@ public:
             const double dt_inner = std::min(dt, time_end - time_tmp);
             this->add_sources(time_tmp, dt_inner);
             this->add_sinks(time_tmp, dt_inner);
-            this->apply_timestep(this->particle_group, dt_inner);
+            this->apply_timestep(dt_inner);
             this->transfer_particles();
 
             time_tmp += dt_inner;
@@ -138,10 +138,10 @@ public:
 
         this->field_project->project(this->particle_group, this->src_syms,
                                      this->src_components);
-
-        // remove fully ionised particles from the simulation
-        remove_marked_particles();
     }
+
+    inline virtual void zero_source_dats()
+    {}
 
     virtual void setup_evaluate_fields(
         Array<OneD, std::shared_ptr<DisContField>> &E,
@@ -425,7 +425,7 @@ protected:
         }
     }
 
-    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+    virtual inline void integrate_inner(ParticleSubGroupSharedPtr sg,
                                 const double dt_inner)
     {
         auto ions = particle_sub_group(
@@ -442,10 +442,14 @@ protected:
     const long rank;
     std::mt19937 rng_phasespace;
 
+    const int vdim;
+
     uint64_t total_num_particles_added = 0;
 
     const int particle_remove_key = -1;
     std::shared_ptr<ParticleRemover> particle_remover;
+
+    std::shared_ptr<ParticleGroupTemporary> particle_group_temporary;
 
     std::map<std::string, SpeciesInfo> species_map;
 
@@ -478,10 +482,10 @@ protected:
     double Bnorm;       // B field normalisation to T
     double omega_c;     // Reference ion gyrofrequency
 
-    inline void apply_timestep_reset(ParticleGroupSharedPtr g)
+    inline void apply_timestep_reset()
     {
         particle_loop(
-            g,
+            this->particle_group,
             [=](auto TSP)
             {
                 TSP.at(0) = 0.0;
@@ -497,7 +501,7 @@ protected:
     };
 
     virtual void apply_boundary_conditions(ParticleSubGroupSharedPtr sg,
-                                           double dt)
+                                           ParticleGroupSharedPtr cg, double dt)
     {
         reflection->execute(sg);
     };
@@ -509,78 +513,39 @@ protected:
             Access::read(Sym<REAL>("TSP")));
     };
 
-    bool partial_moves_remaining(ParticleSubGroupSharedPtr sg)
+    inline void apply_timestep_inner(const double dt)
     {
-        const int size = sg->get_npart_local();
-        int size_global;
-        MPICHK(MPI_Allreduce(&size, &size_global, 1, MPI_INT, MPI_SUM,
-                             sycl_target->comm_pair.comm_parent));
-        return size_global > 0;
-    };
-
-    inline void apply_ion_timestep(ParticleSubGroupSharedPtr sg,
-                                   const double dt)
-    {
-        pre_advection(sg);
-        integrate_inner_ion(sg, dt);
-        apply_boundary_conditions(sg, dt);
-        sg = find_partial_moves(sg, dt);
-        while (partial_moves_remaining(sg))
-        {
-            pre_advection(sg);
-            integrate_inner_ion(sg, dt);
-            apply_boundary_conditions(sg, dt);
-            sg = find_partial_moves(sg, dt);
-        }
-    }
-    inline void apply_neutral_timestep(ParticleSubGroupSharedPtr sg,
-                                       const double dt)
-    {
-        pre_advection(sg);
-        integrate_inner_neutral(sg, dt);
-        apply_boundary_conditions(sg, dt);
-        sg = find_partial_moves(sg, dt);
-        while (partial_moves_remaining(sg))
-        {
-            pre_advection(sg);
-            integrate_inner_neutral(sg, dt);
-            apply_boundary_conditions(sg, dt);
-            sg = find_partial_moves(sg, dt);
-        }
-    }
-
-    inline void apply_timestep_inner(ParticleSubGroupSharedPtr sg,
-                                     const double dt)
-    {
+        auto child_group =
+            this->particle_group_temporary->get(this->particle_group);
+        auto sg = static_particle_sub_group(this->particle_group);
         pre_advection(sg);
         integrate_inner(sg, dt);
-        apply_boundary_conditions(sg, dt);
+        apply_boundary_conditions(sg, child_group, dt);
+        this->particle_group->add_particles_local(child_group);
+        this->particle_group_temporary->restore(this->particle_group,
+                                                child_group);
+        sg = static_particle_sub_group(this->particle_group);
         sg = find_partial_moves(sg, dt);
-        while (partial_moves_remaining(sg))
+        while (get_npart_global(sg) > 0)
         {
+            auto child_group =
+                this->particle_group_temporary->get(this->particle_group);
             pre_advection(sg);
             integrate_inner(sg, dt);
-            apply_boundary_conditions(sg, dt);
+            apply_boundary_conditions(sg, child_group, dt);
+            this->particle_group->add_particles_local(child_group);
+            this->particle_group_temporary->restore(this->particle_group,
+                                                    child_group);
+            sg = static_particle_sub_group(this->particle_group);
             sg = find_partial_moves(sg, dt);
         }
     }
 
-    inline void apply_timestep(ParticleGroupSharedPtr g, const double dt)
+    virtual inline void apply_timestep(const double dt)
     {
-        apply_timestep_reset(g);
+        apply_timestep_reset();
 
-        apply_timestep_inner(static_particle_sub_group(g), dt);
-        // for (auto &[k, v] : this->species_map)
-        // {
-        //     if (v.charge == 0)
-        //     {
-        //         apply_neutral_timestep(particle_sub_group(v.sub_group), dt);
-        //     }
-        //     else
-        //     {
-        //         apply_ion_timestep(particle_sub_group(v.sub_group), dt);
-        //     }
-        // }
+        apply_timestep_inner(dt);
     }
 
     /**

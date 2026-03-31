@@ -29,7 +29,7 @@ static SU::EquationSystemSharedPtr create(
 }
 
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
-                             const SD::MeshGraphSharedPtr &graph)
+                           const SD::MeshGraphSharedPtr &graph)
     : TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>(session, graph)
 {
 }
@@ -144,69 +144,61 @@ void PlasmaSystem::v_ExtraFldOutput(
         {
             for (const auto &[f, fi] : v.fields)
             {
-                variables.push_back(m_session->GetVariable(f) + "_" + v.name);
+                variables.emplace_back(m_session->GetVariable(f) + "_" +
+                                       v.name);
                 Array<OneD, NekDouble> Fwd(nCoeffs);
                 this->m_indfields[fi]->FwdTransLocalElmt(
                     this->m_indfields[fi]->GetPhys(), Fwd);
-                fieldcoeffs.push_back(Fwd);
+                fieldcoeffs.emplace_back(Fwd);
             }
-        }
-        if (Te)
-        {
-            variables.push_back("Te");
-            Array<OneD, NekDouble> Fwd(nCoeffs);
-            this->Te->FwdTransLocalElmt(this->Te->GetPhys(), Fwd);
-            fieldcoeffs.push_back(Fwd);
         }
     }
 
     m_session->MatchSolverInfo("OutputEMFields", "True", extraFields, true);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
 
-        variables.push_back("Bx");
+        variables.emplace_back("Bx");
         Array<OneD, NekDouble> BxFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[0]->GetPhys(), BxFwd);
-        fieldcoeffs.push_back(BxFwd);
+        fieldcoeffs.emplace_back(BxFwd);
 
-        variables.push_back("By");
+        variables.emplace_back("By");
         Array<OneD, NekDouble> ByFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[1]->GetPhys(), ByFwd);
-        fieldcoeffs.push_back(ByFwd);
+        fieldcoeffs.emplace_back(ByFwd);
 
-        variables.push_back("Bz");
+        variables.emplace_back("Bz");
         Array<OneD, NekDouble> BzFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->B[2]->GetPhys(), BzFwd);
-        fieldcoeffs.push_back(BzFwd);
+        fieldcoeffs.emplace_back(BzFwd);
 
-        variables.push_back("Ex");
+        variables.emplace_back("Ex");
         Array<OneD, NekDouble> ExFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[0]->GetPhys(), ExFwd);
-        fieldcoeffs.push_back(ExFwd);
+        fieldcoeffs.emplace_back(ExFwd);
 
-        variables.push_back("Ey");
+        variables.emplace_back("Ey");
         Array<OneD, NekDouble> EyFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[1]->GetPhys(), EyFwd);
-        fieldcoeffs.push_back(EyFwd);
+        fieldcoeffs.emplace_back(EyFwd);
 
-        variables.push_back("Ez");
+        variables.emplace_back("Ez");
         Array<OneD, NekDouble> EzFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(this->E[2]->GetPhys(), EzFwd);
-        fieldcoeffs.push_back(EzFwd);
+        fieldcoeffs.emplace_back(EzFwd);
     }
     m_session->MatchSolverInfo("OutputPartitions", "True", extraFields, false);
     if (extraFields)
     {
-        const int nPhys   = m_fields[0]->GetNpoints();
         const int nCoeffs = m_fields[0]->GetNcoeffs();
-        variables.push_back("Rank");
-        Array<OneD, NekDouble> Rank(nPhys,
+        variables.emplace_back("Rank");
+        Array<OneD, NekDouble> Rank(this->n_pts,
                                     this->m_session->GetComm()->GetRank());
         Array<OneD, NekDouble> RankFwd(nCoeffs);
         m_fields[0]->FwdTransLocalElmt(Rank, RankFwd);
-        fieldcoeffs.push_back(RankFwd);
+        fieldcoeffs.emplace_back(RankFwd);
     }
 }
 
@@ -628,14 +620,6 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         this->mag_field->Update(m_time);
     }
 
-    if (this->Te)
-    {
-        Vmath::Vdiv(n_pts,
-                    m_indfields[m_indfields.size() - n_indep_fields]->GetPhys(),
-                    1, m_fields[0]->GetPhys(), 1, Te->UpdatePhys(), 1);
-        Te->FwdTransLocalElmt(this->Te->GetPhys(), Te->UpdateCoeffs());
-    }
-
     if (this->particles_enabled)
     {
         // Integrate the particle system to the requested time.
@@ -647,9 +631,11 @@ bool PlasmaSystem::v_PreIntegrate(int step)
         }
         for (auto &fld : this->src_fields)
         {
-            Vmath::Zero(fld->GetNpoints(), fld->UpdatePhys(), 1);
+            Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
         }
+        this->particle_sys->zero_source_dats();
         this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
+        this->particle_sys->project_source_terms();
     }
 
     return UnsteadySystem::v_PreIntegrate(step);
@@ -691,7 +677,7 @@ NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
  * @brief After reading ICs, calculate phi and grad(phi)
  */
 void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                           [[maybe_unused]] const int domain)
+                                          [[maybe_unused]] const int domain)
 {
     if (m_session->DefinesFunction("InitialConditions"))
     {
@@ -725,7 +711,7 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         {
             for (int i = 0; i < m_fields.size(); ++i)
             {
-                m_fields[i]->LocalToGlobal();
+                m_fields[i]->AvgAssemble();
                 m_fields[i]->GlobalToLocal();
                 m_fields[i]->BwdTrans(m_fields[i]->GetCoeffs(),
                                       m_fields[i]->UpdatePhys());
@@ -800,7 +786,7 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                     (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
                 {
 
-                    m_indfields[fi]->LocalToGlobal();
+                    m_indfields[fi]->AvgAssemble();
                     m_indfields[fi]->GlobalToLocal();
                     m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
                                               m_indfields[fi]->UpdatePhys());
@@ -840,6 +826,17 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         }
         s++;
     }
+    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+    for (const auto &[s, v] : GetIons())
+    {
+        int ni_idx = v.fields.at(field_to_index.at("n"));
+
+        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+                     1);
+    }
+    m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
+
     if (m_session->GetComm()->GetRank() == 0)
     {
         std::cout << "============================================="

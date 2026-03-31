@@ -15,8 +15,6 @@ VariableConverter::VariableConverter(
       field_to_index(pSystem.lock()->field_to_index)
 {
     m_eos     = GetEquationOfStateFactory().CreateInstance("IdealGas");
-    omega_idx = field_to_index.get_idx("w");
-    pe_idx    = field_to_index.get_idx("e");
 }
 
 void VariableConverter::GetElectronDensity(
@@ -74,7 +72,7 @@ void VariableConverter::GetElectronPressure(
 
     for (size_t i = 0; i < nPts; ++i)
     {
-        pressure[i] = m_eos->GetPressure(ne[i], physfield[pe_idx][i]);
+        pressure[i] = m_eos->GetPressure(ne[i], physfield[ee_idx][i]);
     }
 }
 
@@ -89,7 +87,7 @@ void VariableConverter::GetElectronTemperature(
 
     for (size_t i = 0; i < nPts; ++i)
     {
-        temperature[i] = m_eos->GetTemperature(ne[i], physfield[pe_idx][i]);
+        temperature[i] = m_eos->GetTemperature(ne[i], physfield[ee_idx][i]);
     }
 }
 
@@ -222,7 +220,7 @@ void VariableConverter::GetSystemSoundSpeed(
             int ni_idx = v.fields.at(field_to_index.at("n"));
 
             tmp[p] += physfield[ni_idx][p] *
-                      m_eos->GetTemperature(ne[p], physfield[pe_idx][p]) /
+                      m_eos->GetTemperature(ne[p], physfield[ee_idx][p]) /
                       (ne[p] * v.mass);
         }
         soundspeed[p] = std::sqrt(tmp[p]);

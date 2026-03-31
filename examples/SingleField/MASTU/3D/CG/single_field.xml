@@ -14,12 +14,17 @@
         <SOLVERINFO>
             <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
             <I PROPERTY="Projection"                   VALUE="Continuous" />
-            <I PROPERTY="TimeIntegrationMethod"        VALUE="IMEXOrder2"    />
             <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
             <I PROPERTY="Preconditioner"               VALUE="Diagonal"/>
             <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
         </SOLVERINFO>
-
+        <TIMEINTEGRATIONSCHEME>
+            <METHOD> IMEX </METHOD>
+            <ORDER> 2 </ORDER>
+        </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">1</PARAM> 
+        </FILTER> 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
             <P> mesh_length = 1</P> 
@@ -33,7 +38,6 @@
             <P> TimeStep       = 0.01               </P>
             <P> NumSteps      = 10              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 1                </P>
             <P> IO_InfoSteps   = 1                </P>
             <!-- Coulomb logarithm -->
             <P> lambda    = 13          </P>

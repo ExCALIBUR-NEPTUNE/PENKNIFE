@@ -19,7 +19,7 @@ SheathBC::SheathBC(const LU::SessionReaderSharedPtr &pSession,
                    Array<OneD, MultiRegions::ExpListSharedPtr> exp,
                    const int pSpaceDim, const int bcRegion)
     : PlasmaBaseBndCond(pSession, pSystem, pFields, pB, pE, cond, exp,
-                         pSpaceDim, bcRegion)
+                        pSpaceDim, bcRegion)
 {
     className = "Sheath";
     for (size_t i = 0; i < m_spacedim; ++i)
@@ -91,10 +91,10 @@ void SheathBC::v_Apply(
         // Obtain pressure gradient in boundary elements
         int ni_idx = v.fields.at(field_to_index.at("n"));
         int vi_idx = v.fields.at(field_to_index.at("v"));
-        int pi_idx = v.fields.at(field_to_index.at("p"));
+        int ei_idx = v.fields.at(field_to_index.at("e"));
 
         Array<OneD, NekDouble> pi_bndelmt;
-        m_fields[0]->ExtractPhysToBndElmt(m_bcRegion, physarray[pi_idx],
+        m_fields[0]->ExtractPhysToBndElmt(m_bcRegion, physarray[ei_idx],
                                           pi_bndelmt);
 
         Array<OneD, Array<OneD, NekDouble>> pi_grad(m_spacedim);
@@ -149,9 +149,9 @@ void SheathBC::v_Apply(
         }
 
         // Loop over points to set parallel ion momentum boundary condition
-        Array<OneD, NekDouble> vi_bc(m_nEdgePts);
-        Array<OneD, NekDouble> pi_bc(m_nEdgePts);
-        Array<OneD, NekDouble> ni_bc(m_nEdgePts);
+        Array<OneD, NekDouble> &vi_bc = m_bndExp[vi_idx]->UpdatePhys();
+        Array<OneD, NekDouble> &ei_bc = m_bndExp[ei_idx]->UpdatePhys();
+        Array<OneD, NekDouble> &ni_bc = m_bndExp[ni_idx]->UpdatePhys();
 
         for (int p = 0; p < m_nEdgePts; ++p)
         {
@@ -163,8 +163,8 @@ void SheathBC::v_Apply(
                 v_dn += m_normals[d][p] * v_di[d][p];
             }
 
-            NekDouble c_i_sq = (gamma_i * Fwd[pi_idx][p] / Fwd[ni_idx][p] +
-                                v.charge * Fwd[pe_idx][p] / ne[p]) /
+            NekDouble c_i_sq = (gamma_i * Fwd[ei_idx][p] / Fwd[ni_idx][p] +
+                                v.charge * Fwd[ee_idx][p] / ne[p]) /
                                v.mass;
             NekDouble c_i = bn[p] > 0 ? std::sqrt(c_i_sq) : -std::sqrt(c_i_sq);
             NekDouble v_trial =
@@ -175,7 +175,7 @@ void SheathBC::v_Apply(
             vi_bc[p] = bn[p] == 0 ? Fwd[vi_idx][p]
                                   : v.mass * Fwd[ni_idx][p] *
                                         (v_sheath - v_en - v_dn) / bn[p];
-            pi_bc[p] = ((2 / 3) * gamma_i * Fwd[pi_idx][p] +
+            ei_bc[p] = ((2.0 / 3.0) * gamma_i * Fwd[ei_idx][p] +
                         0.5 * vi_bc[p] * vi_bc[p] / (v.mass * Fwd[ni_idx][p])) *
                        v_sheath;
             ni_bc[p] = Fwd[ni_idx][p] * v_sheath;
@@ -190,27 +190,25 @@ void SheathBC::v_Apply(
         m_bndExp[ni_idx]->IProductWRTBase(ni_bc,
                                           m_bndExp[ni_idx]->UpdateCoeffs());
         // Ion Pressure
-        m_bndExp[pi_idx]->IProductWRTBase(pi_bc,
-                                          m_bndExp[pi_idx]->UpdateCoeffs());
-
+        m_bndExp[ei_idx]->IProductWRTBase(ei_bc,
+                                          m_bndExp[ei_idx]->UpdateCoeffs());
     }
 
-    Array<OneD, NekDouble> phi_bc(m_nEdgePts, 0.0);
-    Array<OneD, NekDouble> pe_bc(m_nEdgePts, 0.0);
+    Array<OneD, NekDouble> &phi_bc = m_bndExp[phi_idx]->UpdatePhys();
+    Array<OneD, NekDouble> &pe_bc  = m_bndExp[ee_idx]->UpdatePhys();
     for (int p = 0; p < m_nEdgePts; ++p)
     {
-        NekDouble Te = Fwd[pe_idx][p] / ne[p];
+        NekDouble Te = Fwd[ee_idx][p] / ne[p];
         phi_bc[p]    = wall + Te * std::log(std::sqrt(Te / (me * 2 * M_PI)) *
-                                            (1. - Ge) * ne[p] / ion_sum[p]);
+                                            (1.0 - Ge) * ne[p] / ion_sum[p]);
         NekDouble ve = -std::sqrt(Te / (me * 2 * M_PI)) * (1. - Ge) *
                        std::exp(-(phi_bc[p] - wall) / Te);
 
-        pe_bc[p] = (2 / 3) * gamma_e * Fwd[pe_idx][p] * ve * bn[p];
-        pe_bc[p] = 0.0;
+        pe_bc[p] = (2.0 / 3.0) * gamma_e * Fwd[ee_idx][p] * ve * bn[p];
     }
 
     // Electron Pressure
-    m_bndExp[pe_idx]->IProductWRTBase(pe_bc, m_bndExp[pe_idx]->UpdateCoeffs());
+    m_bndExp[ee_idx]->IProductWRTBase(pe_bc, m_bndExp[ee_idx]->UpdateCoeffs());
     // Potential
     m_bndExp[phi_idx]->FwdTransBndConstrained(
         phi_bc, m_bndExp[phi_idx]->UpdateCoeffs());

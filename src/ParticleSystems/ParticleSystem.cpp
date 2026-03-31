@@ -9,7 +9,7 @@ std::string ParticleSystem::class_name =
 
 ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
                                SD::MeshGraphSharedPtr graph, MPI_Comm comm)
-    : PartSysBase(session, graph, comm), simulation_time(0.0),
+    : PartSysBase(session, graph, comm), vdim(3), simulation_time(0.0),
       size(this->sycl_target->comm_pair.size_parent),
       rank(this->sycl_target->comm_pair.rank_parent)
 {
@@ -26,7 +26,7 @@ void ParticleSystem::init_spec()
 {
     this->particle_spec = {
         ParticleProp(Sym<REAL>("POSITION"), this->ndim, true),
-        ParticleProp(Sym<REAL>("VELOCITY"), 3),
+        ParticleProp(Sym<REAL>("VELOCITY"), this->vdim),
         ParticleProp(Sym<INT>("CELL_ID"), 1, true),
         ParticleProp(Sym<INT>("ID"), 1),
         ParticleProp(Sym<INT>("INTERNAL_STATE"), 1),
@@ -35,7 +35,7 @@ void ParticleSystem::init_spec()
         ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
-        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->ndim),
+        ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->vdim),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRIC_FIELD"), 3),
         ParticleProp(Sym<REAL>("MAGNETIC_FIELD"), 3),
@@ -48,7 +48,7 @@ void ParticleSystem::init_spec()
         this->particle_spec.push(
             ParticleProp(Sym<REAL>(k + "_SOURCE_ENERGY"), 1));
         this->particle_spec.push(
-            ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), this->ndim));
+            ParticleProp(Sym<REAL>(k + "_SOURCE_MOMENTUM"), this->vdim));
     }
     this->particle_spec.push(ParticleProp(Sym<REAL>("WEIGHT"), 1));
     this->particle_spec.push(ParticleProp(Sym<REAL>("TOT_REACTION_RATE"), 1));
@@ -58,7 +58,7 @@ void ParticleSystem::init_spec()
     this->particle_spec.push(ParticleProp(Sym<REAL>("FLUID_DENSITY"), 1));
     this->particle_spec.push(ParticleProp(Sym<REAL>("FLUID_TEMPERATURE"), 1));
     this->particle_spec.push(
-        ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), this->ndim));
+        ParticleProp(Sym<REAL>("FLUID_FLOW_SPEED"), this->vdim));
 
     this->particle_spec.push(ParticleProp(
         Sym<REAL>("NESO_PARTICLES_BOUNDARY_INTERSECTION_POINT"), this->ndim));
@@ -69,14 +69,13 @@ void ParticleSystem::init_spec()
     this->particle_spec.push(
         ParticleProp(Sym<REAL>("SURFACE_DENSITY_SOURCE"), 1));
     this->particle_spec.push(
-        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), this->ndim));
+        ParticleProp(Sym<REAL>("SURFACE_MOMENTUM_SOURCE"), this->vdim));
     this->particle_spec.push(
         ParticleProp(Sym<REAL>("SURFACE_ENERGY_SOURCE"), 1));
 }
 
 void ParticleSystem::init_object()
 {
-    PartSysBase::init_object();
     config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
     config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
     config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
@@ -84,8 +83,11 @@ void ParticleSystem::init_object()
 
     this->omega_c =
         constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
+    PartSysBase::init_object();
+
     this->particle_remover =
         std::make_shared<ParticleRemover>(this->sycl_target);
+    this->particle_group_temporary = std::make_shared<ParticleGroupTemporary>();
 
     this->transfer_particles();
     pre_advection(particle_sub_group(this->particle_group));
@@ -169,7 +171,7 @@ void ParticleSystem::set_up_species()
                                            (particle_mass * constants::m_p)) /
                                  (mesh_length * omega_c);
                     velocities = NESO::Particles::normal_distribution(
-                        N, ndim, 0.0, vth, this->rng_phasespace);
+                        N, 3, 0.0, vth, this->rng_phasespace);
                 }
 
                 else if (auto v = vmap.find(std::pair("Tin", 0));
@@ -254,11 +256,13 @@ void ParticleSystem::set_up_species()
 
                 for (int px = 0; px < N; px++)
                 {
-                    for (int dimx = 0; dimx < this->graph->GetMeshDimension();
-                         dimx++)
+                    for (int dimx = 0; dimx < this->ndim; dimx++)
                     {
                         initial_distribution[Sym<REAL>("POSITION")][px][dimx] =
                             positions[dimx][px];
+                    }
+                    for (int dimx = 0; dimx < this->vdim; dimx++)
+                    {
                         initial_distribution[Sym<REAL>("VELOCITY")][px][dimx] =
                             velocities[dimx][px];
 
@@ -267,8 +271,7 @@ void ParticleSystem::set_up_species()
                         initial_distribution[Sym<REAL>("FLUID_FLOW_SPEED")][px]
                                             [dimx] = 0;
                     }
-                    initial_distribution[Sym<REAL>("VELOCITY")][px][2] =
-                        velocities[2][px];
+
                     initial_distribution[Sym<REAL>("Q")][px][0] =
                         particle_charge;
                     initial_distribution[Sym<REAL>("M")][px][0] = particle_mass;
@@ -298,16 +301,21 @@ void ParticleSystem::set_up_species()
                 this->total_num_particles_added += N;
             }
         }
-
-        int state = s;
-        ParticleSubGroupSharedPtr sub_group =
-            std::make_shared<ParticleSubGroup>(
-                this->particle_group,
-                [state](auto sid) { return sid[0] == state; },
-                Access::read(Sym<INT>("INTERNAL_STATE")));
-        species_map[k] =
-            SpeciesInfo{state, particle_mass, particle_charge, sub_group};
         s++;
+    }
+    auto partitions = particle_group_partition(this->particle_group,
+                                               Sym<INT>("INTERNAL_STATE"), s);
+
+    s = 0;
+    for (const auto &[k, v] : this->config->get_particle_species())
+    {
+        double particle_mass, particle_charge;
+        this->config->load_particle_species_parameter(k, "Mass", particle_mass,
+                                                      1.0);
+        this->config->load_particle_species_parameter(k, "Charge",
+                                                      particle_charge, 0.0);
+        species_map[k] =
+            SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
     }
     set_up_boundaries();
 }
@@ -332,7 +340,7 @@ void ParticleSystem::setup_evaluate_fields(
     this->field_evaluate_ve =
         std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>(
             this->ndim);
-    for (int d = 0; d < this->ndim; ++d)
+    for (int d = 0; d < this->vdim; ++d)
     {
         if (ve[d])
         {
@@ -340,7 +348,9 @@ void ParticleSystem::setup_evaluate_fields(
                 std::make_shared<FunctionEvaluateBasis<DisContField>>(
                     ve[d], mesh, this->cell_id_translation);
         }
-
+    }
+    for (int d = 0; d < 3; ++d)
+    {
         this->field_evaluate_E.emplace_back(
             std::make_shared<FunctionEvaluateBasis<DisContField>>(
                 E[d], mesh, this->cell_id_translation));
@@ -468,7 +478,7 @@ void ParticleSystem::add_sources(double time, double dt)
                                       (particle_mass * constants::m_p)) /
                             (mesh_length * omega_c);
                         velocities = NESO::Particles::normal_distribution(
-                            N, ndim, 0.0, vth, this->rng_phasespace);
+                            N, 3, 0.0, vth, this->rng_phasespace);
                     }
 
                     else if (auto v = vmap.find(std::pair("Tin", 0));
@@ -582,11 +592,13 @@ void ParticleSystem::add_sources(double time, double dt)
 
                     for (int px = 0; px < N; px++)
                     {
-                        for (int dimx = 0;
-                             dimx < this->graph->GetMeshDimension(); dimx++)
+                        for (int dimx = 0; dimx < this->ndim; dimx++)
                         {
                             src_distribution[Sym<REAL>("POSITION")][px][dimx] =
                                 positions[dimx][px];
+                        }
+                        for (int dimx = 0; dimx < this->vdim; dimx++)
+                        {
                             src_distribution[Sym<REAL>("VELOCITY")][px][dimx] =
                                 velocities[dimx][px];
 
@@ -595,8 +607,7 @@ void ParticleSystem::add_sources(double time, double dt)
                             src_distribution[Sym<REAL>("FLUID_FLOW_SPEED")][px]
                                             [dimx] = 0;
                         }
-                        src_distribution[Sym<REAL>("VELOCITY")][px][2] =
-                            velocities[2][px];
+
                         src_distribution[Sym<REAL>("Q")][px][0] =
                             particle_charge;
                         src_distribution[Sym<REAL>("M")][px][0] = particle_mass;
@@ -628,12 +639,14 @@ void ParticleSystem::add_sources(double time, double dt)
                 }
             }
         }
-        int s = v.id;
-        ParticleSubGroupSharedPtr sub_group =
-            std::make_shared<ParticleSubGroup>(
-                this->particle_group, [s](auto sid) { return sid[0] == s; },
-                Access::read(Sym<INT>("INTERNAL_STATE")));
-        v.sub_group = sub_group;
+    }
+    auto partitions = particle_group_partition(
+        this->particle_group, Sym<INT>("INTERNAL_STATE"), species_map.size());
+
+    int s = 0;
+    for (auto &[k, v] : this->species_map)
+    {
+        v.sub_group = partitions[s++];
     }
 
     r.end();

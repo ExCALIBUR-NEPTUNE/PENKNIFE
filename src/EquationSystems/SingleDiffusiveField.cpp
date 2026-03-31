@@ -33,7 +33,6 @@ SingleDiffusiveField::SingleDiffusiveField(
 void SingleDiffusiveField::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
-    this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
 
     int npoints = m_indfields[0]->GetNpoints();
     m_kpar      = Array<OneD, NekDouble>(npoints);
@@ -87,6 +86,8 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
     }
     if (this->particles_enabled)
     {
+        this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
+
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
         for (auto &[k, v] : this->particle_sys->get_species())
@@ -164,8 +165,8 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
         }
         CalcDiffTensor(s);
         StdRegions::VarCoeffMap varcoeffs;
-        MultiRegions::VarFactorsMap varfactors =
-            MultiRegions::NullVarFactorsMap;
+        StdRegions::VarFactorsMap varfactors =
+            StdRegions::NullVarFactorsMap;
 
         for (int i = 0; i < 3; i++)
         {
@@ -363,6 +364,15 @@ void SingleDiffusiveField::load_params()
 
 bool SingleDiffusiveField::v_PostIntegrate(int step)
 {
+    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+    for (const auto &[s, v] : GetIons())
+    {
+        int ni_idx = v.fields.at(field_to_index.at("n"));
+
+        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+                     1);
+    }
     m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
 
     if (this->particles_enabled)

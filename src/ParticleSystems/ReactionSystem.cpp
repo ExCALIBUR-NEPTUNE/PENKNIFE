@@ -48,13 +48,13 @@ void ReactionSystem::set_up_reactions()
             {
                 auto rate        = std::get<2>(v).second;
                 auto energy_rate = std::get<2>(v).second;
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
                     reaction = ionise_reaction_fixed<2>(
                         this->sycl_target, target_species, electron_species,
                         rate, energy_rate);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
                     reaction = ionise_reaction_fixed<3>(
                         this->sycl_target, target_species, electron_species,
@@ -63,15 +63,19 @@ void ReactionSystem::set_up_reactions()
             }
             else if (std::get<2>(v).first == "AMJUEL")
             {
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
                     reaction = ionise_reaction_amjuel<2>(
-                        this->sycl_target, target_species, electron_species);
+                        this->sycl_target, Nnorm, Tnorm, 1. / omega_c,
+                        mesh_length * omega_c, target_species,
+                        electron_species);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
                     reaction = ionise_reaction_amjuel<3>(
-                        this->sycl_target, target_species, electron_species);
+                        this->sycl_target, Nnorm, Tnorm, 1. / omega_c,
+                        mesh_length * omega_c, target_species,
+                        electron_species);
                 }
             }
         }
@@ -93,31 +97,35 @@ void ReactionSystem::set_up_reactions()
                 auto rate        = std::get<2>(v).second;
                 auto energy_rate = std::get<2>(v).second;
 
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
                     reaction = recombination_reaction_fixed<2>(
-                        this->sycl_target, rng_kernel, marker_species,
-                        electron_species, neutral_species, rate, energy_rate);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        marker_species, electron_species, neutral_species, rate,
+                        energy_rate);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
                     reaction = recombination_reaction_fixed<3>(
-                        this->sycl_target, rng_kernel, marker_species,
-                        electron_species, neutral_species, rate, energy_rate);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        marker_species, electron_species, neutral_species, rate,
+                        energy_rate);
                 }
             }
             else if (std::get<2>(v).first == "AMJUEL")
             {
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
                     reaction = recombination_reaction_amjuel<2>(
-                        this->sycl_target, rng_kernel, marker_species,
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, marker_species,
                         electron_species, neutral_species);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
                     reaction = recombination_reaction_amjuel<3>(
-                        this->sycl_target, rng_kernel, marker_species,
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, marker_species,
                         electron_species, neutral_species);
                 }
             }
@@ -138,32 +146,36 @@ void ReactionSystem::set_up_reactions()
             {
                 auto rate          = std::get<2>(v).second;
                 auto cross_section = std::get<3>(v).second;
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
                     reaction = cx_reaction_fixed<2>(
-                        this->sycl_target, rng_kernel, target_species,
-                        projectile_species, rate, cross_section);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        target_species, projectile_species, rate,
+                        cross_section);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
                     reaction = cx_reaction_fixed<3>(
-                        this->sycl_target, rng_kernel, target_species,
-                        projectile_species, rate, cross_section);
+                        this->sycl_target, rng_kernel, mesh_length * omega_c,
+                        target_species, projectile_species, rate,
+                        cross_section);
                 }
             }
             else if (std::get<2>(v).first == "AMJUEL")
             {
-                if (this->ndim == 2)
+                if (this->vdim == 2)
                 {
-                    reaction = cx_reaction_amjuel<2>(this->sycl_target,
-                                                     rng_kernel, target_species,
-                                                     projectile_species);
+                    reaction = cx_reaction_amjuel<2>(
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, target_species,
+                        projectile_species);
                 }
-                else if (this->ndim == 3)
+                else if (this->vdim == 3)
                 {
-                    reaction = cx_reaction_amjuel<3>(this->sycl_target,
-                                                     rng_kernel, target_species,
-                                                     projectile_species);
+                    reaction = cx_reaction_amjuel<3>(
+                        this->sycl_target, rng_kernel, Nnorm, Tnorm,
+                        1. / omega_c, mesh_length * omega_c, target_species,
+                        projectile_species);
                 }
             }
         }
@@ -191,9 +203,10 @@ void ReactionSystem::finish_setup(
         std::make_shared<SimpleRemovalTransformationStrategy>();
     auto remove_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 1e-10)},
-        std::dynamic_pointer_cast<TransformationStrategy>(remove_transform));
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-12; },
+                Access::read(Sym<REAL>("WEIGHT")))},
+        make_transformation_strategy<SimpleRemovalTransformationStrategy>());
 
     std::shared_ptr<TransformationStrategy> merge_transform;
 
@@ -210,8 +223,9 @@ void ReactionSystem::finish_setup(
 
     auto merge_transform_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 0.0000000001)},
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                Access::read(Sym<REAL>("WEIGHT")))},
         merge_transform);
 
     std::vector<std::string> src_names{"ELECTRON_SOURCE_DENSITY",
@@ -225,19 +239,14 @@ void ReactionSystem::finish_setup(
         src_names.push_back(k + "_SOURCE_MOMENTUM");
     }
 
-    auto zeroer_transform =
-        make_transformation_strategy<ParticleDatZeroer<REAL>>(src_names);
-
-    this->zeroer_transform_wrapper = std::make_shared<TransformationWrapper>(
-        std::dynamic_pointer_cast<TransformationStrategy>(zeroer_transform));
+    this->zeroer_transform =
+        std::make_shared<ParticleDatZeroer<REAL>>(src_names);
 
     this->reaction_controller = std::make_shared<ReactionController>(
-            std::vector<std::shared_ptr<TransformationWrapper>>{
-                /*zeroer_transform_wrapper, merge_transform_wrapper,
-                remove_transform_wrapper*/},
-            std::vector<std::shared_ptr<TransformationWrapper>>{
-                /*project_transform_wrapper, merge_transform_wrapper,
-                remove_transform_wrapper*/});
+        std::vector<std::shared_ptr<TransformationWrapper>>{
+            remove_transform_wrapper},
+        std::vector<std::shared_ptr<TransformationWrapper>>{
+            remove_transform_wrapper});
 
     set_up_reactions();
     init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
@@ -254,12 +263,13 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
     std::shared_ptr<ParticleMeshInterface> mesh, NESOReaderSharedPtr config,
     std::map<std::string, SpeciesInfo> &species, ParameterStoreSharedPtr store)
     : time_step_prop_sym(time_step_prop_sym), sycl_target(sycl_target),
-      ndim(mesh->get_ndim()), config(config)
+      ndim(mesh->get_ndim()), vdim(3), config(config)
 {
-    auto reflection_removal_wrapper = std::make_shared<TransformationWrapper>(
+    this->remove_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
-            make_marking_strategy<ComparisonMarkerSingle<REAL, LessThanComp>>(
-                Sym<REAL>("WEIGHT"), 1.0e-12)},
+            make_direct_marking_strategy(
+                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                Access::read(Sym<REAL>("WEIGHT")))},
         make_transformation_strategy<SimpleRemovalTransformationStrategy>());
     config->read_boundary_regions();
 
@@ -285,15 +295,26 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
                     auto rate = std::get<3>(v).second;
                     if (this->ndim == 2)
                     {
-                        auto reaction = specular_reflection<2>(
-                            this->sycl_target, reflected_species, rate);
+                        if (this->vdim == 2)
+                        {
+                            auto reaction = specular_reflection<2, 2>(
+                                this->sycl_target, reflected_species, rate);
 
-                        this->reaction_controllers[b_id]->add_reaction(
-                            reaction);
+                            this->reaction_controllers[b_id]->add_reaction(
+                                reaction);
+                        }
+                        else if (this->vdim == 3)
+                        {
+                            auto reaction = specular_reflection<2, 3>(
+                                this->sycl_target, reflected_species, rate);
+
+                            this->reaction_controllers[b_id]->add_reaction(
+                                reaction);
+                        }
                     }
                     else if (this->ndim == 3)
                     {
-                        auto reaction = specular_reflection<3>(
+                        auto reaction = specular_reflection<3, 3>(
                             this->sycl_target, reflected_species, rate);
 
                         this->reaction_controllers[b_id]->add_reaction(
@@ -312,15 +333,26 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
 
                     if (this->ndim == 2)
                     {
-                        auto reaction = thermal_reflection<2>(
-                            this->sycl_target, thermal_species, rate, T);
+                        if (this->vdim == 2)
+                        {
+                            auto reaction = thermal_reflection<2, 2>(
+                                this->sycl_target, thermal_species, rate, T);
 
-                        this->reaction_controllers[b_id]->add_reaction(
-                            reaction);
+                            this->reaction_controllers[b_id]->add_reaction(
+                                reaction);
+                        }
+                        else if (this->vdim == 3)
+                        {
+                            auto reaction = thermal_reflection<2, 3>(
+                                this->sycl_target, thermal_species, rate, T);
+
+                            this->reaction_controllers[b_id]->add_reaction(
+                                reaction);
+                        }
                     }
                     else if (this->ndim == 3)
                     {
-                        auto reaction = thermal_reflection<3>(
+                        auto reaction = thermal_reflection<3, 3>(
                             this->sycl_target, thermal_species, rate, T);
                         this->reaction_controllers[b_id]->add_reaction(
                             reaction);
@@ -335,7 +367,7 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
                         s, species[s].mass, species[s].charge, species[s].id);
                     auto rate = std::get<3>(v).second;
 
-                    if (this->ndim == 2)
+                    if (this->vdim == 2)
                     {
                         auto reaction = surface_absorption<2>(
                             this->sycl_target, absorbed_species, rate);
@@ -343,7 +375,7 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
                         this->reaction_controllers[b_id]->add_reaction(
                             reaction);
                     }
-                    else if (this->ndim == 3)
+                    else if (this->vdim == 3)
                     {
                         auto reaction = surface_absorption<3>(
                             this->sycl_target, absorbed_species, rate);
@@ -366,7 +398,5 @@ ReactionSystem::ReactionsBoundary::ReactionsBoundary(
     this->boundary_truncation =
         std::make_shared<BoundaryTruncation>(this->ndim, this->reset_distance);
 }
-
-
 
 } // namespace PENKNIFE

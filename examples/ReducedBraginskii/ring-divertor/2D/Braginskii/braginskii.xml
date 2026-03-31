@@ -20,6 +20,9 @@
             <METHOD> DIRK </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">1</PARAM> 
+        </FILTER> 
 
         <GLOBALSYSSOLNINFO>
             <V VAR="n,v,e,phi,omega">
@@ -38,7 +41,6 @@
             <P> NumSteps      = 200              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 1     </P>
-            <P> IO_CheckSteps = 1     </P>
             <P> particle_output_freq = 1          </P>
             <P> NekNonlinSysMaxIterations = 30       </P>
 

@@ -33,6 +33,7 @@ src/BoundaryConditions/ObliqueOutflowBC.cpp
 src/BoundaryConditions/SheathBC.cpp
 src/BoundaryConditions/ReducedSheathBC.cpp
 src/ParticleSystems/ParticleSystem.cpp
+src/ParticleSystems/ReactionSystem.cpp
 src/Misc/VariableConverter.cpp
 src/Misc/EquationOfState.cpp
 src/Misc/IdealGasEoS.cpp
@@ -40,7 +41,8 @@ src/RiemannSolvers/PlasmaSolver.cpp
 src/RiemannSolvers/Upwind.cpp
 src/RiemannSolvers/VorticityUpwind.cpp
 src/RiemannSolvers/VorticityAverage.cpp
-src/ParticleSystems/ReactionSystem.cpp
+src/Closures/Closure.cpp
+src/Closures/Braginskii.cpp
 )
 
 # ##############################################################################

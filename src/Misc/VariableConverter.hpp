@@ -118,12 +118,13 @@ public:
     {
         return m_eos;
     }
+    int omega_idx;
+    int ee_idx;
 
 protected:
     const std::weak_ptr<PlasmaSystem> m_system;
     const NektarFieldIndexMap &field_to_index;
-    int omega_idx;
-    int pe_idx;
+
     EquationOfStateSharedPtr m_eos;
     size_t m_spacedim;
 };

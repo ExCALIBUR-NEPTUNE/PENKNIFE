@@ -26,14 +26,26 @@ public:
 
     ~ReactionSystem() override = default;
 
-    std::shared_ptr<TransformationWrapper> zeroer_transform_wrapper;
+    std::shared_ptr<ParticleDatZeroer<REAL>> zeroer_transform;
 
     inline void integrate(const double time_end, const double dt) override
     {
-        this->zeroer_transform_wrapper->transform(this->particle_group);
         ParticleSystem::integrate(time_end, dt);
-        this->field_project->project(this->particle_group, this->src_syms,
-                                     this->src_components);
+    }
+
+    inline void apply_timestep(const double dt) override
+    {
+        ParticleSystem::apply_timestep(dt);
+        if (this->config->get_reactions().size())
+        {
+            reaction_controller->apply(this->particle_group, dt);
+        }
+    }
+
+    inline void zero_source_dats() override
+    {
+        this->zeroer_transform->transform(
+            particle_sub_group(this->particle_group));
     }
 
     void set_up_reactions();
@@ -45,29 +57,21 @@ public:
     };
 
     inline void apply_boundary_conditions(ParticleSubGroupSharedPtr sg,
-                                   double dt) override
+                                          ParticleGroupSharedPtr cg,
+                                          double dt) override
     {
-        this->boundary->execute(sg, dt);
+        this->boundary->execute(sg, cg, dt);
     };
 
-    inline void integrate_inner_ion(ParticleSubGroupSharedPtr sg,
-                                    const double dt_inner) override
+    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
+                                const double dt_inner) override
     {
-        ParticleSystem::integrate_inner_ion(sg, dt_inner);
-        if (this->config->get_reactions().size())
-            reaction_controller->apply(sg, dt_inner);
-    }
-    inline void integrate_inner_neutral(ParticleSubGroupSharedPtr sg,
-                                        const double dt_inner) override
-    {
-        ParticleSystem::integrate_inner_neutral(sg, dt_inner);
-        if (this->config->get_reactions().size())
-            reaction_controller->apply(sg, dt_inner);
+        ParticleSystem::integrate_inner(sg, dt_inner);
     }
 
-    void finish_setup(
-        std::vector<std::shared_ptr<DisContField>> &src_fields,
-        std::vector<Sym<REAL>> &syms, std::vector<int> &components) override;
+    void finish_setup(std::vector<std::shared_ptr<DisContField>> &src_fields,
+                      std::vector<Sym<REAL>> &syms,
+                      std::vector<int> &components) override;
 
     class ReactionsBoundary
     {
@@ -85,7 +89,8 @@ public:
             this->composite_intersection->pre_integration(particle_sub_group);
         }
 
-        inline void execute(ParticleSubGroupSharedPtr particle_sub_group, double dt)
+        inline void execute(ParticleSubGroupSharedPtr particle_sub_group,
+                            ParticleGroupSharedPtr child_group, double dt)
         {
             NESOASSERT(this->ndim == 3 || this->ndim == 2,
                        "Unexpected number of dimensions.");
@@ -111,8 +116,9 @@ public:
                     this->time_step_prop_sym,
                     this->composite_intersection->previous_position_sym);
                 this->reaction_controllers[id]->apply(
-                    sg, dt, ControllerMode::surface_mode);
+                    sg, dt, child_group, ControllerMode::surface_mode);
             }
+            remove_wrapper->transform(particle_sub_group);
         }
 
     private:
@@ -124,8 +130,10 @@ public:
         std::shared_ptr<BoundaryTruncation> boundary_truncation;
 
         std::map<int, std::shared_ptr<ReactionController>> reaction_controllers;
+        std::shared_ptr<TransformationWrapper> remove_wrapper;
 
-        int ndim;
+        const int ndim;
+        const int vdim;
         REAL reset_distance;
 
         NESOReaderSharedPtr config;

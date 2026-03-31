@@ -5,7 +5,7 @@
 
 namespace PENKNIFE
 {
-// [omega, {n, mnv, 1.5p}_e, {n, mnv, 1.5p}_i, ...]
+// [{n, mnv, 1.5p}_i,..., 1.5p_e]
 class ReducedBraginskii : public PlasmaSystem
 {
 public:
@@ -34,12 +34,14 @@ protected:
     void v_InitObject(bool DeclareFields = true) override;
     void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                                 const int domain) override;
+    bool v_PreIntegrate(int step) override;
     bool v_PostIntegrate(int step) override;
     void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
                   Array<OneD, Array<OneD, NekDouble>> &outarray,
                   const NekDouble time);
 
     /// Advection functions
+    void InitAdvection();
     void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                      Array<OneD, Array<OneD, NekDouble>> &outarray,
                      const NekDouble time,
@@ -51,9 +53,7 @@ protected:
 
     void ComputeE();
 
-    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                        const Array<OneD, NekDouble> &ne,
-                        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &);
+    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray);
 
     Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
 
@@ -68,6 +68,9 @@ protected:
                      const Array<OneD, Array<OneD, NekDouble>> &pFwd,
                      const Array<OneD, Array<OneD, NekDouble>> &pBwd);
 
+    void InitBraginskii();
+
+    void CalcCollisionFrequencies(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
     void CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
     void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
     void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
@@ -78,8 +81,38 @@ protected:
         const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &q_field,
         Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
 
-    void CalcNeutralRates(int s, int ion,
-                          const Array<OneD, Array<OneD, NekDouble>> &inarray);
+    void CalcNeutralSources_nvp(
+        const double m, int ee_idx, int ni_idx, int vi_idx, int pi_idx,
+        int nn_idx, int vn_idx, int pn_idx,
+        const Array<OneD, Array<OneD, NekDouble>> &inarray,
+        const Array<OneD, NekDouble> &ne,
+        Array<OneD, Array<OneD, NekDouble>> &outarray,
+        Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources_nv(
+        const double m, int ee_idx, int ni_idx, int vi_idx, int nn_idx,
+        int vn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
+        const Array<OneD, NekDouble> &ne,
+        Array<OneD, Array<OneD, NekDouble>> &outarray,
+        Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources_nv(
+        const double m, int ee_idx, int ni_idx, int vi_idx, int pi_idx,
+        int nn_idx, int vn_idx,
+        const Array<OneD, Array<OneD, NekDouble>> &inarray,
+        const Array<OneD, NekDouble> &ne,
+        Array<OneD, Array<OneD, NekDouble>> &outarray,
+        Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources_np(
+        const double m, int ee_idx, int ni_idx, int pi_idx, int nn_idx,
+        int pn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
+        const Array<OneD, NekDouble> &ne,
+        Array<OneD, Array<OneD, NekDouble>> &outarray,
+        Array<OneD, NekDouble> &Spe);
+    void CalcNeutralSources_n(
+        const double m, int ee_idx, int ni_idx, int nn_idx,
+        const Array<OneD, Array<OneD, NekDouble>> &inarray,
+        const Array<OneD, NekDouble> &ne,
+        Array<OneD, Array<OneD, NekDouble>> &outarray,
+        Array<OneD, NekDouble> &Spe);
 
     void AddNeutralSources(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                            Array<OneD, Array<OneD, NekDouble>> &outarray);
@@ -104,28 +137,18 @@ protected:
         Array<OneD, Array<OneD, NekDouble>> &outarray,
         const Array<OneD, const Array<OneD, NekDouble>> &pFwd,
         const Array<OneD, const Array<OneD, NekDouble>> &pBwd);
-    void load_params() override;
 
     void v_ExtraFldOutput(std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
                           std::vector<std::string> &variables) override;
 
 private:
-    std::vector<int> ni_idx;
-    std::vector<int> vi_idx;
-    std::vector<int> pi_idx;
-
-    int pe_idx;
+    int ee_idx;
 
     std::vector<int> ni_src_idx;
     std::vector<int> vi_src_idx;
-    std::vector<int> pi_src_idx;
+    std::vector<int> ei_src_idx;
 
     /// Velocities
-
-    // Electron parallel velocity
-    Array<OneD, NekDouble> v_e_par;
-    // Ion parallel velocities
-    std::vector<Array<OneD, NekDouble>> v_i_par;
 
     // Per field advection velocities
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel;
@@ -143,29 +166,18 @@ private:
     /// Advection type
     std::string adv_type;
 
+    // For Advection
+    std::vector<int> advected_fields;
+    Array<OneD, MR::ExpListSharedPtr> m_advfields;
+
     // For Diffusion
-    // workaround for bug in DiffusionLDG
     Array<OneD, MR::ExpListSharedPtr> m_difffields;
     //
     StdRegions::ConstFactorMap m_factors;
 
-    NekDouble k_par;
-    NekDouble k_perp;
-    NekDouble k_cross;
-    NekDouble kappa_i_par;
-    NekDouble kappa_i_perp;
-    NekDouble kappa_i_cross;
-    NekDouble kappa_e_par;
-    NekDouble kappa_e_perp;
-    NekDouble kappa_e_cross;
-    NekDouble k_ci;
-    NekDouble k_ce;
+    ClosureSharedPtr m_closure;
 
-    Array<OneD, NekDouble> m_kpar;
-    Array<OneD, NekDouble> m_kperp;
-    Array<OneD, NekDouble> m_kcross;
-
-    StdRegions::VarCoeffMap m_D;
+    Array<OneD, Array<OneD, NekDouble>> friction;
 
     Array<OneD, NekDouble> kIZ;
     Array<OneD, NekDouble> kCX;

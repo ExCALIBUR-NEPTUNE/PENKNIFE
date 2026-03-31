@@ -23,6 +23,9 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
+        <FILTER TYPE="Checkpoint">  
+            <PARAM NAME="OutputFrequency">10</PARAM> 
+        </FILTER> 
 
         <GLOBALSYSSOLNINFO>
             <V VAR="u">
@@ -48,7 +51,6 @@
             <P> TimeStep = 10 </P>
             <P> NumSteps = 100 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
-            <P> IO_CheckSteps  = 10                </P>
             <P> IO_InfoSteps   = 10                </P>
 
             <P> particle_output_freq = 1          </P>

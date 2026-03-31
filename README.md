@@ -58,13 +58,11 @@ Configuration files for various different examples can be found in the `./exampl
 An easy way to run the examples is (from the top level of the repository):
 
 ```bash
-# Load the nektar spack module, which also loads mpi
-spack load nektar
 
 # Set up and run an example via the helper script
 ./scripts/run_eg.sh [EquationSystem] [Mesh] [Dimension] [Example] <-n num_MPI>
 # e.g. ./scripts/run_eg.sh SingleField MASTU 2D CG -n 16
-# If the autocomplete script has been sourced the tab key shows the available examples at each level
+# The tab key can be used to show the available examples at each level
 
 ```
 
@@ -83,7 +81,7 @@ OMP_NUM_THREADS=[nthreads] ./scripts/run_eg.sh [EquationSystem] [Mesh] [Dimensio
 ```bash
 # Convert to vtu using FieldConvert (requires xml files as args)
 cd runs/[EquationSystem]/[Mesh]/[Dimension]/[Example]
-spack load nektar # if not already loaded
+
 FieldConvert [config_xml] [mesh_xml] [chk_name] [vtu_name]
 # e.g. FieldConvert single_field.xml mastu.xml single_field_100.chk single_field.vtu
 paraview single_field.vtu
