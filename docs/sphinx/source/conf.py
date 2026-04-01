@@ -34,9 +34,7 @@ html_sidebars = {
 html_theme_options = {
     "navbar_start": ["navbar-logo"],
     "navbar_align": "left",
-    "primary_sidebar_end": [],
     "navigation_depth": 0,
-    "show_nav_level": 3,
 }
 
 import os
