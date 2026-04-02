@@ -69,3 +69,17 @@ To leave the spack environment at any point run:
 
     deactivate
 
+Running a simulation
+--------------------
+
+To run an example simulation, use the provided scripts
+
+.. code-block:: bash
+
+    # Set up and run an example via the helper script
+    ./scripts/run_eg.sh [EquationSystem] [Mesh] [Dimension] [Example] <-n num_MPI>
+    # e.g. ./scripts/run_eg.sh SingleField MASTU 2D CG -n 16
+
+The script has an autocomplete option; use the TAB key to see the available options at each level.
+
+
