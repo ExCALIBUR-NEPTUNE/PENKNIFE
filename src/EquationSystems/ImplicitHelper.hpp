@@ -50,7 +50,7 @@ class ImplicitHelper
 {
 public:
     ImplicitHelper(LibUtilities::SessionReaderSharedPtr session,
-                   Array<OneD, MultiRegions::ExpListSharedPtr>& fields,
+                   Array<OneD, MultiRegions::ExpListSharedPtr> &fields,
                    LibUtilities::TimeIntegrationSchemeOperators &ode,
                    int nFields)
         : m_session(session), m_fields(fields), m_ode(ode), m_nFields(nFields)
@@ -88,6 +88,7 @@ public:
             int noffset = i * npoints;
             Vmath::Vcopy(npoints, outarray + noffset, 1, outpnt[i], 1);
         }
+
     }
 
     void InitialiseNonlinSysSolver(bool coeff = false)

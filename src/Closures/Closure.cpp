@@ -17,8 +17,9 @@ Closure::Closure(const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
     this->n_pts       = pSystem.lock()->n_pts;
     this->Nnorm       = pSystem.lock()->Nnorm;
     this->Tnorm       = pSystem.lock()->Tnorm;
+    this->Bnorm       = pSystem.lock()->Bnorm;
     this->omega_c     = pSystem.lock()->omega_c;
     this->mesh_length = pSystem.lock()->mesh_length;
-    this->scaling = 1. / (mesh_length * mesh_length);
+    this->scaling     = 1. / (mesh_length * mesh_length);
 }
 } // namespace PENKNIFE

@@ -51,6 +51,8 @@ protected:
     void ComputeE();
     void ComputevExB();
 
+    void ComputeJpar(const Array<OneD, Array<OneD, NekDouble>> &inarray);
+
     void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                         [[maybe_unused]] Array<OneD, Array<OneD, NekDouble>>
                             &outarray = NullNekDoubleArrayOfArray);
@@ -60,6 +62,10 @@ protected:
 
     void AddForces(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                    Array<OneD, Array<OneD, NekDouble>> &outarray);
+    void AddFriction(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                     Array<OneD, Array<OneD, NekDouble>> &outarray);
+    void OmegaCurrent(const Array<OneD, Array<OneD, NekDouble>> &inarray,
+                      Array<OneD, Array<OneD, NekDouble>> &outarray);
     void CalcOmegaFlux(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                        Array<OneD, Array<OneD, NekDouble>> &omega_flux,
                        Array<OneD, NekDouble> &omega_flux_trace);
@@ -148,7 +154,9 @@ private:
     /// Storage for ExB drift velocity
     Array<OneD, Array<OneD, NekDouble>> v_ExB;
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> dia_v;
-    Array<OneD, NekDouble> j_par;
+    MR::ExpListSharedPtr j_par;
+
+    Array<OneD, NekDouble> sigma_par;
     // Electron parallel velocity
     Array<OneD, NekDouble> v_e_par;
     // Ion parallel velocities
@@ -184,10 +192,8 @@ private:
     SU::RiemannSolverSharedPtr dia_riemann_solver;
     /// Advection object used in the electron density equation
     SU::AdvectionSharedPtr m_advection;
-    SU::AdvectionSharedPtr m_dia_advection;
     /// Advection type
     std::string adv_type;
-    std::shared_ptr<OmegaAdvection> m_omega_advection;
 
     // For Diffusion
     Array<OneD, MR::ExpListSharedPtr> m_temps;
@@ -203,6 +209,11 @@ private:
     Array<OneD, NekDouble> m_kappaperp;
     Array<OneD, NekDouble> m_kappapar;
     StdRegions::VarCoeffMap m_kappa;
+
+    ClosureSharedPtr m_closure;
+
+    Array<OneD, Array<OneD, NekDouble>> friction;
+    Array<OneD, Array<OneD, NekDouble>> heat;
 
     double m_zeta = 1;
 };

@@ -176,6 +176,82 @@ void MagneticField::Read(NekDouble time)
     {
         this->B[d]->UpdatePhys() = B_in[d];
     }
+    //PinTangential();
+}
+
+void MagneticField::PinTangential()
+{
+    auto BndExps = this->B[0]->GetBndCondExpansions();
+    const Array<OneD, const int> &traceBndMap = this->B[0]->GetTraceBndMap();
+    Array<OneD, int> ElmtID, EdgeID;
+    Array<OneD, NekDouble> tmp;
+
+    Array<OneD, Array<OneD, NekDouble>> normals(
+        this->B[0]->GetShapeDimension());
+
+    this->B[0]->GetBoundaryToElmtMap(ElmtID, EdgeID);
+
+    int e, id1, id2, nBCEdgePts, eMax;
+    int cnt = 0;
+    int offsetBnd;
+    int offsetPhys;
+    int offsetElmt = 0;
+
+    for (size_t r = 0; r < BndExps.size(); ++r)
+    {
+        this->B[0]->GetBoundaryNormals(r, normals);
+        Array<OneD, NekDouble> bn(normals[0].size(), 0.0);
+
+        for (int d = 0; d < normals.size(); ++d)
+        {
+            this->B[d]->ExtractPhysToBnd(r, this->B[d]->GetPhys(), tmp);
+            Vmath::Vvtvp(normals[0].size(), tmp, 1, normals[d], 1, bn, 1, bn,
+                         1);
+        }
+        // std::cout << "Boundary Size " << normals[0].size() << "\n";
+
+        auto exp = this->B[0]->GetBndCondExpansions()[r];
+        // Extrapolation for supersonic cases
+        eMax  = exp->GetExpSize();
+        int t = 0;
+        for (e = 0; e < eMax; ++e)
+        {
+
+            offsetPhys = this->B[0]->GetPhys_Offset(ElmtID[cnt + e]);
+
+            offsetBnd = exp->GetPhys_Offset(e);
+            int nq    = this->B[0]->GetExp(ElmtID[cnt + e])->GetTotPoints();
+
+            nBCEdgePts = exp->GetExp(e)->GetTotPoints();
+            Array<OneD, int> Trace;
+
+            this->B[0]
+                ->GetExp(ElmtID[cnt + e])
+                ->GetTracePhysMap(EdgeID[cnt + e], Trace);
+            // std::cout << "Trace size " << Trace.size() << "\n";
+
+            for (int p = 0; p < Trace.size(); ++p)
+            {
+                // std::cout<<"bn "<<bn[t]<<"\n";
+                for (int d = 0; d < normals.size(); ++d)
+                {
+                    this->B[d]->UpdatePhys()[offsetPhys + Trace[p]] -=
+                        normals[d][t] * bn[t];
+                }
+                t++;
+            }
+            // Vmath::Zero(nBCEdgePts, &j_par->UpdatePhys()[offsetPhys], 1);
+            offsetElmt += nq;
+        }
+
+        cnt += exp->GetExpSize();
+    }
+    for (int d = 0; d < 3; ++d)
+    {
+        this->B[d]->FwdTransBndConstrained(this->B[d]->GetPhys(),
+                                           this->B[d]->UpdateCoeffs());
+        this->B[d]->BwdTrans(this->B[d]->GetCoeffs(), this->B[d]->UpdatePhys());
+    }
 }
 
 void MagneticField::Solve(Array<OneD, Array<OneD, NekDouble>> &J)

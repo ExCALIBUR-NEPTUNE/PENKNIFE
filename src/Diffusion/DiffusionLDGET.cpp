@@ -335,17 +335,20 @@ void DiffusionLDGET::NumFluxforVector(
     Array<OneD, NekDouble> qFwd{nTracePts};
     Array<OneD, NekDouble> qBwd{nTracePts};
     Array<OneD, NekDouble> qfluxtemp{nTracePts, 0.0};
+    Array<OneD, NekDouble> uterm{nTracePts};
+
     Array<OneD, Array<OneD, NekDouble>> fluxPen{nvariables};
     for (std::size_t i = 0; i < nvariables; ++i)
     {
         fluxPen[i] = Array<OneD, NekDouble>{nTracePts, 0.0};
     }
 
-    m_fluxPenaltyNS(uFwd, uBwd, fluxPen);
     // Evaulate upwind flux:
     // qflux = \hat{q} \cdot u = q \cdot n - C_(11)*(u^+ - u^-)
     for (std::size_t i = 0; i < nvariables; ++i)
     {
+        Vmath::Vsub(nTracePts, uFwd[i], 1, uBwd[i], 1, uterm, 1);
+        Vmath::Smul(nTracePts, -m_C11, uterm, 1, uterm, 1);
         qflux[i] = Array<OneD, NekDouble>{nTracePts, 0.0};
         for (std::size_t j = 0; j < nDim; ++j)
         {

@@ -12,13 +12,11 @@
             <I PROPERTY="EQTYPE"                       VALUE="ElectrostaticTurbulence"/>
             <I PROPERTY="Projection"                   VALUE="DisContinuous" />
             <I PROPERTY="UpwindType"                   VALUE="VorticityUpwind"        />
-            <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
-            <I PROPERTY="AdvectionAdvancement"          VALUE="Explicit"/>
             <I PROPERTY="AdvectionType"          VALUE="WeakDG"/>
             <I PROPERTY="OutputPartitions"          VALUE="True"/>
         </SOLVERINFO>
         <TIMEINTEGRATIONSCHEME>
-            <METHOD> DIRK </METHOD>
+            <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
         <!-- <FILTER TYPE="Checkpoint">  
@@ -34,7 +32,7 @@
             <!-- Normalised magnetic field in T -->
             <P> Bnorm = 1.0</P>
             <!-- Timestepping and output options -->
-            <P> TimeStep      = 0.000001            </P>
+            <P> TimeStep      = 0.0000001            </P>
             <P> NumSteps      = 1000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 1     </P>
@@ -97,16 +95,9 @@
 
         </BOUNDARYCONDITIONS>
         <FUNCTION NAME="InitialConditions">
-            <!-- <E VAR="n"  DOMAIN="0" VALUE="0" /> -->
             <E VAR="n"  DOMAIN="0" VALUE="0" />
-
-            <!-- <E VAR="v"  DOMAIN="0" VALUE="50-5*(sqrt((x-rc)^2+(y-yc)^2)-ri)" /> -->
             <E VAR="v"  DOMAIN="0" VALUE="0" />
-            <!-- <E VAR="v"  DOMAIN="0" VALUE="10*cos(PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(11*ang(x-rc, y-yc))" /> -->
-
-            <E VAR="e"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))*(50-50*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-2))" />
-            <!-- <E VAR="e"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))" /> -->
-
+            <E VAR="e"  DOMAIN="0" VALUE="(1+0.01*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(15-14*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))*(25-20*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
             <E VAR="w"  DOMAIN="0" VALUE="0" />
             <E VAR="phi"  DOMAIN="0" VALUE="0" />
         </FUNCTION>
@@ -122,19 +113,9 @@
                 <P> Mass = 2.0 </P>
                 <P> Charge = 1.0 </P>
                 <FUNCTION NAME="InitialConditions">
-                    <!-- <E VAR="n"  DOMAIN="0" VALUE="1+0.1*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
-                    <E VAR="n"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))" />
-                    <!-- <E VAR="v"  DOMAIN="0" VALUE="100*0.5*(1+tanh(1-10*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))) " /> -->
-                    <E VAR="v"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))*(25000-25000*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
-                    <!-- <E VAR="v"  DOMAIN="0" VALUE="50*cos(PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))" /> -->
-
-                    <!-- <E VAR="v"  DOMAIN="0" VALUE="10*cos(PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(11*ang(x-rc, y-yc))" /> -->
-                    <!-- <E VAR="e"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))" /> -->
-
-                    <E VAR="e"  DOMAIN="0" VALUE="(1+0.1*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(3-2*tanh((sqrt((x-rc)^2+(y-yc)^2)-ri)))*(50-50*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
-
-                    <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*sin(5*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri))*sin(16*ang(x-rc, y-yc))" /> -->
-                    <!-- <E VAR="e"  DOMAIN="0" VALUE="1+0.01*exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" /> -->
+                    <E VAR="n"  DOMAIN="0" VALUE="(1+0.01*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(15-14*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
+                    <E VAR="v"  DOMAIN="0" VALUE="(1+0.01*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(15-14*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))*(10000-10000*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
+                    <E VAR="e"  DOMAIN="0" VALUE="(1+0.01*(sin(2*2*PI*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)))^2*sin(16*ang(x-rc, y-yc)))*(15-14*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))*(25-20*tanh(2*(sqrt((x-rc)^2+(y-yc)^2)-ri)/(ro-ri)-1))" />
                 </FUNCTION>
             </I>
         </SPECIES> 

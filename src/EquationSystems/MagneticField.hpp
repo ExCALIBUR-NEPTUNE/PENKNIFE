@@ -25,6 +25,7 @@ public:
                   Array<OneD, MR::DisContFieldSharedPtr> &B, const int dim);
 
     void Read(NekDouble time = 0);
+    void PinTangential();
     void Solve(Array<OneD, Array<OneD, NekDouble>> &J = NullNekDoubleArrayOfArray);
     void Update(NekDouble time = 0);
 

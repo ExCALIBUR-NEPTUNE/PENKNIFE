@@ -85,11 +85,11 @@ void PlasmaSystem::load_params()
  *
  */
 void PlasmaSystem::DoOdeProjection(
-    const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-    Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time)
+    const Array<OneD, const Array<OneD, NekDouble>> &inarray,
+    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time)
 {
     int i;
-    int num_vars = in_arr.size();
+    int num_vars = inarray.size();
     int npoints  = GetNpoints();
 
     switch (m_projectionType)
@@ -97,13 +97,13 @@ void PlasmaSystem::DoOdeProjection(
         case MultiRegions::eDiscontinuous:
         {
             // Just copy over array
-            if (in_arr != out_arr)
+            if (inarray != outarray)
             {
                 int npoints = GetNpoints();
 
                 for (i = 0; i < num_vars; ++i)
                 {
-                    Vmath::Vcopy(npoints, in_arr[i], 1, out_arr[i], 1);
+                    Vmath::Vcopy(npoints, inarray[i], 1, outarray[i], 1);
                 }
             }
             break;
@@ -114,8 +114,8 @@ void PlasmaSystem::DoOdeProjection(
 
             for (i = 0; i < num_vars; ++i)
             {
-                m_indfields[i]->FwdTrans(in_arr[i], coeffs);
-                m_indfields[i]->BwdTrans(coeffs, out_arr[i]);
+                m_indfields[i]->FwdTrans(inarray[i], coeffs);
+                m_indfields[i]->BwdTrans(coeffs, outarray[i]);
             }
             break;
         }
@@ -125,7 +125,7 @@ void PlasmaSystem::DoOdeProjection(
             break;
         }
     }
-    SetBoundaryConditions(out_arr, time);
+    SetBoundaryConditions(outarray, time);
 }
 
 /**
@@ -248,7 +248,6 @@ void PlasmaSystem::v_InitObject(bool create_field)
     }
 
     // Store FieldSharedPtr casts of fields in a map, indexed by name
-
     this->E = Array<OneD, MR::DisContFieldSharedPtr>(3);
     this->B = Array<OneD, MR::DisContFieldSharedPtr>(3);
     for (int d = 0; d < 3; ++d)
@@ -259,8 +258,10 @@ void PlasmaSystem::v_InitObject(bool create_field)
             *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]));
         this->B[d]->GetTrace();
     }
+
     this->mag_field = std::make_shared<MagneticField>(
         m_session, as<PlasmaSystem>(), this->B, m_spacedim);
+
     this->b_unit = this->mag_field->b_unit;
     this->mag_B  = this->mag_field->mag_B;
     this->mag_field->Update(0);
@@ -836,16 +837,6 @@ void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
         }
         s++;
     }
-    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-    for (const auto &[s, v] : GetIons())
-    {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
-
-        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
-                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
-                     1);
-    }
-    m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
 
     if (m_session->GetComm()->GetRank() == 0)
     {

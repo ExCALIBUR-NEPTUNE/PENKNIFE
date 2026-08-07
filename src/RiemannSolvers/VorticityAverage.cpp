@@ -52,16 +52,17 @@ void VorticityAverageSolver::v_ArraySolve(
     const Array<OneD, const Array<OneD, NekDouble>> &Bwd,
     Array<OneD, Array<OneD, NekDouble>> &flux)
 {
-    const Array<OneD, Array<OneD, NekDouble>> &vFwd = m_vectors["vFwd"]();
-    const Array<OneD, Array<OneD, NekDouble>> &vBwd = m_vectors["vBwd"]();
-    const Array<OneD, NekDouble> &flux_omega        = m_scalars["wf"]();
+    // const Array<OneD, Array<OneD, NekDouble>> &vFwd = m_vectors["vFwd"]();
+    // const Array<OneD, Array<OneD, NekDouble>> &vBwd = m_vectors["vBwd"]();
+    const Array<OneD, Array<OneD, NekDouble>> &traceVel = m_vectors["Vn"]();
 
-    for (int p = 0; p < vFwd[0].size(); ++p)
+    // const Array<OneD, NekDouble> &flux_omega        = m_scalars["wf"]();
+
+    for (int p = 0; p < traceVel[0].size(); ++p)
     {
-        for (int i = 0; i < vFwd.size(); ++i)
+        for (int i = 0; i < traceVel.size(); ++i)
         {
-            flux[i][p] =
-                0.5 * (vFwd[i][p] * Fwd[i][p] + vBwd[i][p] * Bwd[i][p]);
+            flux[i][p] = 0.5 * traceVel[i][p] * (Fwd[i][p] + Bwd[i][p]);
         }
 
         // flux[omega_idx][p] = flux_omega[p];

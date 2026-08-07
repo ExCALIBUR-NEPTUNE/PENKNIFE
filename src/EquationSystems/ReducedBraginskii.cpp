@@ -258,6 +258,8 @@ void ReducedBraginskii::DoOdeRhs(
         m_indfields[i]->GetFwdBwdTracePhys(inarray[i], Fwd[i], Bwd[i]);
     }
 
+    m_closure->CollisionFrequencies(inarray, m_fields[0]->GetPhys());
+
     // Calculate E
     ComputeE();
     // Calculate ExB, parallel and diamagnetic velocities
@@ -620,13 +622,22 @@ void ReducedBraginskii::DoDiffusion(
  * @brief Construct the flux vector for the anisotropic diffusion problem.
  */
 void ReducedBraginskii::GetFluxVectorDiff(
-    const Array<OneD, Array<OneD, NekDouble>> &in_arr,
+    const Array<OneD, Array<OneD, NekDouble>> &inarray,
     const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &qfield,
     Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes)
 {
-
-    m_closure->EvaluateClosure(in_arr, qfield, fluxes, friction,
-                               m_fields[0]->GetPhys(), m_fields[1]->GetPhys());
+    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> Tgrads(m_spacedim);
+    int nvariables = inarray.size() - n_species - 1;
+    for (int d = 0; d < m_spacedim; ++d)
+    {
+        Tgrads[d] = Array<OneD, Array<OneD, NekDouble>>(n_species + 1);
+        for (int t = 0; t < n_species + 1; ++t)
+        {
+            Tgrads[d][t] = qfield[d][nvariables + t];
+        }
+    }
+    m_closure->EvaluateHeatFlux(inarray, Tgrads, m_fields[0]->GetPhys(),
+                                fluxes);
 }
 
 void ReducedBraginskii::CalcNeutralSources_nvp(
