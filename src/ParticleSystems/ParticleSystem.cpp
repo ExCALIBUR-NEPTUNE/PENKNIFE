@@ -325,41 +325,40 @@ void ParticleSystem::setup_evaluate_fields(
 {
     auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
         particle_group->domain->mesh);
-    this->field_evaluate_ne =
-        std::make_shared<FunctionEvaluateBasis<DisContField>>(
-            ne, mesh, this->cell_id_translation);
-    this->ne = ne;
+    this->field_evaluate = std::make_shared<BaryEvaluateBase<DisContField>>(
+        ne, mesh, this->cell_id_translation);
+
+    this->eval_comps.push_back(0);
+    this->eval_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
+    this->eval_srcs.push_back(&ne->UpdatePhys());
+
     if (Te)
     {
-        this->field_evaluate_Te =
-            std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                Te, mesh, this->cell_id_translation);
-        this->Te = Te;
+        this->eval_comps.push_back(0);
+        this->eval_syms.push_back(Sym<REAL>("ELECTRON_TEMPERATURE"));
+        this->eval_srcs.push_back(&Te->UpdatePhys());
     }
-    this->field_evaluate_ve =
-        std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>(
-            this->ndim);
-    this->ve = ve;
 
     for (int d = 0; d < this->vdim; ++d)
     {
         if (ve[d])
         {
-            this->field_evaluate_ve[d] =
-                std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                    ve[d], mesh, this->cell_id_translation);
+            this->eval_comps.push_back(d);
+            this->eval_syms.push_back(Sym<REAL>("ELECTRON_FLOW_SPEED"));
+            this->eval_srcs.push_back(&ve[d]->UpdatePhys());
         }
     }
-    this->E = E;
-    this->B = B;
     for (int d = 0; d < 3; ++d)
     {
-        this->field_evaluate_E.emplace_back(
-            std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                E[d], mesh, this->cell_id_translation));
-        this->field_evaluate_B.emplace_back(
-            std::make_shared<FunctionEvaluateBasis<DisContField>>(
-                B[d], mesh, this->cell_id_translation));
+        this->eval_comps.push_back(d);
+        this->eval_syms.push_back(Sym<REAL>("ELECTRIC_FIELD"));
+        this->eval_srcs.push_back(&E[d]->UpdatePhys());
+    }
+    for (int d = 0; d < 3; ++d)
+    {
+        this->eval_comps.push_back(d);
+        this->eval_syms.push_back(Sym<REAL>("MAGNETIC_FIELD"));
+        this->eval_srcs.push_back(&B[d]->UpdatePhys());
     }
 }
 
@@ -659,9 +658,9 @@ void ParticleSystem::add_sources(double time, double dt)
         v.sub_group = partitions[s++];
     }
 
+    transfer_particles();
     r.end();
     this->sycl_target->profile_map.add_region(r);
-    transfer_particles();
 }
 
 /**

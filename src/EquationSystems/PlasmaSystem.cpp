@@ -220,7 +220,6 @@ void PlasmaSystem::v_InitObject(bool create_field)
     m_domains          = m_graph->GetDomain();
     m_dom_to_offset[0] = 0;
     int size           = 0;
-
     for (size_t d = 0; d < m_domains.size(); ++d)
     {
         std::vector<int> global;

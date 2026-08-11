@@ -34,9 +34,8 @@ NullSystem::NullSystem(const LU::SessionReaderSharedPtr &session,
 void NullSystem::load_params()
 {
     PlasmaSystem::load_params();
-    if (std::find(m_session->GetVariables().begin(),
-                  m_session->GetVariables().end(),
-                  "e") != m_session->GetVariables().end())
+    auto variables = m_session->GetVariables();
+    if (std::find(variables.begin(), variables.end(), "e") != variables.end())
     {
         this->n_indep_fields = 1;
     }
@@ -52,6 +51,7 @@ void NullSystem::load_params()
 void NullSystem::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
+
     if (this->n_indep_fields)
         this->ee_idx = m_indfields.size() - this->n_indep_fields;
 
@@ -119,7 +119,6 @@ void NullSystem::v_InitObject(bool DeclareFields)
         src_components.push_back(0);
         out_syms.push_back(Sym<REAL>("ELECTRON_SOURCE_ENERGY"));
 
-
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);
 
@@ -156,7 +155,7 @@ void NullSystem::DoOdeRhs(
 
     if (this->particles_enabled)
     {
-        DoParticles(inarray, outarray);
+        // DoParticles(inarray, outarray);
     }
 
     // Add forcing terms
@@ -262,8 +261,8 @@ void NullSystem::v_ExtraFldOutput(
         {
             variables.push_back(v.name + "_SOURCE_DENSITY");
             Array<OneD, NekDouble> SrcFwd(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(this->src_fields[ni_src_idx[cnt]]->GetPhys(),
-                                           SrcFwd);
+            m_fields[0]->FwdTransLocalElmt(
+                this->src_fields[ni_src_idx[cnt]]->GetPhys(), SrcFwd);
             fieldcoeffs.push_back(SrcFwd);
 
             for (int d = 0; d < this->m_spacedim; ++d)
@@ -272,14 +271,14 @@ void NullSystem::v_ExtraFldOutput(
                                        std::to_string(d));
                 Array<OneD, NekDouble> SrcFwd(nCoeffs);
                 m_fields[0]->FwdTransLocalElmt(
-                    this->src_fields[vi_src_idx[cnt]+d]->GetPhys(), SrcFwd);
+                    this->src_fields[vi_src_idx[cnt] + d]->GetPhys(), SrcFwd);
                 fieldcoeffs.emplace_back(SrcFwd);
             }
 
             variables.emplace_back(v.name + "_SOURCE_ENERGY");
             Array<OneD, NekDouble> SrcFwd2(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(this->src_fields[ei_src_idx[cnt]]->GetPhys(),
-                                           SrcFwd2);
+            m_fields[0]->FwdTransLocalElmt(
+                this->src_fields[ei_src_idx[cnt]]->GetPhys(), SrcFwd2);
             fieldcoeffs.emplace_back(SrcFwd2);
         }
         variables.push_back("ELECTRON_SOURCE_ENERGY");

@@ -779,7 +779,7 @@ void ElectrostaticTurbulence::ComputeJpar(
                 this->b_unit[d][p];
         }
     }
-
+/*
     auto BndExps = this->j_par->GetBndCondExpansions();
 
     Array<OneD, int> ElmtID, EdgeID;
@@ -830,7 +830,7 @@ void ElectrostaticTurbulence::ComputeJpar(
     this->j_par->FwdTransBndConstrained(this->j_par->GetPhys(),
                                         this->j_par->UpdateCoeffs());
     this->j_par->BwdTrans(this->j_par->GetCoeffs(), this->j_par->UpdatePhys());
-
+*/
 }
 
 /**
@@ -1955,9 +1955,9 @@ void ElectrostaticTurbulence::DoDiffusionCoeff(
 
     for (int i = 0; i < nvariables; ++i)
     {
-        inarrayDiff[i] = Array<OneD, NekDouble>{this->n_pts};
-        inFwd[i]       = Array<OneD, NekDouble>{nTracePts};
-        inBwd[i]       = Array<OneD, NekDouble>{nTracePts};
+        inarrayDiff[i] = Array<OneD, NekDouble>(this->n_pts);
+        inFwd[i]       = Array<OneD, NekDouble>(nTracePts);
+        inBwd[i]       = Array<OneD, NekDouble>(nTracePts);
     }
 
     // Extract temperature

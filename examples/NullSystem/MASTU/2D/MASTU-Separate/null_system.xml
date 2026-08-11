@@ -34,7 +34,7 @@
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
             <P> TimeStep       = 957.883316               </P>
-            <P> NumSteps      = 2000              </P>
+            <P> NumSteps      = 500              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
             <P> IO_InfoSteps   = 10                </P>
@@ -62,7 +62,7 @@
             <P> NonlinIterTolRelativeL2   = 1.0E-4  </P>
             <P> LinSysRelativeTolInNonlin = 1.0E-02  </P>
 
-            <P> particle_output_freq = 10              </P>
+            <P> particle_output_freq = 100              </P>
         </PARAMETERS>
 
         <VARIABLES>

@@ -5,7 +5,7 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - pk.penknife ^neso.adaptivecpp compilationflow=omplibraryonly ^neso+libonly ^neso-particles~build_tests ^vantage.vantagereactions~enable_tests
+  - pk.penknife ^vantage.vantagereactions~enable_tests  ^neso-particles~build_tests ^neso.adaptivecpp compilationflow=ompaccelerated ^neso+libonly
   view: true
   concretizer:
     unify: when_possible

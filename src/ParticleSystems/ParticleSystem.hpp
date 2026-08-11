@@ -93,7 +93,7 @@ public:
         {
             const double dt_inner = std::min(dt, time_end - time_tmp);
             this->add_sources(time_tmp, dt_inner);
-            this->add_sinks(time_tmp, dt_inner);
+            // this->add_sinks(time_tmp, dt_inner);
             this->evaluate_fields();
 
             this->apply_timestep(dt_inner);
@@ -160,41 +160,8 @@ public:
      */
     inline virtual void evaluate_fields()
     {
-
-        for (int d = 0; d < this->ndim; ++d)
-        {
-            NESOASSERT(this->field_evaluate_E[d] != nullptr,
-                       "FieldEvaluate not setup.");
-            this->field_evaluate_E[d]->evaluate(this->particle_group,
-                                                Sym<REAL>("ELECTRIC_FIELD"), d,
-                                                E[d]->GetCoeffs());
-            NESOASSERT(this->field_evaluate_B[d] != nullptr,
-                       "FieldEvaluate not setup.");
-            this->field_evaluate_B[d]->evaluate(this->particle_group,
-                                                Sym<REAL>("MAGNETIC_FIELD"), d,
-                                                B[d]->GetCoeffs());
-        }
-
-        NESOASSERT(this->field_evaluate_ne != nullptr,
-                   "FieldEvaluate not setup.");
-        this->field_evaluate_ne->evaluate(this->particle_group,
-                                          Sym<REAL>("ELECTRON_DENSITY"), 0,
-                                          ne->GetCoeffs());
-        if (field_evaluate_Te)
-        {
-            this->field_evaluate_Te->evaluate(this->particle_group,
-                                              Sym<REAL>("ELECTRON_TEMPERATURE"),
-                                              0, Te->GetCoeffs());
-        }
-        for (int d = 0; d < this->ndim; ++d)
-        {
-            if (this->field_evaluate_ve[d])
-            {
-                this->field_evaluate_ve[d]->evaluate(
-                    this->particle_group, Sym<REAL>("ELECTRON_FLOW_SPEED"), d,
-                    ve[d]->GetCoeffs());
-            }
-        }
+        this->field_evaluate->evaluate(this->particle_group, this->eval_syms,
+                                       this->eval_comps, this->eval_srcs);
     }
 
     inline void remove_marked_particles()
@@ -400,21 +367,19 @@ protected:
 
                     if (dt_left > 0.0)
                     {
-                        REAL o = hdt_left * V.at(2);
-                        REAL h =
-                            sycl::sqrt(1.0 + (o / P.at(0)) * (o / P.at(0)));
+                        REAL vr   = V.at(0);
+                        REAL vphi = V.at(2);
+                        REAL r    = P.at(0);
+                        REAL r1 = sycl::sqrt(r * r + 2 * r * vr * dt_left +
+                                             (vr * vr + vphi * vphi) * dt_left *
+                                                 dt_left);
 
-                        REAL vx = (V.at(0) + V.at(2) * o / P.at(0)) / h;
-                        REAL vz = (V.at(2) - V.at(0) * o / P.at(0)) / h;
-
-                        P.at(0) += dt_left * vx;
+                        P.at(0) = r1;
                         P.at(1) += dt_left * V.at(1);
 
-                        o = hdt_left * vz;
-                        h = sycl::sqrt(1.0 + (o / P.at(0)) * (o / P.at(0)));
-
-                        V.at(0) = (vx + vz * o / P.at(0)) / h;
-                        V.at(2) = (vz - vx * o / P.at(0)) / h;
+                        V.at(0) =
+                            (r * vr + (vr * vr + vphi * vphi) * dt_left) / r1;
+                        V.at(2) = r * vphi / r1;
 
                         TSP.at(0) = k_dt;
                         TSP.at(1) = dt_left;
@@ -464,22 +429,10 @@ protected:
     std::map<int, std::shared_ptr<FieldProject<DisContField>>>
         diagnostic_project;
 
-    std::shared_ptr<FunctionEvaluateBasis<DisContField>> field_evaluate_ne;
-    std::shared_ptr<FunctionEvaluateBasis<DisContField>> field_evaluate_Te;
-    std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>
-        field_evaluate_ve;
-
-    std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>
-        field_evaluate_E;
-
-    std::vector<std::shared_ptr<FunctionEvaluateBasis<DisContField>>>
-        field_evaluate_B;
-
-    Array<OneD, std::shared_ptr<DisContField>> E;
-    Array<OneD, std::shared_ptr<DisContField>> B;
-    std::shared_ptr<DisContField> ne;
-    std::shared_ptr<DisContField> Te;
-    Array<OneD, std::shared_ptr<DisContField>> ve;
+    std::shared_ptr<BaryEvaluateBase<DisContField>> field_evaluate;
+    std::vector<Sym<REAL>> eval_syms;
+    std::vector<int> eval_comps;
+    std::vector<Array<OneD, NekDouble> *> eval_srcs;
 
     std::shared_ptr<NektarCompositeTruncatedReflection> reflection;
 
@@ -566,14 +519,15 @@ protected:
      */
     inline void transfer_particles()
     {
+        auto r = ProfileRegion("NESO", "transfer_particles");
+
         auto t0 = profile_timestamp();
 
         this->particle_group->hybrid_move();
         this->cell_id_translation->execute();
         this->particle_group->cell_move();
-        this->sycl_target->profile_map.inc(
-            "ParticleSystem", "transfer_particles", 1,
-            profile_elapsed(t0, profile_timestamp()));
+        r.end();
+        this->sycl_target->profile_map.add_region(r);
     }
 };
 } // namespace PENKNIFE

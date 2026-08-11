@@ -42,6 +42,10 @@ public:
         }
     }
 
+    inline void project_source_terms() override
+    {
+    }
+
     inline void zero_source_dats() override
     {
         this->zeroer_transform->transform(
@@ -73,7 +77,6 @@ public:
                       std::vector<Sym<REAL>> &syms,
                       std::vector<int> &components) override;
     void output_setup(std::vector<Sym<REAL>> &syms) override;
-
 
     class ReactionsBoundary
     {

@@ -250,9 +250,10 @@ void ReactionSystem::finish_setup(
 
     this->reaction_controller = std::make_shared<ReactionController>(
         std::vector<std::shared_ptr<TransformationWrapper>>{
-            remove_transform_wrapper},
+            project_transform_wrapper, remove_transform_wrapper,
+            merge_transform_wrapper},
         std::vector<std::shared_ptr<TransformationWrapper>>{
-            remove_transform_wrapper});
+            remove_transform_wrapper, merge_transform_wrapper});
 
     set_up_reactions();
 }
