@@ -380,8 +380,8 @@ void ElectrostaticTurbulence::DoOdeRhs(
                                        m_fields[1]->GetPhys(), this->friction,
                                        this->heat);
 
-    // AddForces(inarray, outarray);
-    // AddFriction(inarray, outarray);
+    AddForces(inarray, outarray);
+    //AddFriction(inarray, outarray);
 
     if (this->particles_enabled)
     {
@@ -393,10 +393,6 @@ void ElectrostaticTurbulence::DoOdeRhs(
     {
         x->Apply(m_fields, inarray, outarray, time);
     }
-    // for (int o = 0; o < outarray.size(); ++o)
-    // {
-    //     std::cout << "o " << o << " " << outarray[o][1223] << "\n";
-    // }
 }
 
 void ElectrostaticTurbulence::ApplyOmegaBC(
@@ -741,9 +737,9 @@ void ElectrostaticTurbulence::ComputeJpar(
     // Array<OneD, NekDouble> traceflux(GetTraceNpoints(), 0.0);
     // Vmath::Zero(GetTraceNpoints(), traceflux, 1);
 
-    // Array<OneD, NekDouble> eFwd{nTracePts};
-    // Array<OneD, NekDouble> eBwd{nTracePts};
-    // Array<OneD, NekDouble> fluxtemp{nTracePts, 0.0};
+    // Array<OneD, NekDouble> eFwd(nTracePts);
+    // Array<OneD, NekDouble> eBwd(nTracePts);
+    // Array<OneD, NekDouble> fluxtemp(nTracePts, 0.0);
 
     // m_indfields[ee_idx]->GetFwdBwdTracePhys(inarray[ee_idx], eFwd, eBwd);
 
@@ -1341,7 +1337,7 @@ void ElectrostaticTurbulence::OmegaCurrent(
     this->j_par->GetTrace()->GetNormals(normals);
 
     //-----------------------------------------------------
-    Array<OneD, NekDouble> numflux{nTraceNumPoints, 0.0};
+    Array<OneD, NekDouble> numflux(nTraceNumPoints, 0.0);
 
     //-----------------------------------------------------
     // use centred fluxes for the numerical flux

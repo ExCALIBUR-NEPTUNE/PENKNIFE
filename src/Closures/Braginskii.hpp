@@ -32,7 +32,7 @@ public:
 private:
     void v_CollisionFrequencies(
         const Array<OneD, Array<OneD, NekDouble>> &values,
-        const Array<OneD, NekDouble> &ne);
+        const Array<OneD, NekDouble> &ne) override;
 
     void v_EvaluateHeatFlux(
         const Array<OneD, Array<OneD, NekDouble>> &values,
