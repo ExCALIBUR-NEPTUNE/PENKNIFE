@@ -12,6 +12,13 @@ ReactionSystem::ReactionSystem(NESOReaderSharedPtr session,
     : ParticleSystem(session, graph)
 {
 }
+
+void ReactionSystem::free()
+{
+    if (marker_group)
+        marker_group->free();
+    ParticleSystem::free();
+}
 void ReactionSystem::set_up_boundaries()
 {
     auto store = std::make_shared<ParameterStore>();
@@ -37,6 +44,7 @@ void ReactionSystem::set_up_reactions()
 
     for (const auto &v : this->config->get_reactions())
     {
+        setup_reaction_controller();
         std::shared_ptr<AbstractReaction> reaction;
         if (std::get<0>(v) == "Ionisation")
         {
@@ -84,6 +92,8 @@ void ReactionSystem::set_up_reactions()
         }
         else if (std::get<0>(v) == "Recombination")
         {
+            setup_recomb_controller();
+            create_markers(std::get<1>(v)[0]);
             auto electron_species = Species("ELECTRON", 5.5e-4, -1.0);
             auto neutral_species  = Species(
                 std::get<1>(v)[0], this->species_map[std::get<1>(v)[0]].mass,
@@ -92,8 +102,8 @@ void ReactionSystem::set_up_reactions()
 
             auto marker_species = Species(
                 std::get<1>(v)[0], this->species_map[std::get<1>(v)[0]].mass,
-                this->species_map[std::get<1>(v)[0]].charge - 1,
-                -1 - this->species_map[std::get<1>(v)[0]].id);
+                this->marker_map[std::get<1>(v)[0]].charge,
+                this->marker_map[std::get<1>(v)[0]].id);
 
             if (std::get<2>(v).first == "Fixed")
             {
@@ -132,6 +142,7 @@ void ReactionSystem::set_up_reactions()
                         electron_species, neutral_species);
                 }
             }
+            this->recomb_controller->add_reaction(reaction);
         }
 
         else if (std::get<0>(v) == "ChargeExchange")
@@ -196,41 +207,36 @@ void ReactionSystem::finish_setup(
     this->src_syms       = syms;
     this->src_components = components;
 
-    this->field_project = std::make_shared<FieldProject<DisContField>>(
-        src_fields, this->particle_group, this->cell_id_translation);
-
-    auto project_transform = std::make_shared<ProjectTransformation>(
+    this->project_transform = std::make_shared<ProjectTransformation>(
         src_fields, this->src_syms, this->src_components, this->particle_group,
         this->cell_id_translation);
-    auto project_transform_wrapper = std::make_shared<TransformationWrapper>(
+    this->project_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(project_transform));
 
-    auto remove_transform =
+    this->remove_transform =
         std::make_shared<SimpleRemovalTransformationStrategy>();
-    auto remove_transform_wrapper = std::make_shared<TransformationWrapper>(
+    this->remove_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
             make_direct_marking_strategy(
-                "very_low_weight", [](auto w) { return w[0] < 1e-12; },
+                "mark_for_remove", [](auto w) { return w[0] < 1e-14; },
                 Access::read(Sym<REAL>("WEIGHT")))},
         make_transformation_strategy<SimpleRemovalTransformationStrategy>());
 
-    std::shared_ptr<TransformationStrategy> merge_transform;
-
     if (this->ndim == 2)
     {
-        merge_transform =
+        this->merge_transform =
             make_transformation_strategy<MergeTransformationStrategy<2>>();
     }
     else if (this->ndim == 3)
     {
-        merge_transform =
+        this->merge_transform =
             make_transformation_strategy<MergeTransformationStrategy<3>>();
     }
 
-    auto merge_transform_wrapper = std::make_shared<TransformationWrapper>(
+    this->merge_wrapper = std::make_shared<TransformationWrapper>(
         std::vector<std::shared_ptr<MarkingStrategy>>{
             make_direct_marking_strategy(
-                "very_low_weight", [](auto w) { return w[0] < 1e-6; },
+                "mark_for_merge", [](auto w) { return w[0] < 1e-12; },
                 Access::read(Sym<REAL>("WEIGHT")))},
         merge_transform);
 
@@ -247,15 +253,137 @@ void ReactionSystem::finish_setup(
 
     this->zeroer_transform =
         std::make_shared<ParticleDatZeroer<REAL>>(src_names);
-
-    this->reaction_controller = std::make_shared<ReactionController>(
-        std::vector<std::shared_ptr<TransformationWrapper>>{
-            project_transform_wrapper, remove_transform_wrapper,
-            merge_transform_wrapper},
-        std::vector<std::shared_ptr<TransformationWrapper>>{
-            remove_transform_wrapper, merge_transform_wrapper});
+    this->zeroer_wrapper = std::make_shared<TransformationWrapper>(
+        std::dynamic_pointer_cast<TransformationStrategy>(zeroer_transform));
 
     set_up_reactions();
+
+    auto partitions = particle_group_partition(this->particle_group,
+                                               Sym<INT>("INTERNAL_STATE"),
+                                               this->species_map.size());
+
+    int s = 0;
+    for (const auto &[k, v] : this->species_map)
+    {
+        species_map[k].sub_group = partitions[s++];
+    }
+
+    if (marker_group)
+    {
+        partitions = particle_group_partition(this->marker_group,
+                                              Sym<INT>("INTERNAL_STATE"),
+                                              this->marker_map.size());
+
+        s = 0;
+        for (const auto &[k, v] : this->marker_map)
+        {
+            marker_map[k].sub_group = partitions[s++];
+        }
+    }
+}
+
+void ReactionSystem::setup_reaction_controller()
+{
+    if (!this->reaction_controller)
+    {
+        this->reaction_controller = std::make_shared<ReactionController>(
+            std::vector<std::shared_ptr<TransformationWrapper>>{
+                project_wrapper, merge_wrapper, remove_wrapper},
+            std::vector<std::shared_ptr<TransformationWrapper>>{
+                merge_wrapper, remove_wrapper});
+    }
+}
+
+void ReactionSystem::setup_recomb_controller()
+{
+    if (!this->recomb_controller)
+    {
+        this->recomb_controller = std::make_shared<ReactionController>(
+            std::vector<std::shared_ptr<TransformationWrapper>>{
+                project_wrapper},
+            std::vector<std::shared_ptr<TransformationWrapper>>{
+                merge_wrapper, remove_wrapper});
+    }
+}
+
+void ReactionSystem::create_markers(std::string k)
+{
+    if (!this->marker_group)
+        this->marker_group = std::make_shared<ParticleGroup>(
+            this->domain, this->particle_spec, this->sycl_target);
+
+    double particle_mass, particle_charge;
+    this->config->load_particle_species_parameter(k, "Mass", particle_mass,
+                                                  1.0);
+    this->config->load_particle_species_parameter(k, "Charge", particle_charge,
+                                                  1.0);
+
+    int id = species_map[k].id;
+    marker_map[k] =
+        SpeciesInfo{id, particle_mass, particle_charge + 1.0, nullptr};
+
+    // long particle_number =
+    // this->config->get_particle_species_initial_N(k);
+    long particle_number = 100;
+    
+    if (particle_number > 0)
+    {
+        std::vector<std::vector<double>> positions;
+        std::vector<double> weights;
+        std::vector<int> cells;
+
+        rng_phasespace = weighted_within_elements(
+            this->graph, this->proto_field, particle_number, positions, cells,
+            weights, 1.0e-10, this->rng_phasespace);
+
+        int N         = cells.size();
+        int id_offset = 0;
+        MPICHK(MPI_Exscan(&N, &id_offset, 1, MPI_INT, MPI_SUM,
+                          this->sycl_target->comm));
+        if (N > 0)
+        {
+            double weight = 1.0;
+
+            ParticleSet initial_distribution(
+                N, this->particle_group->get_particle_spec());
+
+            for (int px = 0; px < N; px++)
+            {
+                for (int dimx = 0; dimx < this->ndim; dimx++)
+                {
+                    initial_distribution[Sym<REAL>("POSITION")][px][dimx] =
+                        positions[dimx][px];
+                }
+
+                initial_distribution[Sym<REAL>("Q")][px][0] = particle_charge;
+                initial_distribution[Sym<REAL>("M")][px][0] = weights.at(px);
+                initial_distribution[Sym<INT>("ID")][px][0] =
+                    px + id_offset + this->total_num_markers_added;
+                initial_distribution[Sym<INT>("CELL_ID")][px][0] = cells.at(px);
+                initial_distribution[Sym<INT>("INTERNAL_STATE")][px][0] = id;
+                initial_distribution[Sym<REAL>("WEIGHT")][px][0] = weight;
+            }
+
+            this->marker_group->add_particles_local(initial_distribution);
+            this->total_num_markers_added += N;
+        }
+    }
+}
+void ReactionSystem::set_marker_weights()
+{
+    for (auto &[k, v] : this->marker_map)
+    {
+        particle_loop(
+            "set_marker_weight", marker_map[k].sub_group,
+            [=](auto ion_dens_prop, auto mass_prop, auto weight_prop)
+            {
+                auto updated_weight = ion_dens_prop.at(0) * mass_prop.at(0);
+                weight_prop.at(0)   = updated_weight;
+            },
+            Access::read(Sym<REAL>(k + "_DENSITY")),
+            Access::read(Sym<REAL>("M")), Access::write(Sym<REAL>("WEIGHT")))
+            ->execute();
+    }
 }
 
 void ReactionSystem::output_setup(std::vector<Sym<REAL>> &syms)
@@ -263,7 +391,8 @@ void ReactionSystem::output_setup(std::vector<Sym<REAL>> &syms)
     init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
                 Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"),
                 Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
-                Sym<REAL>("ELECTRON_DENSITY"), syms, Sym<REAL>("WEIGHT"),
+                Sym<REAL>("ELECTRON_DENSITY"),
+                Sym<REAL>("ELECTRON_TEMPERATURE"), syms, Sym<REAL>("WEIGHT"),
                 Sym<INT>("ID"), Sym<REAL>("TOT_REACTION_RATE"));
 }
 

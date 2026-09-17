@@ -147,7 +147,6 @@ protected:
      * particle evaluation/projection methods
      */
     std::vector<MR::DisContFieldSharedPtr> src_fields;
-    std::map<int, std::vector<MR::DisContFieldSharedPtr>> diag_fields;
 
     /// Bool to enable/disable growth rate recordings
     bool energy_enstrophy_recording_enabled;
@@ -168,13 +167,6 @@ protected:
          StdRegions::eVarCoeffD12},
         {StdRegions::eVarCoeffD02, StdRegions::eVarCoeffD12,
          StdRegions::eVarCoeffD22}};
-
-    /// Number of particle timesteps per fluid timestep.
-    int num_part_substeps;
-    /// Number of time steps between particle trajectory step writes.
-    int particle_output_freq;
-    /// Particle timestep size.
-    double part_timestep;
 
     std::shared_ptr<ImplicitHelper> m_implHelper;
 

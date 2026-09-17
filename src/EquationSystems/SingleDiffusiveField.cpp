@@ -104,23 +104,13 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
             out_syms.push_back(Sym<REAL>(s + "_SOURCE_DENSITY"));
         }
 
-        this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->Te, this->ve);
+        // this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
+        //                                           this->Te, this->ve);
 
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);
 
-        std::vector<int> diag_components = {0};
-        std::vector<Sym<REAL>> diag_syms = {Sym<REAL>("WEIGHT")};
-
-        for (auto &[k, v] : this->particle_sys->get_species())
-        {
-            this->diag_fields[v.id].emplace_back(
-                MemoryManager<MR::DisContField>::AllocateSharedPtr(
-                    *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-        }
-        this->particle_sys->diag_setup(this->diag_fields, diag_syms,
-                                       diag_components);
+        this->particle_sys->diag_setup();
         this->particle_sys->output_setup(out_syms);
     }
 }
@@ -441,14 +431,7 @@ void SingleDiffusiveField::v_ExtraFldOutput(
                                            SrcFwd);
             fieldcoeffs.push_back(SrcFwd);
         }
-        for (auto &[k, v] : this->particle_sys->get_species())
-        {
-            variables.emplace_back(k + "_DENSITY");
-            Array<OneD, NekDouble> DiagFwd(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(
-                this->diag_fields[v.id][0]->GetPhys(), DiagFwd);
-            fieldcoeffs.push_back(DiagFwd);
-        }
+        this->particle_sys->print_diagnostics(fieldcoeffs, variables);
     }
 }
 } // namespace PENKNIFE

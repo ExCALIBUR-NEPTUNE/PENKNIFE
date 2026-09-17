@@ -42,6 +42,8 @@ void ParticleSystem::init_spec()
 
         ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_FLOW_SPEED"), this->vdim),
+
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->vdim),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1)};
@@ -82,6 +84,11 @@ void ParticleSystem::init_spec()
 
 void ParticleSystem::init_object()
 {
+    // Particle-related parameters
+    config->get_session()->LoadParameter("particle_output_freq",
+                                         particle_output_freq, 0);
+    config->get_session()->LoadParameter("num_particle_steps_per_fluid_step",
+                                         this->num_part_substeps, 1);
     config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
     config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
     config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
@@ -122,6 +129,9 @@ void ParticleSystem::set_up_species()
                                                       1.0);
         this->config->load_particle_species_parameter(k, "Charge",
                                                       particle_charge, 0.0);
+        species_map[k] =
+            SpeciesInfo{s, particle_mass, particle_charge, nullptr};
+
         long particle_number = this->config->get_particle_species_initial_N(k);
 
         if (particle_number > 0)
@@ -287,8 +297,10 @@ void ParticleSystem::set_up_species()
                     initial_distribution[Sym<INT>("INTERNAL_STATE")][px][0] = s;
                     initial_distribution[Sym<REAL>("WEIGHT")][px][0] = weight;
 
+                    initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
+                        1.0;
                     initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 5.0;
                 }
 
                 this->particle_group->add_particles_local(initial_distribution);
@@ -297,20 +309,6 @@ void ParticleSystem::set_up_species()
         }
         s++;
     }
-    auto partitions = particle_group_partition(this->particle_group,
-                                               Sym<INT>("INTERNAL_STATE"), s);
-
-    s = 0;
-    for (const auto &[k, v] : this->config->get_particle_species())
-    {
-        double particle_mass, particle_charge;
-        this->config->load_particle_species_parameter(k, "Mass", particle_mass,
-                                                      1.0);
-        this->config->load_particle_species_parameter(k, "Charge",
-                                                      particle_charge, 0.0);
-        species_map[k] =
-            SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
-    }
     set_up_boundaries();
 }
 
@@ -318,48 +316,19 @@ void ParticleSystem::set_up_species()
  * @brief Setup NESO evaluations
  */
 void ParticleSystem::setup_evaluate_fields(
-    Array<OneD, std::shared_ptr<DisContField>> &E,
-    Array<OneD, std::shared_ptr<DisContField>> &B,
-    std::shared_ptr<DisContField> ne, std::shared_ptr<DisContField> Te,
-    Array<OneD, std::shared_ptr<DisContField>> &ve)
+    std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
+    std::vector<int> &eval_comps,
+    std::vector<Array<OneD, NekDouble> *> &eval_srcs)
 {
+    this->eval_syms   = eval_syms;
+    this->eval_comps  = eval_comps;
+    this->eval_srcs   = eval_srcs;
+    this->proto_field = ne;
+
     auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
         particle_group->domain->mesh);
     this->field_evaluate = std::make_shared<BaryEvaluateBase<DisContField>>(
         ne, mesh, this->cell_id_translation);
-
-    this->eval_comps.push_back(0);
-    this->eval_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
-    this->eval_srcs.push_back(&ne->UpdatePhys());
-
-    if (Te)
-    {
-        this->eval_comps.push_back(0);
-        this->eval_syms.push_back(Sym<REAL>("ELECTRON_TEMPERATURE"));
-        this->eval_srcs.push_back(&Te->UpdatePhys());
-    }
-
-    for (int d = 0; d < this->vdim; ++d)
-    {
-        if (ve[d])
-        {
-            this->eval_comps.push_back(d);
-            this->eval_syms.push_back(Sym<REAL>("ELECTRON_FLOW_SPEED"));
-            this->eval_srcs.push_back(&ve[d]->UpdatePhys());
-        }
-    }
-    for (int d = 0; d < 3; ++d)
-    {
-        this->eval_comps.push_back(d);
-        this->eval_syms.push_back(Sym<REAL>("ELECTRIC_FIELD"));
-        this->eval_srcs.push_back(&E[d]->UpdatePhys());
-    }
-    for (int d = 0; d < 3; ++d)
-    {
-        this->eval_comps.push_back(d);
-        this->eval_syms.push_back(Sym<REAL>("MAGNETIC_FIELD"));
-        this->eval_srcs.push_back(&B[d]->UpdatePhys());
-    }
 }
 
 /**
@@ -373,20 +342,33 @@ void ParticleSystem::finish_setup(
     this->src_components = components;
     this->field_project  = std::make_shared<FieldProject<DisContField>>(
         src_fields, this->particle_group, this->cell_id_translation);
+
+    int num_subgroups = this->species_map.size();
+    auto partitions   = particle_group_partition(
+        this->particle_group, Sym<INT>("INTERNAL_STATE"), num_subgroups);
+
+    int s = 0;
+    for (const auto &[k, v] : this->species_map)
+    {
+        species_map[k].sub_group = partitions[s++];
+    }
 }
 
-void ParticleSystem::diag_setup(
-    std::map<int, std::vector<std::shared_ptr<DisContField>>> &diag_fields,
-    std::vector<Sym<REAL>> &syms, std::vector<int> &components)
+void ParticleSystem::diag_setup()
 {
-    this->diag_syms       = syms;
-    this->diag_components = components;
-
+        this->diag_components = {0};
+        this->diag_syms = {Sym<REAL>("WEIGHT")};
     for (auto &[k, v] : this->species_map)
     {
+
+        this->diag_fields[v.id].emplace_back(
+            MemoryManager<DisContField>::AllocateSharedPtr(
+                *std::dynamic_pointer_cast<DisContField>(
+                    this->proto_field)));
+
         this->diagnostic_project[v.id] =
             std::make_shared<FieldProject<DisContField>>(
-                diag_fields[v.id], this->particle_group,
+                this->diag_fields[v.id], this->particle_group,
                 this->cell_id_translation);
     }
 }
@@ -398,6 +380,11 @@ void ParticleSystem::output_setup(std::vector<Sym<REAL>> &syms)
                 Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
                 Sym<REAL>("ELECTRON_DENSITY"), syms, Sym<INT>("ID"),
                 Sym<REAL>("TOT_REACTION_RATE"));
+}
+
+void ParticleSystem::free()
+{
+    PartSysBase::free();
 }
 
 template <typename RNG>

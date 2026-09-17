@@ -57,6 +57,7 @@ public:
     virtual void init_object() override;
     virtual void set_up_species() override;
     virtual void set_up_boundaries();
+    virtual void free() override;
 
     struct SpeciesInfo
     {
@@ -73,12 +74,13 @@ public:
 
     /**
      *  Integrate the particle system forward to the requested time using
-     *  (at most) the requested time step.
+     *  particle substeps.
      *
      *  @param time_end Target time to integrate to.
-     *  @param dt Time step size.
+     *  @param time_step Fluid time step size.
      */
-    inline virtual void integrate(const double time_end, const double dt)
+    inline virtual void integrate(const double time_end, const double time_step,
+                                  const int step)
     {
         // Get the current simulation time.
         NESOASSERT(time_end >= this->simulation_time,
@@ -87,7 +89,7 @@ public:
         {
             return;
         }
-
+        const double dt = time_step / num_part_substeps;
         double time_tmp = this->simulation_time;
         while (time_tmp < time_end)
         {
@@ -101,6 +103,8 @@ public:
 
             time_tmp += dt_inner;
         }
+        if (particle_output_freq > 0 && (step % particle_output_freq) == 0)
+            this->write(step);
 
         this->simulation_time = time_end;
     }
@@ -116,9 +120,7 @@ public:
         std::vector<std::shared_ptr<DisContField>> &src_fields,
         std::vector<Sym<REAL>> &syms, std::vector<int> &components);
 
-    virtual void diag_setup(
-        std::map<int, std::vector<std::shared_ptr<DisContField>>> &diag_field,
-        std::vector<Sym<REAL>> &syms, std::vector<int> &components);
+    virtual void diag_setup();
 
     virtual void output_setup(std::vector<Sym<REAL>> &syms);
 
@@ -127,6 +129,21 @@ public:
         for (auto &[k, v] : this->species_map)
             this->diagnostic_project[v.id]->project(
                 v.sub_group, this->diag_syms, this->diag_components);
+    }
+
+    inline virtual void print_diagnostics(
+        std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
+        std::vector<std::string> &variables)
+    {
+        int nCoeffs = fieldcoeffs[0].size();
+        for (auto &[k, v] : this->species_map)
+        {
+            variables.emplace_back(k + "_DENSITY");
+            Array<OneD, NekDouble> DiagFwd(nCoeffs);
+            this->proto_field->FwdTransLocalElmt(
+                this->diag_fields[v.id][0]->GetPhys(), DiagFwd);
+            fieldcoeffs.push_back(DiagFwd);
+        }
     }
 
     void add_sources(double time, double dt);
@@ -150,10 +167,9 @@ public:
     }
 
     virtual void setup_evaluate_fields(
-        Array<OneD, std::shared_ptr<DisContField>> &E,
-        Array<OneD, std::shared_ptr<DisContField>> &B,
-        std::shared_ptr<DisContField> ne, std::shared_ptr<DisContField> Te,
-        Array<OneD, std::shared_ptr<DisContField>> &ve);
+        std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
+        std::vector<int> &eval_comps,
+        std::vector<Array<OneD, NekDouble> *> &eval_srcs);
 
     /**
      * Evaluate E and B at the particle locations.
@@ -362,9 +378,7 @@ protected:
                 "ParticleSystem:neutrals_2D", sg,
                 [=](auto V, auto P, auto TSP)
                 {
-                    const REAL dt_left  = k_dt - TSP.at(0);
-                    const REAL hdt_left = dt_left * 0.5;
-
+                    const REAL dt_left = k_dt - TSP.at(0);
                     if (dt_left > 0.0)
                     {
                         REAL vr   = V.at(0);
@@ -428,13 +442,20 @@ protected:
     std::vector<int> diag_components;
     std::map<int, std::shared_ptr<FieldProject<DisContField>>>
         diagnostic_project;
+    std::map<int, std::vector<DisContFieldSharedPtr>> diag_fields;
 
+    std::shared_ptr<ExpList> proto_field;
     std::shared_ptr<BaryEvaluateBase<DisContField>> field_evaluate;
     std::vector<Sym<REAL>> eval_syms;
     std::vector<int> eval_comps;
     std::vector<Array<OneD, NekDouble> *> eval_srcs;
 
     std::shared_ptr<NektarCompositeTruncatedReflection> reflection;
+
+    /// Number of particle timesteps per fluid timestep.
+    int num_part_substeps;
+    /// Number of time steps between particle trajectory step writes.
+    int particle_output_freq;
 
     /// Simulation time
     double simulation_time;
@@ -491,7 +512,7 @@ protected:
         sg = find_partial_moves(sg, dt);
         while (get_npart_global(sg) > 0)
         {
-            auto child_group =
+            child_group =
                 this->particle_group_temporary->get(this->particle_group);
             pre_advection(sg);
             integrate_inner(sg, dt);

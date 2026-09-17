@@ -62,12 +62,6 @@ void PlasmaSystem::load_params()
     m_session->LoadSolverInfo("MagneticFieldEvolution", transient_field_str,
                               "Static");
     this->transient_field = (transient_field_str == "Transient");
-
-    // Particle-related parameters
-    m_session->LoadParameter("particle_output_freq", particle_output_freq, 0);
-    m_session->LoadParameter("num_particle_steps_per_fluid_step",
-                             this->num_part_substeps, 1);
-    this->part_timestep = m_timestep / this->num_part_substeps;
 }
 
 /**
@@ -631,16 +625,12 @@ bool PlasmaSystem::v_PreIntegrate(int step)
 
     if (this->particles_enabled)
     {
-        if (particle_output_freq > 0 && (step % particle_output_freq) == 0)
-        {
-            this->particle_sys->write(step);
-        }
         for (auto &fld : this->src_fields)
         {
             Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
         }
         this->particle_sys->zero_source_dats();
-        this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
+        this->particle_sys->integrate(m_time + m_timestep, m_timestep, step);
         this->particle_sys->project_source_terms();
     }
 

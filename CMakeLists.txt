@@ -35,6 +35,7 @@ src/BoundaryConditions/SheathBC.cpp
 src/BoundaryConditions/ReducedSheathBC.cpp
 src/ParticleSystems/ParticleSystem.cpp
 src/ParticleSystems/ReactionSystem.cpp
+src/ParticleSystems/Reactions.cpp
 src/Misc/VariableConverter.cpp
 src/Misc/EquationOfState.cpp
 src/Misc/IdealGasEoS.cpp
