@@ -14,10 +14,10 @@ class ReactionSystem : public ParticleSystem
 
 public:
     static std::string class_name;
-    static ParticleSystemSharedPtr create(const NESOReaderSharedPtr session,
-                                          const SD::MeshGraphSharedPtr graph)
+    static std::shared_ptr<ParticleSystem> create(
+        const NESOReaderSharedPtr session, const SD::MeshGraphSharedPtr graph)
     {
-        ParticleSystemSharedPtr p =
+        std::shared_ptr<ParticleSystem> p =
             MemoryManager<ReactionSystem>::AllocateSharedPtr(session, graph);
         return p;
     }
@@ -35,12 +35,6 @@ public:
             this->field_evaluate->evaluate(this->marker_group, this->eval_syms,
                                            this->eval_comps, this->eval_srcs);
         set_marker_weights();
-    }
-
-    inline void integrate(const double time_end, const double dt,
-                          const int step) override
-    {
-        ParticleSystem::integrate(time_end, dt, step);
     }
 
     inline void apply_timestep(const double dt) override
@@ -65,7 +59,18 @@ public:
             species_map[k].sub_group = partitions[s++];
             // this->merge_wrapper->transform(species_map[k].sub_group);
         }
+        // if (marker_group)
+        // {
+        //     partitions = particle_group_partition(this->marker_group,
+        //                                           Sym<INT>("INTERNAL_STATE"),
+        //                                           this->marker_map.size());
 
+        //     s = 0;
+        //     for (const auto &[k, v] : this->marker_map)
+        //     {
+        //         marker_map[k].sub_group = partitions[s++];
+        //     }
+        // }
         // this->remove_wrapper->transform(
         //     particle_sub_group(this->particle_group));
     }
@@ -98,12 +103,6 @@ public:
         this->boundary->execute(sg, cg, dt);
     };
 
-    inline void integrate_inner(ParticleSubGroupSharedPtr sg,
-                                const double dt_inner) override
-    {
-        ParticleSystem::integrate_inner(sg, dt_inner);
-    }
-
     void finish_setup(std::vector<std::shared_ptr<DisContField>> &src_fields,
                       std::vector<Sym<REAL>> &syms,
                       std::vector<int> &components) override;
@@ -111,35 +110,10 @@ public:
     void setup_reaction_controller();
     void setup_recomb_controller();
 
-    void diag_setup() override
-    {
-        ParticleSystem::diag_setup();
+    void diag_setup() override;
+    void diag_project() override;
 
-        this->marker_diag_components = {0};
-        this->marker_diag_syms       = {Sym<REAL>("WEIGHT")};
-        for (auto &[k, v] : this->marker_map)
-        {
-            this->marker_diag_fields[v.id].emplace_back(
-                MemoryManager<DisContField>::AllocateSharedPtr(
-                    *std::dynamic_pointer_cast<DisContField>(
-                        this->proto_field)));
-            this->marker_diagnostic_project[v.id] =
-                std::make_shared<FieldProject<DisContField>>(
-                    this->marker_diag_fields[v.id], this->marker_group,
-                    this->cell_id_translation);
-        }
-    }
-
-    void diag_project() override
-    {
-        ParticleSystem::diag_project();
-        for (auto &[k, v] : this->marker_map)
-            this->marker_diagnostic_project[v.id]->project(
-                v.sub_group, this->marker_diag_syms,
-                this->marker_diag_components);
-    }
-
-    inline virtual void print_diagnostics(
+    inline void print_diagnostics(
         std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
         std::vector<std::string> &variables) override
     {
@@ -160,6 +134,15 @@ public:
     void set_marker_weights();
 
     void output_setup(std::vector<Sym<REAL>> &syms) override;
+
+    void write(const int step) override
+    {
+        ParticleSystem::write(step);
+        if (this->h5part_marker)
+        {
+            this->h5part_marker->write();
+        }
+    }
 
     class ReactionsBoundary
     {
@@ -268,9 +251,10 @@ protected:
 
     uint64_t total_num_markers_added = 0;
     ParticleGroupSharedPtr marker_group;
+    std::shared_ptr<CellIDTranslation> marker_cell_id_translation;
 
     std::map<std::string, SpeciesInfo> marker_map;
-
+    std::shared_ptr<HostPerParticleBlockRNG<REAL>> rng_kernel;
     /// Reaction Controller
     std::shared_ptr<ReactionController> reaction_controller;
     std::shared_ptr<ReactionController> recomb_controller;
@@ -280,6 +264,7 @@ protected:
     std::map<int, std::shared_ptr<FieldProject<DisContField>>>
         marker_diagnostic_project;
     std::map<int, std::vector<DisContFieldSharedPtr>> marker_diag_fields;
+    std::shared_ptr<H5Part> h5part_marker;
 
     std::shared_ptr<ReactionsBoundary> boundary;
 };

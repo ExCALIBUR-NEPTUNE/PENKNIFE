@@ -9,18 +9,6 @@ std::string SingleDiffusiveField::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "SingleDiffusiveField", SingleDiffusiveField::create,
         "Solves for a single diffusive field (n) with anisotropy");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<SingleDiffusiveField>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 SingleDiffusiveField::SingleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,

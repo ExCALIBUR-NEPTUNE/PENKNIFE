@@ -17,8 +17,11 @@ void ReactionSystem::free()
 {
     if (marker_group)
         marker_group->free();
+    if (h5part_marker)
+        h5part_marker->close();
     ParticleSystem::free();
 }
+
 void ReactionSystem::set_up_boundaries()
 {
     auto store = std::make_shared<ParameterStore>();
@@ -34,13 +37,10 @@ void ReactionSystem::set_up_boundaries()
  */
 void ReactionSystem::set_up_reactions()
 {
-    auto prop_map = get_default_map();
-
     auto sycl_target = particle_group->sycl_target;
-    const int rank   = sycl_target->comm_pair.rank_parent;
 
-    std::uint64_t root_seed = 141351;
-    auto rng_kernel = get_uniform_rng_kernel(sycl_target, 40, root_seed);
+    auto rng_kernel =
+        get_uniform_rng_kernel(sycl_target, 40, this->seed + this->rank);
 
     for (const auto &v : this->config->get_reactions())
     {
@@ -92,8 +92,8 @@ void ReactionSystem::set_up_reactions()
         }
         else if (std::get<0>(v) == "Recombination")
         {
-            setup_recomb_controller();
             create_markers(std::get<1>(v)[0]);
+            setup_recomb_controller();
             auto electron_species = Species("ELECTRON", 5.5e-4, -1.0);
             auto neutral_species  = Species(
                 std::get<1>(v)[0], this->species_map[std::get<1>(v)[0]].mass,
@@ -270,6 +270,9 @@ void ReactionSystem::finish_setup(
 
     if (marker_group)
     {
+        this->marker_group->hybrid_move();
+        this->marker_cell_id_translation->execute();
+        this->marker_group->cell_move();
         partitions = particle_group_partition(this->marker_group,
                                               Sym<INT>("INTERNAL_STATE"),
                                               this->marker_map.size());
@@ -306,12 +309,44 @@ void ReactionSystem::setup_recomb_controller()
     }
 }
 
+void ReactionSystem::diag_setup()
+{
+    ParticleSystem::diag_setup();
+
+    this->marker_diag_components = {0};
+    this->marker_diag_syms       = {Sym<REAL>("WEIGHT")};
+    for (auto &[k, v] : this->marker_map)
+    {
+        this->marker_diag_fields[v.id].emplace_back(
+            MemoryManager<DisContField>::AllocateSharedPtr(
+                *std::dynamic_pointer_cast<DisContField>(this->proto_field)));
+        this->marker_diagnostic_project[v.id] =
+            std::make_shared<FieldProject<DisContField>>(
+                this->marker_diag_fields[v.id], this->marker_group,
+                this->marker_cell_id_translation);
+    }
+}
+
+void ReactionSystem::diag_project()
+{
+    ParticleSystem::diag_project();
+    for (auto &[k, v] : this->marker_map)
+    {
+        this->marker_diagnostic_project[v.id]->project(
+            v.sub_group, this->marker_diag_syms, this->marker_diag_components);
+    }
+}
+
 void ReactionSystem::create_markers(std::string k)
 {
     if (!this->marker_group)
+    {
         this->marker_group = std::make_shared<ParticleGroup>(
             this->domain, this->particle_spec, this->sycl_target);
-
+        this->marker_cell_id_translation = std::make_shared<CellIDTranslation>(
+            this->sycl_target, this->marker_group->cell_id_dat,
+            this->particle_mesh_interface);
+    }
     double particle_mass, particle_charge;
     this->config->load_particle_species_parameter(k, "Mass", particle_mass,
                                                   1.0);
@@ -322,10 +357,10 @@ void ReactionSystem::create_markers(std::string k)
     marker_map[k] =
         SpeciesInfo{id, particle_mass, particle_charge + 1.0, nullptr};
 
-    // long particle_number =
-    // this->config->get_particle_species_initial_N(k);
-    long particle_number = 100;
-    
+    unsigned long particle_number;
+    this->config->get_session()->LoadParameter("markers_per_cell",
+                                               particle_number, 100);
+
     if (particle_number > 0)
     {
         std::vector<std::vector<double>> positions;
@@ -368,32 +403,66 @@ void ReactionSystem::create_markers(std::string k)
             this->total_num_markers_added += N;
         }
     }
+
+    auto rng_normal = NESO::RNGToolkit::create_rng<REAL>(
+        NESO::RNGToolkit::Distribution::Normal<REAL>{0.0, 1.0},
+        this->seed + this->rank, sycl_target->device,
+        sycl_target->device_index);
+
+    // Create an interface between NESO-RNG-Toolkit and NESO-Particles KernelRNG
+    auto rng_interface =
+        make_rng_generation_function<GenericDeviceRNGGenerationFunction, REAL>(
+            [=](REAL *d_ptr, const std::size_t num_samples) -> int
+            { return rng_normal->get_samples(d_ptr, num_samples); });
+    this->rng_kernel =
+        host_per_particle_block_rng<REAL>(rng_interface, this->vdim);
 }
+
 void ReactionSystem::set_marker_weights()
 {
     for (auto &[k, v] : this->marker_map)
     {
+        int dim = this->vdim;
         particle_loop(
             "set_marker_weight", marker_map[k].sub_group,
-            [=](auto ion_dens_prop, auto mass_prop, auto weight_prop)
+            [=](auto ion_dens_prop, auto mass_prop, auto weight_prop,
+                auto speed_prop, auto temp_prop, auto vel_prop, auto INDEX,
+                auto RNG)
             {
                 auto updated_weight = ion_dens_prop.at(0) * mass_prop.at(0);
                 weight_prop.at(0)   = updated_weight;
+                for (int dx = 0; dx < dim; dx++)
+                {
+                    vel_prop.at(dx) = speed_prop.at(dx) / updated_weight;
+                    bool valid;
+                    vel_prop.at(dx) +=
+                        RNG.at(INDEX, dx, &valid) *
+                        sycl::sqrt(temp_prop.at(0) / updated_weight);
+                }
             },
             Access::read(Sym<REAL>(k + "_DENSITY")),
-            Access::read(Sym<REAL>("M")), Access::write(Sym<REAL>("WEIGHT")))
+            Access::read(Sym<REAL>("M")), Access::write(Sym<REAL>("WEIGHT")),
+            Access::read(Sym<REAL>(k + "_FLOW_SPEED")),
+            Access::read(Sym<REAL>(k + "_TEMPERATURE")),
+            Access::write(Sym<REAL>("VELOCITY")),
+            Access::read(ParticleLoopIndex{}), Access::read(this->rng_kernel))
             ->execute();
     }
 }
 
 void ReactionSystem::output_setup(std::vector<Sym<REAL>> &syms)
 {
-    init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
-                Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"),
-                Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
-                Sym<REAL>("ELECTRON_DENSITY"),
-                Sym<REAL>("ELECTRON_TEMPERATURE"), syms, Sym<REAL>("WEIGHT"),
-                Sym<INT>("ID"), Sym<REAL>("TOT_REACTION_RATE"));
+    syms.push_back(Sym<REAL>("WEIGHT"));
+    syms.push_back(Sym<REAL>("TOT_REACTION_RATE"));
+    // Create H5Part instance
+    this->h5part = std::make_shared<H5Part>(
+        "particle_trajectory.h5part", this->particle_group,
+        Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"), syms);
+    syms.push_back(Sym<REAL>("M"));
+    if (this->marker_group)
+        this->h5part_marker = std::make_shared<H5Part>(
+            "marker_particles.h5part", this->marker_group, Sym<INT>("CELL_ID"),
+            Sym<INT>("INTERNAL_STATE"), syms);
 }
 
 ReactionSystem::ReactionsBoundary::ReactionsBoundary(

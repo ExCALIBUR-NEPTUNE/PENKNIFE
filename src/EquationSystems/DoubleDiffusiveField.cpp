@@ -9,18 +9,6 @@ std::string DoubleDiffusiveField::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "DoubleDiffusiveField", DoubleDiffusiveField::create,
         "Solves for two diffusive fields (n, e) with anisotropy");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<DoubleDiffusiveField>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 DoubleDiffusiveField::DoubleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,

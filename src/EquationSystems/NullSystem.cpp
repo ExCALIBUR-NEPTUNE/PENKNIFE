@@ -9,18 +9,6 @@ std::string NullSystem::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "NullSystem", NullSystem::create,
         "Only advances particles with no fluid solve");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<NullSystem>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 NullSystem::NullSystem(const LU::SessionReaderSharedPtr &session,
                        const SD::MeshGraphSharedPtr &graph)
@@ -76,10 +64,12 @@ void NullSystem::v_InitObject(bool DeclareFields)
         std::vector<Sym<REAL>> eval_syms;
         std::vector<int> eval_comps;
         std::vector<Array<OneD, NekDouble> *> eval_srcs;
+        std::vector<Sym<REAL>> out_syms;
 
         eval_comps.push_back(0);
         eval_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
         eval_srcs.push_back(&ne->UpdatePhys());
+        out_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
 
         if (Te)
         {
@@ -106,6 +96,7 @@ void NullSystem::v_InitObject(bool DeclareFields)
             eval_comps.push_back(0);
             eval_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
             eval_srcs.push_back(&this->ni[v.name]);
+            out_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
 
             this->Ti[v.name] = Array<OneD, NekDouble>(this->n_pts, 0.0);
             eval_comps.push_back(0);
@@ -140,7 +131,6 @@ void NullSystem::v_InitObject(bool DeclareFields)
 
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
-        std::vector<Sym<REAL>> out_syms;
 
         int cnt = 0;
         for (const auto &[s, v] : this->GetIons())

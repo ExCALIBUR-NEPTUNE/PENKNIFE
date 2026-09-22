@@ -2,7 +2,6 @@
 #define PLASMA_SYSTEM_HPP
 
 #include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
-#include "nektar_interface/solver_base/time_evolved_eqnsys_base.hpp"
 #include "nektar_interface/utilities.hpp"
 
 #include <SolverUtils/AdvectionSystem.h>
@@ -26,8 +25,6 @@ namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 namespace SU = Nektar::SolverUtils;
 
-using namespace NESO::Solvers;
-
 namespace PENKNIFE
 {
 
@@ -35,8 +32,7 @@ namespace PENKNIFE
  * @brief Equation system for the PENKNIFE solver
  *
  */
-class PlasmaSystem
-    : public TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>
+class PlasmaSystem : public SU::UnsteadySystem
 {
     friend class MagneticField;
     friend class PlasmaBaseBndCond;
@@ -44,23 +40,6 @@ class PlasmaSystem
     friend class Closure;
 
 public:
-    friend class MemoryManager<PlasmaSystem>;
-
-    /// Name of class
-    static std::string class_name;
-
-    /**
-     * @brief Create an instance of this class and initialise it.
-     */
-    static SU::EquationSystemSharedPtr create(
-        const LU::SessionReaderSharedPtr &session,
-        const SD::MeshGraphSharedPtr &graph)
-    {
-        SU::EquationSystemSharedPtr p =
-            MemoryManager<PlasmaSystem>::AllocateSharedPtr(session, graph);
-        p->InitObject();
-        return p;
-    }
 
     virtual std::shared_ptr<ParticleSystem> GetParticleSystem();
 
@@ -103,6 +82,23 @@ protected:
     PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                  const SD::MeshGraphSharedPtr &graph);
 
+    NESOReaderSharedPtr neso_config;
+
+    NESO::NektarFieldIndexMap field_to_index;
+
+    /// Store mesh dims and number of quad points as member vars for convenience
+    int n_dims;
+    int n_pts;
+
+    /// Particle system
+    std::shared_ptr<ParticleSystem> particle_sys;
+
+    /// Flag identifying whether particles were enabled in the config file
+    bool particles_enabled;
+
+    /// List of field names required by the solver
+    std::vector<std::string> required_fld_names;
+
     NekDouble mesh_length; // mesh conversion to m
     NekDouble Nnorm;       // Density normalisation to m^-3
     NekDouble Tnorm;       // Temperature normalisation to eV
@@ -136,8 +132,6 @@ protected:
     MR::DisContFieldSharedPtr Te;
     Array<OneD, MR::DisContFieldSharedPtr> ve;
 
-    Array<OneD, MR::ExpListSharedPtr> m_allfields;
-    Array<OneD, MR::ExpListSharedPtr> m_saved;
     Array<OneD, MR::ExpListSharedPtr> m_indfields;
     int n_indep_fields;
     int n_species;
@@ -147,9 +141,6 @@ protected:
      * particle evaluation/projection methods
      */
     std::vector<MR::DisContFieldSharedPtr> src_fields;
-
-    /// Bool to enable/disable growth rate recordings
-    bool energy_enstrophy_recording_enabled;
 
     VariableConverterSharedPtr m_varConv;
 
@@ -170,7 +161,7 @@ protected:
 
     std::shared_ptr<ImplicitHelper> m_implHelper;
 
-    virtual void load_params() override;
+    virtual void load_params();
 
     void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
                   Array<OneD, Array<OneD, NekDouble>> &out_arr,
@@ -186,7 +177,7 @@ protected:
         std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
         std::vector<std::string> &variables) override;
     void v_DoSolve() override;
-
+    virtual void v_DoInitialise(bool dump_initial_conditions) override;
     virtual void v_InitObject(bool DeclareField) override;
     virtual bool v_PostIntegrate(int step) override;
     virtual bool v_PreIntegrate(int step) override;

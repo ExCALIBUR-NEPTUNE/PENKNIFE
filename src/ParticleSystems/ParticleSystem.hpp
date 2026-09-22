@@ -8,56 +8,44 @@
 #include <nektar_interface/function_projection.hpp>
 #include <nektar_interface/particle_boundary_conditions.hpp>
 #include <nektar_interface/particle_cell_mapping/particle_cell_mapping_common.hpp>
-#include <nektar_interface/solver_base/partsys_base.hpp>
+#include <nektar_interface/solver_base/neso_reader.hpp>
+
 #include <nektar_interface/utilities.hpp>
 #include <neso_particles.hpp>
 
 namespace PENKNIFE
 {
+namespace LU = Nektar::LibUtilities;
+namespace SD = Nektar::SpatialDomains;
 
+/// Struct used to set common options for particle systems
+struct PartSysOptions
+{
+    int extend_halos_offset = 0;
+};
+
+class ParticleSystem;
+typedef LU::NekFactory<std::string, ParticleSystem, const NESOReaderSharedPtr,
+                       const SD::MeshGraphSharedPtr>
+    ParticleSystemFactory;
+ParticleSystemFactory &GetParticleSystemFactory();
 /**
  * @brief
  */
-class ParticleSystem : public PartSysBase
+class ParticleSystem
 {
-
 public:
-    static std::string class_name;
-    /**
-     * @brief Create an instance of this class and initialise it.
-     */
-    static ParticleSystemSharedPtr create(const NESOReaderSharedPtr &session,
-                                          const SD::MeshGraphSharedPtr &graph)
-    {
-        ParticleSystemSharedPtr p =
-            MemoryManager<ParticleSystem>::AllocateSharedPtr(session, graph);
-        return p;
-    }
-
-    /**
-     *  Create a new instance.
-     *
-     *  @param session Particle reader to use for parameters and simulation
-     * specification.
-     *  @param graph Nektar++ MeshGraph on which particles exist.
-     *  @param comm (optional) MPI communicator to use - default MPI_COMM_WORLD.
-     *
-     */
     ParticleSystem(NESOReaderSharedPtr session, SD::MeshGraphSharedPtr graph,
                    MPI_Comm comm = MPI_COMM_WORLD);
-
-    virtual ~ParticleSystem() override;
-
-    /// Disable (implicit) copies.
-    ParticleSystem(const ParticleSystem &st) = delete;
-    /// Disable (implicit) copies.
+    virtual ~ParticleSystem();
+    ParticleSystem(const ParticleSystem &st)           = delete;
     ParticleSystem &operator=(ParticleSystem const &a) = delete;
 
-    virtual void init_spec() override;
-    virtual void init_object() override;
-    virtual void set_up_species() override;
-    virtual void set_up_boundaries();
-    virtual void free() override;
+    virtual void init_spec();
+    virtual void init_object();
+    virtual void set_up_species();
+    virtual void set_up_boundaries() {};
+    virtual void free();
 
     struct SpeciesInfo
     {
@@ -70,6 +58,55 @@ public:
     virtual std::map<std::string, SpeciesInfo> &get_species()
     {
         return species_map;
+    }
+
+    void read_params()
+    {
+        this->config->get_session()->LoadParameter(PART_OUTPUT_FREQ_STR,
+                                                   this->output_freq, 0);
+        report_param("Output frequency (steps)", this->output_freq);
+    }
+    template <typename T> void report_param(std::string label, T val)
+    {
+        // form stringstream and store string value in private map
+        std::stringstream ss;
+        ss << val;
+        param_vals_to_report[label] = ss.str();
+    }
+    void add_params_report()
+    {
+        std::cout << "Particle settings:" << std::endl;
+        for (auto const &[param_lbl, param_str_val] :
+             this->param_vals_to_report)
+        {
+            std::cout << "  " << param_lbl << ": " << param_str_val
+                      << std::endl;
+        }
+        std::cout
+            << "============================================================="
+               "=========="
+            << std::endl
+            << std::endl;
+    }
+    virtual void write(const int step)
+    {
+        if (this->h5part)
+        {
+            if (this->sycl_target->comm_pair.rank_parent == 0)
+            {
+                nprint("Writing particle properties at step", step);
+            }
+            this->h5part->write();
+        }
+        else
+        {
+            if (this->sycl_target->comm_pair.rank_parent == 0)
+            {
+                nprint("Ignoring call to write particle data because an output "
+                       "file "
+                       "wasn't set up. init_output() not called?");
+            }
+        }
     }
 
     /**
@@ -121,8 +158,7 @@ public:
         std::vector<Sym<REAL>> &syms, std::vector<int> &components);
 
     virtual void diag_setup();
-
-    virtual void output_setup(std::vector<Sym<REAL>> &syms);
+    virtual void output_setup(std::vector<Sym<REAL>> &syms){};
 
     inline virtual void diag_project()
     {
@@ -419,10 +455,53 @@ protected:
         integrate_inner_neutral(neutrals, dt_inner);
     }
 
-    const long size;
-    const long rank;
+    inline static const std::string NUM_PARTS_TOT_STR = "num_particles_total";
+    inline static const std::string NUM_PARTS_PER_CELL_STR =
+        "num_particles_per_cell";
+    inline static const std::string PART_OUTPUT_FREQ_STR =
+        "particle_output_freq";
+
+    /// NESO-Particles ParticleSpec;
+    ParticleSpec particle_spec;
+    /// NESO-Particles ParticleGroup
+    ParticleGroupSharedPtr particle_group;
+
+    /// Compute target
+    MPI_Comm comm;
+    SYCLTargetSharedPtr sycl_target;
+    long size;
+    long rank;
+    /// Object used to map to/from nektar geometry ids to 0,N-1
+    std::shared_ptr<CellIDTranslation> cell_id_translation;
+    /// MPI communicator
+
+    /// NESO-Particles domain.
+    DomainSharedPtr domain;
+    /// Pointer to Nektar Meshgraph object
+    SD::MeshGraphSharedPtr graph;
+    /// HDF5 output file
+    std::shared_ptr<H5Part> h5part;
+    /// Mapping instance to map particles into nektar++ elements.
+    std::shared_ptr<NektarGraphLocalMapper> nektar_graph_local_mapper;
+    /// Options struct
+    PartSysOptions options;
+    /// HMesh instance that allows particles to move over nektar++ meshes.
+    ParticleMeshInterfaceSharedPtr particle_mesh_interface;
+    /// Pointer to NESOReader object
+    NESOReaderSharedPtr config;
+    /// Output frequency read from config file
+    int output_freq;
+    /**
+     * Map containing parameter name,value pairs to be written to stdout when
+     * the nektar equation system is initialised. Populated with report_param().
+     */
+    std::map<std::string, std::string> param_vals_to_report;
+
+    uint64_t seed;
     std::mt19937 rng_phasespace;
 
+    /// Number of spatial dimensions being used
+    const int ndim;
     const int vdim;
 
     uint64_t total_num_particles_added = 0;
@@ -449,8 +528,6 @@ protected:
     std::vector<Sym<REAL>> eval_syms;
     std::vector<int> eval_comps;
     std::vector<Array<OneD, NekDouble> *> eval_srcs;
-
-    std::shared_ptr<NektarCompositeTruncatedReflection> reflection;
 
     /// Number of particle timesteps per fluid timestep.
     int num_part_substeps;
@@ -479,16 +556,11 @@ protected:
             ->execute();
     }
 
-    virtual void pre_advection(ParticleSubGroupSharedPtr sg)
-    {
-        reflection->pre_advection(sg);
-    };
+    virtual void pre_advection(ParticleSubGroupSharedPtr sg) {};
 
     virtual void apply_boundary_conditions(ParticleSubGroupSharedPtr sg,
-                                           ParticleGroupSharedPtr cg, double dt)
-    {
-        reflection->execute(sg);
-    };
+                                           ParticleGroupSharedPtr cg,
+                                           double dt) {};
 
     auto find_partial_moves(ParticleSubGroupSharedPtr sg, const double dt)
     {
@@ -528,16 +600,9 @@ protected:
     virtual inline void apply_timestep(const double dt)
     {
         apply_timestep_reset();
-
         apply_timestep_inner(dt);
     }
 
-    /**
-     *  Apply boundary conditions and transfer particles between MPI
-     * ranks.
-     * // Move some of this to PartSysBase / make it a pure-virtual
-     * func?
-     */
     inline void transfer_particles()
     {
         auto r = ProfileRegion("NESO", "transfer_particles");

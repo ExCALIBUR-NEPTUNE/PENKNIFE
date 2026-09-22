@@ -7,7 +7,7 @@
         The composite index for the domain is expected to be 0 if the mesh was generated from the included .geo file
      -->
     <EXPANSIONS>
-       <E COMPOSITE="C[0]" NUMMODES="2" TYPE="MODIFIED" FIELDS="n,e" />
+       <E COMPOSITE="C[0]" NUMMODES="3" TYPE="MODIFIED" FIELDS="n,e" />
     </EXPANSIONS>
 
     <CONDITIONS>
@@ -37,11 +37,12 @@
             <P> Bnorm = 1.0 </P>
             <!-- Timestepping and output options -->
             <P> TimeStep      = 5            </P>
-            <P> NumSteps      = 20              </P>
+            <P> NumSteps      = 10              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 10     </P>
             <P> IO_CheckSteps  = 10     </P>
             <P> particle_output_freq = 1          </P>
+            <P> markers_per_cell = 200          </P>
 
             <P> epsilon         = 1.0   </P>
             <!-- Anisotropic diffusion -->
@@ -128,12 +129,12 @@
             <KN NAME="D">
                 <P> Mass = 2.0 </P>
                 <INITIAL N="1">
-                    <E VAR="W" VALUE="0.0000000005"/>
+                    <E VAR="W" VALUE="0.0001"/>
                     <!-- <E VAR="X" VALUE="1.25"/> -->
                     <!-- <E VAR="Y" VALUE="0"/> -->
                     <E VAR="n" VALUE="exp((-(x-rc+rs)*(x-rc+rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
                     <!-- <E VAR="T" VALUE="10"/> -->
-                    <E VAR="V" VALUE="0.001"/>
+                    <E VAR="V" VALUE="0.01"/>
                 </INITIAL>
                 <SOURCES>
                     <!-- <P N="100">
@@ -148,12 +149,12 @@
             <KN NAME="T">
                 <P> Mass = 2.0 </P>
                 <INITIAL N="1">
-                    <E VAR="W" VALUE="0.0000000005"/>
+                    <E VAR="W" VALUE="0.0001"/>
                     <!-- <E VAR="X" VALUE="2.75"/> -->
                     <!-- <E VAR="Y" VALUE="0"/> -->
                     <E VAR="n" VALUE="exp((-(x-rc-rs)*(x-rc-rs)/(sr*sr))+(-(y-yc-ys)*(y-yc-ys)/(sy*sy)))" />
                     <!-- <E VAR="T" VALUE="10"/> -->
-                    <E VAR="V" VALUE="0.001"/>
+                    <E VAR="V" VALUE="0.01"/>
                 </INITIAL>
                 <SOURCES>
                     <!-- <P N="100">
