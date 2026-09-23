@@ -1,7 +1,9 @@
 #ifndef REACTIONS_HPP
 #define REACTIONS_HPP
-#include "AMJUEL.hpp"
+
 #include <neso_rng_toolkit.hpp>
+
+#include "AMJUEL.hpp"
 
 namespace PENKNIFE
 {

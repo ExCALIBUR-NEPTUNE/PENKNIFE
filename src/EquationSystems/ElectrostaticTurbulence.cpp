@@ -1,7 +1,8 @@
-#include "ElectrostaticTurbulence.hpp"
-#include "../RiemannSolvers/PlasmaSolver.hpp"
 #include <SolverUtils/Advection/AdvectionNonConservative.h>
 #include <SolverUtils/Advection/AdvectionWeakDG.h>
+
+#include "ElectrostaticTurbulence.hpp"
+#include "../RiemannSolvers/PlasmaSolver.hpp"
 
 namespace PENKNIFE
 {

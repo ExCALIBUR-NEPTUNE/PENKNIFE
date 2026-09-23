@@ -3,8 +3,6 @@
 
 #include "Closure.hpp"
 
-namespace SD = Nektar::SpatialDomains;
-
 namespace PENKNIFE
 {
 // Forward declarations

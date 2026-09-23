@@ -1,7 +1,5 @@
 #include "WallBC.hpp"
 
-using namespace std;
-
 namespace PENKNIFE
 {
 

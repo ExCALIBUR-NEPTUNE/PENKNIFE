@@ -1,5 +1,6 @@
 #ifndef ELECTROSTATICTURBULENCE_HPP
 #define ELECTROSTATICTURBULENCE_HPP
+
 #include "../Misc/VariableConverter.hpp"
 #include "PlasmaSystem.hpp"
 

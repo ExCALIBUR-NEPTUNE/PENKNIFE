@@ -1,17 +1,14 @@
-#ifndef PENKNIFE_PARTICLE_SYSTEM_H
-#define PENKNIFE_PARTICLE_SYSTEM_H
+#ifndef PENKNIFE_PARTICLE_SYSTEM_HPP
+#define PENKNIFE_PARTICLE_SYSTEM_HPP
 
-#include <array>
-
-#include "../Misc/Constants.hpp"
 #include <nektar_interface/function_evaluation.hpp>
 #include <nektar_interface/function_projection.hpp>
 #include <nektar_interface/particle_boundary_conditions.hpp>
 #include <nektar_interface/particle_cell_mapping/particle_cell_mapping_common.hpp>
 #include <nektar_interface/solver_base/neso_reader.hpp>
-
 #include <nektar_interface/utilities.hpp>
-#include <neso_particles.hpp>
+
+#include "../Misc/Constants.hpp"
 
 namespace PENKNIFE
 {

@@ -1,14 +1,15 @@
 #ifndef PLASMA_SYSTEM_HPP
 #define PLASMA_SYSTEM_HPP
 
-#include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
-#include "nektar_interface/utilities.hpp"
-
 #include <SolverUtils/AdvectionSystem.h>
 #include <SolverUtils/Core/Misc.h>
 #include <SolverUtils/Diffusion/Diffusion.h>
 #include <SolverUtils/EquationSystem.h>
 #include <SolverUtils/Forcing/Forcing.h>
+
+#include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
+#include "nektar_interface/utilities.hpp"
+#include <solvers/solver_callback_handler.hpp>
 
 #include "../BoundaryConditions/PlasmaBndConds.hpp"
 #include "../Closures/Closure.hpp"
@@ -17,16 +18,15 @@
 #include "ImplicitHelper.hpp"
 #include "MagneticField.hpp"
 
-#include <solvers/solver_callback_handler.hpp>
 
+
+namespace PENKNIFE
+{
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 namespace SU = Nektar::SolverUtils;
-
-namespace PENKNIFE
-{
 
 /**
  * @brief Equation system for the PENKNIFE solver
@@ -40,7 +40,6 @@ class PlasmaSystem : public SU::UnsteadySystem
     friend class Closure;
 
 public:
-
     virtual std::shared_ptr<ParticleSystem> GetParticleSystem();
 
     /// Callback handler to call user-defined callbacks

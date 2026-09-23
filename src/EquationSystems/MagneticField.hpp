@@ -5,14 +5,14 @@
 #include <MultiRegions/ContField.h>
 #include <SolverUtils/Core/SessionFunction.h>
 
+namespace PENKNIFE
+{
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 namespace SU = Nektar::SolverUtils;
 
-namespace PENKNIFE
-{
 class PlasmaSystem;
 
 class MagneticField
@@ -25,7 +25,8 @@ public:
                   Array<OneD, MR::DisContFieldSharedPtr> &B, const int dim);
 
     void Read(NekDouble time = 0);
-    void Solve(Array<OneD, Array<OneD, NekDouble>> &J = NullNekDoubleArrayOfArray);
+    void Solve(
+        Array<OneD, Array<OneD, NekDouble>> &J = NullNekDoubleArrayOfArray);
     void Update(NekDouble time = 0);
 
 private:
@@ -53,7 +54,7 @@ private:
     Array<OneD, NekDouble> Br;
     Array<OneD, NekDouble> Bphi;
 
-    //for mean file
+    // for mean file
     FieldUtils::Interpolator<std::vector<MR::ExpListSharedPtr>> interp;
     LU::PtsIO ptsIO;
     std::string filename;

@@ -1,5 +1,6 @@
 #ifndef NULLSYSTEM_HPP
 #define NULLSYSTEM_HPP
+
 #include "PlasmaSystem.hpp"
 
 namespace PENKNIFE

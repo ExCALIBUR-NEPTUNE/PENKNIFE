@@ -3,11 +3,12 @@
 
 #include "PlasmaSolver.hpp"
 
+namespace PENKNIFE
+{
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace SU = Nektar::SolverUtils;
-namespace PENKNIFE
-{
+
 class MultiFieldUpwindSolver : public PlasmaSolver
 {
 public:

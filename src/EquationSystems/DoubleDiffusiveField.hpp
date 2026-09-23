@@ -1,5 +1,6 @@
 #ifndef DOUBLEDIFFUSIVEFIELD_HPP
 #define DOUBLEDIFFUSIVEFIELD_HPP
+
 #include "../Misc/VariableConverter.hpp"
 #include "PlasmaSystem.hpp"
 

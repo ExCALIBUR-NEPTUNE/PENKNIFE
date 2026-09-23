@@ -3,19 +3,19 @@
 
 #include "PlasmaSolver.hpp"
 
+namespace PENKNIFE
+{
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace SU = Nektar::SolverUtils;
-namespace PENKNIFE
-{
+
 class VorticityAverageSolver : public PlasmaSolver
 {
 public:
     static SU::RiemannSolverSharedPtr create(
         const LU::SessionReaderSharedPtr &pSession)
     {
-        return SU::RiemannSolverSharedPtr(
-            new VorticityAverageSolver(pSession));
+        return SU::RiemannSolverSharedPtr(new VorticityAverageSolver(pSession));
     }
 
     static std::string solverName;

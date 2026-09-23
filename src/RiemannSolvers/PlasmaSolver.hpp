@@ -4,11 +4,12 @@
 #include <SolverUtils/RiemannSolvers/RiemannSolver.h>
 #include <nektar_interface/solver_base/neso_reader.hpp>
 
+namespace PENKNIFE
+{
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace SU = Nektar::SolverUtils;
-namespace PENKNIFE
-{
+
 class PlasmaSolver : public SU::RiemannSolver
 {
 public:
@@ -19,29 +20,29 @@ protected:
 
     PlasmaSolver(const LU::SessionReaderSharedPtr &pSession);
 
-    using ND = NekDouble;
-    void v_Solve(const int nDim, const Array<OneD, const Array<OneD, ND>> &Fwd,
-                 const Array<OneD, const Array<OneD, ND>> &Bwd,
-                 Array<OneD, Array<OneD, ND>> &flux) override;
+    void v_Solve(const int nDim,
+                 const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
+                 const Array<OneD, const Array<OneD, NekDouble>> &Bwd,
+                 Array<OneD, Array<OneD, NekDouble>> &flux) override;
 
     virtual void v_ArraySolve(
-        [[maybe_unused]] const Array<OneD, const Array<OneD, ND>> &Fwd,
-        [[maybe_unused]] const Array<OneD, const Array<OneD, ND>> &Bwd,
-        [[maybe_unused]] Array<OneD, Array<OneD, ND>> &flux)
+        [[maybe_unused]] const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
+        [[maybe_unused]] const Array<OneD, const Array<OneD, NekDouble>> &Bwd,
+        [[maybe_unused]] Array<OneD, Array<OneD, NekDouble>> &flux)
     {
         NEKERROR(ErrorUtil::efatal,
                  "This function should be defined by subclasses.");
     }
 
     virtual void v_PointSolve(
-        [[maybe_unused]] ND rhoL, [[maybe_unused]] ND rhouL,
-        [[maybe_unused]] ND rhovL, [[maybe_unused]] ND rhowL,
-        [[maybe_unused]] ND EL, [[maybe_unused]] ND rhoR,
-        [[maybe_unused]] ND rhouR, [[maybe_unused]] ND rhovR,
-        [[maybe_unused]] ND rhowR, [[maybe_unused]] ND ER,
-        [[maybe_unused]] ND &rhof, [[maybe_unused]] ND &rhouf,
-        [[maybe_unused]] ND &rhovf, [[maybe_unused]] ND &rhowf,
-        [[maybe_unused]] ND &Ef)
+        [[maybe_unused]] NekDouble rhoL, [[maybe_unused]] NekDouble rhouL,
+        [[maybe_unused]] NekDouble rhovL, [[maybe_unused]] NekDouble rhowL,
+        [[maybe_unused]] NekDouble EL, [[maybe_unused]] NekDouble rhoR,
+        [[maybe_unused]] NekDouble rhouR, [[maybe_unused]] NekDouble rhovR,
+        [[maybe_unused]] NekDouble rhowR, [[maybe_unused]] NekDouble ER,
+        [[maybe_unused]] NekDouble &rhof, [[maybe_unused]] NekDouble &rhouf,
+        [[maybe_unused]] NekDouble &rhovf, [[maybe_unused]] NekDouble &rhowf,
+        [[maybe_unused]] NekDouble &Ef)
     {
         NEKERROR(ErrorUtil::efatal,
                  "This function should be defined by subclasses.");

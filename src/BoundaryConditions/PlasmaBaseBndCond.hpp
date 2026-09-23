@@ -1,20 +1,20 @@
 #ifndef PLASMA_BASEBNDCOND_HPP
 #define PLASMA_BASEBNDCOND_HPP
 
-#include <string>
-
-#include "../Misc/VariableConverter.hpp"
 #include <LibUtilities/BasicUtils/NekFactory.hpp>
 #include <LibUtilities/BasicUtils/SharedArray.hpp>
 #include <MultiRegions/ExpList.h>
+
+#include "../Misc/VariableConverter.hpp"
+
+namespace PENKNIFE
+{
 
 using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
 
-namespace PENKNIFE
-{
 class PlasmaSystem;
 class PlasmaBaseBndCond;
 
@@ -105,13 +105,13 @@ protected:
 
     /// Constructor
     PlasmaBaseBndCond(const LU::SessionReaderSharedPtr &pSession,
-                       const std::weak_ptr<PlasmaSystem> &pSystem,
-                       const Array<OneD, MR::ExpListSharedPtr> &pFields,
-                       const Array<OneD, MR::DisContFieldSharedPtr> &pB,
-                       const Array<OneD, MR::DisContFieldSharedPtr> &pE,
-                       Array<OneD, SpatialDomains::BoundaryConditionShPtr> cond,
-                       Array<OneD, MultiRegions::ExpListSharedPtr> exp,
-                       const int pSpaceDim, const int bcRegion);
+                      const std::weak_ptr<PlasmaSystem> &pSystem,
+                      const Array<OneD, MR::ExpListSharedPtr> &pFields,
+                      const Array<OneD, MR::DisContFieldSharedPtr> &pB,
+                      const Array<OneD, MR::DisContFieldSharedPtr> &pE,
+                      Array<OneD, SpatialDomains::BoundaryConditionShPtr> cond,
+                      Array<OneD, MultiRegions::ExpListSharedPtr> exp,
+                      const int pSpaceDim, const int bcRegion);
 
     virtual void v_Apply(
         const Array<OneD, const Array<OneD, NekDouble>> &Fwd,

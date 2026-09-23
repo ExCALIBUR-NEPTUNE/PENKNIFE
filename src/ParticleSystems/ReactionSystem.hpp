@@ -1,8 +1,9 @@
 #ifndef REACTIONSYSTEM_HPP
 #define REACTIONSYSTEM_HPP
 
-#include "ParticleSystem.hpp"
 #include <reactions/reactions.hpp>
+
+#include "ParticleSystem.hpp"
 
 using namespace VANTAGE::Reactions;
 

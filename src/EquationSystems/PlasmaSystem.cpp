@@ -1,9 +1,9 @@
-#include "PlasmaSystem.hpp"
+#include <boost/core/ignore_unused.hpp>
 
 #include <LibUtilities/BasicUtils/Vmath.hpp>
-
 #include <LibUtilities/TimeIntegration/TimeIntegrationScheme.h>
-#include <boost/core/ignore_unused.hpp>
+
+#include "PlasmaSystem.hpp"
 
 namespace PENKNIFE
 {

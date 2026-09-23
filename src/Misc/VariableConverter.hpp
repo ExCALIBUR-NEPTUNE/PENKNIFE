@@ -1,12 +1,12 @@
 #ifndef PLASMA_VARIABLECONVERTER_HPP
 #define PLASMA_VARIABLECONVERTER_HPP
 
-#include "EquationOfState.hpp"
-#include "nektar_interface/utilities.hpp"
 #include <MultiRegions/ContField.h>
 #include <SolverUtils/UnsteadySystem.h>
 
-namespace SD = Nektar::SpatialDomains;
+#include "nektar_interface/utilities.hpp"
+
+#include "EquationOfState.hpp"
 
 namespace PENKNIFE
 {

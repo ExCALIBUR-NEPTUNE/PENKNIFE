@@ -6,11 +6,10 @@
 #include <LibUtilities/Memory/NekMemoryManager.hpp>
 #include <LibUtilities/SimdLib/tinysimd.hpp>
 
-using namespace Nektar;
-namespace LU = Nektar::LibUtilities;
-
 namespace PENKNIFE
 {
+using namespace Nektar;
+
 //  Forward declaration
 class EquationOfState;
 
@@ -18,7 +17,8 @@ class EquationOfState;
 typedef std::shared_ptr<EquationOfState> EquationOfStateSharedPtr;
 
 /// Declaration of the equation of state factory
-typedef LU::NekFactory<std::string, EquationOfState> EquationOfStateFactory;
+typedef LibUtilities::NekFactory<std::string, EquationOfState>
+    EquationOfStateFactory;
 
 /// Declaration of the equation of state factory singleton
 EquationOfStateFactory &GetEquationOfStateFactory();
