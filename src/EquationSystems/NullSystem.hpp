@@ -1,5 +1,6 @@
 #ifndef NULLSYSTEM_HPP
 #define NULLSYSTEM_HPP
+
 #include "PlasmaSystem.hpp"
 
 namespace PENKNIFE
@@ -49,6 +50,10 @@ private:
     std::vector<int> ni_src_idx;
     std::vector<int> vi_src_idx;
     std::vector<int> ei_src_idx;
+
+    std::map<std::string, Array<OneD, NekDouble>> ni;
+    std::map<std::string, Array<OneD, NekDouble>> Ti;
+    std::map<std::string, std::vector<Array<OneD, NekDouble>>> vi;
 
     NekDouble m_epsilon;
     bool m_useSpecVanVisc;

@@ -4,16 +4,15 @@
 #include <LibUtilities/BasicConst/NektarUnivTypeDefs.hpp>
 #include <LibUtilities/BasicUtils/NekFactory.hpp>
 #include <LibUtilities/Memory/NekMemoryManager.hpp>
-
-#include "nektar_interface/utilities.hpp"
 #include <MultiRegions/ContField.h>
 #include <SolverUtils/UnsteadySystem.h>
 
-namespace SD = Nektar::SpatialDomains;
-namespace LU = Nektar::LibUtilities;
+#include "nektar_interface/utilities.hpp"
 
 namespace PENKNIFE
 {
+namespace SD = Nektar::SpatialDomains;
+namespace LU = Nektar::LibUtilities;
 // Forward declarations
 class PlasmaSystem;
 class Closure;
@@ -48,6 +47,7 @@ public:
     };
 
     int ee_idx;
+
 protected:
     virtual void v_EvaluateClosure(
         const Array<OneD, Array<OneD, NekDouble>> &values,
@@ -61,7 +61,7 @@ protected:
     const Array<OneD, Array<OneD, NekDouble>> &b_unit;
     const Array<OneD, NekDouble> &mag_B;
     int omega_idx;
-    
+
     int n_pts;
     size_t m_spacedim;
 

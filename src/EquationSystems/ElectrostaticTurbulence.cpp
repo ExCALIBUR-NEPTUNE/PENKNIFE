@@ -1,7 +1,8 @@
-#include "ElectrostaticTurbulence.hpp"
-#include "../RiemannSolvers/PlasmaSolver.hpp"
 #include <SolverUtils/Advection/AdvectionNonConservative.h>
 #include <SolverUtils/Advection/AdvectionWeakDG.h>
+
+#include "ElectrostaticTurbulence.hpp"
+#include "../RiemannSolvers/PlasmaSolver.hpp"
 
 namespace PENKNIFE
 {
@@ -12,19 +13,6 @@ std::string ElectrostaticTurbulence::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "ElectrostaticTurbulence", ElectrostaticTurbulence::create,
         "Solves electrostatic turbulence with anisotropic diffusion");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<ElectrostaticTurbulence>::AllocateSharedPtr(session,
-                                                                  graph);
-    p->InitObject();
-    return p;
-}
 
 ElectrostaticTurbulence::ElectrostaticTurbulence(
     const LU::SessionReaderSharedPtr &session,

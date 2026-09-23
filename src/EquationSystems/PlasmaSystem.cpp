@@ -1,37 +1,53 @@
-#include "PlasmaSystem.hpp"
+#include <boost/core/ignore_unused.hpp>
 
 #include <LibUtilities/BasicUtils/Vmath.hpp>
-
 #include <LibUtilities/TimeIntegration/TimeIntegrationScheme.h>
-#include <boost/core/ignore_unused.hpp>
+
+#include "PlasmaSystem.hpp"
 
 namespace PENKNIFE
 {
 
-/// Name of class
-static std::string class_name;
-std::string PlasmaSystem::class_name =
-    SU::GetEquationSystemFactory().RegisterCreatorFunction(
-        "Plasma", PlasmaSystem::create,
-        "Plasma equation system. Runs in either a 2D or 3D "
-        "domain.");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<PlasmaSystem>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
-
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                            const SD::MeshGraphSharedPtr &graph)
-    : TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>(session, graph)
+    : SU::UnsteadySystem(session, graph),
+      field_to_index(session->GetVariables())
 {
+
+    this->particles_enabled = false;
+    this->neso_config       = std::make_shared<NESOReader>(session);
+
+    this->neso_config->read_species();
+    this->neso_config->read_vantage();
+
+    if (session->DefinesSolverInfo("PARTTYPE"))
+    {
+        NESOASSERT(this->neso_config->get_particle_species().size(),
+                   "ParticleSystem specified in <INFO> but no kinetic species "
+                   "found in <SPECIES>");
+
+        std::string part_sys_name = session->GetSolverInfo("PARTTYPE");
+        NESOASSERT(GetParticleSystemFactory().ModuleExists(part_sys_name),
+                   "ParticleSystem '" + part_sys_name +
+                       "' is not defined.\n"
+                       "Ensure particle system name is correct and module is "
+                       "compiled.\n");
+
+        // The PartSysBase ptr returned from the factory is cast back to the
+        // solver-specific PARTSYS type to allow the eqn_sys to use
+        // solver-specific polymorphism
+        this->particle_sys = GetParticleSystemFactory().CreateInstance(
+            part_sys_name, neso_config, graph);
+        this->particles_enabled = true;
+        this->particle_sys->init_object();
+    }
+    else if (this->neso_config->get_particle_species().size())
+    {
+        NESOASSERT(
+            false,
+            "Kinetic species "
+            "found in <SPECIES> but no ParticleSystem specified in <INFO>");
+    }
 }
 
 std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
@@ -44,8 +60,6 @@ std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
  */
 void PlasmaSystem::load_params()
 {
-    TimeEvoEqnSysBase<SU::UnsteadySystem, ParticleSystem>::load_params();
-
     m_session->LoadParameter("mesh_length", this->mesh_length, 1.);
     m_session->LoadParameter("Nnorm", this->Nnorm, 1e18);
     m_session->LoadParameter("Tnorm", this->Tnorm, 100.);
@@ -62,12 +76,6 @@ void PlasmaSystem::load_params()
     m_session->LoadSolverInfo("MagneticFieldEvolution", transient_field_str,
                               "Static");
     this->transient_field = (transient_field_str == "Transient");
-
-    // Particle-related parameters
-    m_session->LoadParameter("particle_output_freq", particle_output_freq, 0);
-    m_session->LoadParameter("num_particle_steps_per_fluid_step",
-                             this->num_part_substeps, 1);
-    this->part_timestep = m_timestep / this->num_part_substeps;
 }
 
 /**
@@ -215,7 +223,12 @@ void PlasmaSystem::v_ExtraFldOutput(
  */
 void PlasmaSystem::v_InitObject(bool create_field)
 {
-    TimeEvoEqnSysBase::v_InitObject(create_field);
+    SU::UnsteadySystem::v_InitObject(create_field);
+    this->n_dims = m_graph->GetMeshDimension();
+    this->n_pts  = m_fields[0]->GetNpoints();
+
+    // Load parameters
+    load_params();
 
     m_domains          = m_graph->GetDomain();
     m_dom_to_offset[0] = 0;
@@ -361,6 +374,15 @@ void PlasmaSystem::v_InitObject(bool create_field)
                            m_spacedim);
 }
 
+void PlasmaSystem::v_DoInitialise(bool dump_initial_conditions)
+{
+    if (this->m_session->GetComm()->TreatAsRankZero() &&
+        this->particles_enabled)
+    {
+        particle_sys->add_params_report();
+    }
+    UnsteadySystem::v_DoInitialise(dump_initial_conditions);
+}
 /**
  * @brief Initialises the time integration scheme (as specified in the
  * session file), and perform the time integration.
@@ -609,10 +631,7 @@ bool PlasmaSystem::v_PostIntegrate(int step)
 {
     this->solver_callback_handler.call_post_integrate(this);
 
-    // Writes a step of the particle trajectory.
-
-    return TimeEvoEqnSysBase<SU::UnsteadySystem,
-                             ParticleSystem>::v_PostIntegrate(step);
+    return SU::UnsteadySystem::v_PostIntegrate(step);
 }
 
 /**
@@ -631,16 +650,12 @@ bool PlasmaSystem::v_PreIntegrate(int step)
 
     if (this->particles_enabled)
     {
-        if (particle_output_freq > 0 && (step % particle_output_freq) == 0)
-        {
-            this->particle_sys->write(step);
-        }
         for (auto &fld : this->src_fields)
         {
             Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
         }
         this->particle_sys->zero_source_dats();
-        this->particle_sys->integrate(m_time + m_timestep, this->part_timestep);
+        this->particle_sys->integrate(m_time + m_timestep, m_timestep, step);
         this->particle_sys->project_source_terms();
     }
 

@@ -1,5 +1,6 @@
 #ifndef REDUCEDBRAGINSKII_HPP
 #define REDUCEDBRAGINSKII_HPP
+
 #include "../Misc/VariableConverter.hpp"
 #include "PlasmaSystem.hpp"
 

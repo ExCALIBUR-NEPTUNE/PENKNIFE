@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 //
-// File DriftWaveSystem.h
+// File ImplicitHelper.hpp
 //
 // For more information, please see: http://www.nektar.info
 //
@@ -38,10 +38,9 @@
 
 #include <LibUtilities/LinearAlgebra/NekNonlinSysIter.h>
 
-using namespace Nektar::SolverUtils;
-
 namespace Nektar
 {
+using namespace SolverUtils;
 
 /**
  * @brief An equation system for the drift-wave solver.
@@ -50,7 +49,7 @@ class ImplicitHelper
 {
 public:
     ImplicitHelper(LibUtilities::SessionReaderSharedPtr session,
-                   Array<OneD, MultiRegions::ExpListSharedPtr>& fields,
+                   Array<OneD, MultiRegions::ExpListSharedPtr> &fields,
                    LibUtilities::TimeIntegrationSchemeOperators &ode,
                    int nFields)
         : m_session(session), m_fields(fields), m_ode(ode), m_nFields(nFields)

@@ -12,18 +12,6 @@ std::string ReducedBraginskii::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "ReducedBraginskii", ReducedBraginskii::create,
         "Solves reduced Braginskii equations");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<ReducedBraginskii>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
                                      const SD::MeshGraphSharedPtr &graph)
