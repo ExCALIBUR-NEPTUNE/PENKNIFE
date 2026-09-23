@@ -62,9 +62,29 @@ public:
 
     void read_params()
     {
-        this->config->get_session()->LoadParameter(PART_OUTPUT_FREQ_STR,
-                                                   this->output_freq, 0);
-        report_param("Output frequency (steps)", this->output_freq);
+        // get seed from file
+        std::srand(std::time(nullptr));
+        this->config->get_session()->LoadParameter("particle_seed", this->seed,
+                                                   std::rand());
+        this->rng_phasespace = std::mt19937(this->seed + this->rank);
+
+        // Particle-related parameters
+        config->get_session()->LoadParameter("particle_output_freq",
+                                             this->particle_output_freq, 0);
+        config->get_session()->LoadParameter(
+            "num_particle_steps_per_fluid_step", this->num_part_substeps, 1);
+        config->get_session()->LoadParameter("mesh_length", this->mesh_length,
+                                             1.);
+        config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
+        config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
+        config->get_session()->LoadParameter("Bnorm", this->Bnorm, 1);
+
+        this->omega_c =
+            constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
+
+        report_param("Output frequency (steps)", this->particle_output_freq);
+        report_param("Particle substeps", this->num_part_substeps);
+        report_param("Particle seed", this->seed);
     }
     template <typename T> void report_param(std::string label, T val)
     {
@@ -158,7 +178,7 @@ public:
         std::vector<Sym<REAL>> &syms, std::vector<int> &components);
 
     virtual void diag_setup();
-    virtual void output_setup(std::vector<Sym<REAL>> &syms){};
+    virtual void output_setup(std::vector<Sym<REAL>> &syms) {};
 
     inline virtual void diag_project()
     {
@@ -455,32 +475,23 @@ protected:
         integrate_inner_neutral(neutrals, dt_inner);
     }
 
-    inline static const std::string NUM_PARTS_TOT_STR = "num_particles_total";
-    inline static const std::string NUM_PARTS_PER_CELL_STR =
-        "num_particles_per_cell";
-    inline static const std::string PART_OUTPUT_FREQ_STR =
-        "particle_output_freq";
-
     /// NESO-Particles ParticleSpec;
     ParticleSpec particle_spec;
     /// NESO-Particles ParticleGroup
     ParticleGroupSharedPtr particle_group;
 
     /// Compute target
-    MPI_Comm comm;
     SYCLTargetSharedPtr sycl_target;
     long size;
     long rank;
     /// Object used to map to/from nektar geometry ids to 0,N-1
     std::shared_ptr<CellIDTranslation> cell_id_translation;
-    /// MPI communicator
 
     /// NESO-Particles domain.
     DomainSharedPtr domain;
     /// Pointer to Nektar Meshgraph object
     SD::MeshGraphSharedPtr graph;
-    /// HDF5 output file
-    std::shared_ptr<H5Part> h5part;
+
     /// Mapping instance to map particles into nektar++ elements.
     std::shared_ptr<NektarGraphLocalMapper> nektar_graph_local_mapper;
     /// Options struct
@@ -489,8 +500,9 @@ protected:
     ParticleMeshInterfaceSharedPtr particle_mesh_interface;
     /// Pointer to NESOReader object
     NESOReaderSharedPtr config;
-    /// Output frequency read from config file
-    int output_freq;
+
+    /// HDF5 output file
+    std::shared_ptr<H5Part> h5part;
     /**
      * Map containing parameter name,value pairs to be written to stdout when
      * the nektar equation system is initialised. Populated with report_param().

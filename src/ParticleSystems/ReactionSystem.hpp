@@ -32,9 +32,11 @@ public:
     {
         ParticleSystem::evaluate_fields();
         if (this->marker_group)
+        {
             this->field_evaluate->evaluate(this->marker_group, this->eval_syms,
                                            this->eval_comps, this->eval_srcs);
-        set_marker_weights();
+            set_marker_weights();
+        }
     }
 
     inline void apply_timestep(const double dt) override
@@ -46,9 +48,6 @@ public:
             recomb_controller->apply(this->marker_group, dt,
                                      this->particle_group);
 
-        // this->project_wrapper->transform(
-        //     particle_sub_group(this->particle_group));
-
         auto partitions = particle_group_partition(this->particle_group,
                                                    Sym<INT>("INTERNAL_STATE"),
                                                    this->species_map.size());
@@ -57,22 +56,7 @@ public:
         for (const auto &[k, v] : this->species_map)
         {
             species_map[k].sub_group = partitions[s++];
-            // this->merge_wrapper->transform(species_map[k].sub_group);
-        }
-        // if (marker_group)
-        // {
-        //     partitions = particle_group_partition(this->marker_group,
-        //                                           Sym<INT>("INTERNAL_STATE"),
-        //                                           this->marker_map.size());
-
-        //     s = 0;
-        //     for (const auto &[k, v] : this->marker_map)
-        //     {
-        //         marker_map[k].sub_group = partitions[s++];
-        //     }
-        // }
-        // this->remove_wrapper->transform(
-        //     particle_sub_group(this->particle_group));
+        };
     }
 
     inline void project_source_terms() override

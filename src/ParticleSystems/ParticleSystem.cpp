@@ -11,15 +11,15 @@ ParticleSystemFactory &GetParticleSystemFactory()
 
 ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
                                SD::MeshGraphSharedPtr graph, MPI_Comm comm)
-    : config(session), graph(graph), comm(comm),
-      ndim(graph->GetSpaceDimension()), vdim(3), simulation_time(0.0)
+    : config(session), graph(graph), ndim(graph->GetSpaceDimension()), vdim(3),
+      simulation_time(0.0)
 {
     // Store options
     this->options = PartSysOptions();
 
     // Create interface between particles and nektar++
     this->particle_mesh_interface =
-        std::make_shared<ParticleMeshInterface>(graph, 0, this->comm);
+        std::make_shared<ParticleMeshInterface>(graph, 0, comm);
     extend_halos_fixed_offset(this->options.extend_halos_offset,
                               this->particle_mesh_interface);
     this->sycl_target =
@@ -30,6 +30,8 @@ ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
         this->sycl_target, this->particle_mesh_interface);
     this->domain = std::make_shared<Domain>(this->particle_mesh_interface,
                                             this->nektar_graph_local_mapper);
+    this->particle_remover =
+        std::make_shared<ParticleRemover>(this->sycl_target);
     this->sycl_target->profile_map.enable();
 }
 
@@ -101,24 +103,6 @@ void ParticleSystem::init_spec()
 
 void ParticleSystem::init_object()
 {
-    // Particle-related parameters
-    config->get_session()->LoadParameter("particle_output_freq",
-                                         particle_output_freq, 0);
-    config->get_session()->LoadParameter("num_particle_steps_per_fluid_step",
-                                         this->num_part_substeps, 1);
-    config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
-    config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
-    config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
-    config->get_session()->LoadParameter("Bnorm", this->Bnorm, 1);
-
-    this->omega_c =
-        constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
-
-    this->config->get_session()->LoadParameter(PART_OUTPUT_FREQ_STR,
-                                               this->output_freq, 0);
-
-    report_param("Output frequency (steps)", this->output_freq);
-
     // Create ParticleSpec
     this->init_spec();
     this->read_params();
@@ -129,21 +113,10 @@ void ParticleSystem::init_object()
     this->cell_id_translation = std::make_shared<CellIDTranslation>(
         this->sycl_target, this->particle_group->cell_id_dat,
         this->particle_mesh_interface);
-
-    // get seed from file
-    std::srand(std::time(nullptr));
-
-    this->config->get_session()->LoadParameter("particle_position_seed",
-                                               this->seed, std::rand());
-    this->rng_phasespace = std::mt19937(this->seed + this->rank);
+    this->particle_group_temporary = std::make_shared<ParticleGroupTemporary>();
 
     this->set_up_species();
     this->set_up_boundaries();
-
-    this->particle_remover =
-        std::make_shared<ParticleRemover>(this->sycl_target);
-    this->particle_group_temporary = std::make_shared<ParticleGroupTemporary>();
-
     this->transfer_particles();
     pre_advection(particle_sub_group(this->particle_group));
 }
@@ -358,10 +331,8 @@ void ParticleSystem::setup_evaluate_fields(
     this->eval_srcs   = eval_srcs;
     this->proto_field = ne;
 
-    auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
-        particle_group->domain->mesh);
     this->field_evaluate = std::make_shared<BaryEvaluateBase<DisContField>>(
-        ne, mesh, this->cell_id_translation);
+        ne, this->particle_mesh_interface, this->cell_id_translation);
 }
 
 /**

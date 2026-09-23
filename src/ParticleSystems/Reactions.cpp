@@ -24,7 +24,7 @@ std::shared_ptr<AbstractReaction> specular_reflection(
 
     if constexpr (ndim == 2 && vdim == 3)
     {
-        auto velocity_data_2 = temp::ComponentData(Sym<REAL>("VELOCITY"), 2);
+        auto velocity_data_2 = ExtractorData<1>(Sym<REAL>("VELOCITY"), 2);
         auto concat          = ConcatenatorData(pipeline, velocity_data_2);
         auto data_calculator = DataCalculator<decltype(concat)>(concat);
 
