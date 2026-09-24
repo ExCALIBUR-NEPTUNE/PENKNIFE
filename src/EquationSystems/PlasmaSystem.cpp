@@ -60,6 +60,7 @@ std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
  */
 void PlasmaSystem::load_params()
 {
+    m_session->LoadParameter("CheckSteps", m_checksteps, 0);
     m_session->LoadParameter("mesh_length", this->mesh_length, 1.);
     m_session->LoadParameter("Nnorm", this->Nnorm, 1e18);
     m_session->LoadParameter("Tnorm", this->Tnorm, 100.);

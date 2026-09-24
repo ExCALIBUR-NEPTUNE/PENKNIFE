@@ -24,9 +24,6 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">1</PARAM> 
-        </FILTER> 
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
@@ -42,6 +39,7 @@
             <P> NumSteps      = 1000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps   = 1                </P>
+            <P> CheckSteps   = 1                </P>
             <P> epsilon        = 1.0               </P>
 
             <P> theta          = 2.0                </P>
@@ -74,7 +72,7 @@
             <P> particle_mass = 0.5 </P>
             <!-- Charge of each particle -->
             <P> particle_charge = 0.2 </P>
-            <P> particle_output_freq = IO_CheckSteps              </P>
+            <P> particle_output_freq = CheckSteps              </P>
         </PARAMETERS>
 
         <VARIABLES>

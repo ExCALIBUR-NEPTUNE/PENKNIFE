@@ -26,7 +26,7 @@
             <P> NumSteps      = 1000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 1     </P>
-            <P> IO_CheckSteps = 1     </P>
+            <P> CheckSteps = 1     </P>
 
             <P> epsilon         = 1.0   </P>
             <!-- Anisotropic diffusion -->

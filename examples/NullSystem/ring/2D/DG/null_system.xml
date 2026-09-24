@@ -18,9 +18,6 @@
             <METHOD> DIRK </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">10</PARAM> 
-        </FILTER> 
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
@@ -36,6 +33,7 @@
             <P> NumSteps = 100 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps   = 10                </P>
+            <P> CheckSteps   = 10                </P>
 
             <P> particle_output_freq = 1          </P>
 
