@@ -404,8 +404,6 @@ void SingleDiffusiveField::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nPhys   = m_fields[0]->GetNpoints();
-    const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     if (this->particles_enabled)
     {
@@ -414,7 +412,7 @@ void SingleDiffusiveField::v_ExtraFldOutput(
         for (auto &[k, v] : this->GetIons())
         {
             variables.push_back(v.name + "_SOURCE_DENSITY");
-            Array<OneD, NekDouble> SrcFwd(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[i++]->GetPhys(),
                                            SrcFwd);
             fieldcoeffs.push_back(SrcFwd);
