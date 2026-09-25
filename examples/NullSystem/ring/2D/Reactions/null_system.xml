@@ -34,7 +34,7 @@
             <P> Bnorm = 1.0 </P>
             <!-- Timestepping and output options -->
             <P> TimeStep      = 5            </P>
-            <P> NumSteps      = 20              </P>
+            <P> NumSteps      = 200              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 10     </P>
             <P> CheckSteps  = 10     </P>
@@ -165,10 +165,7 @@
             </KN>
         </SPECIES>
         <VANTAGE>
-            <!-- <S TYPE="Specular" SPECIES="D,T">
-                <REGION REF="1,2"/>
-                <RATE TYPE="Constant" VALUE="0.1"/>
-            </S> -->
+
             <R TYPE="Ionisation" SPECIES="D">
                 <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
@@ -181,10 +178,10 @@
                 <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
             </R>
-            <!-- <R TYPE="Recombination" SPECIES="T">
+            <R TYPE="Recombination" SPECIES="T">
                 <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1.0"/>
-            </R> -->
+            </R>
             <!-- <R TYPE="ChargeExchange" SPECIES="D,T">
                 <RATE TYPE="AMJUEL" VALUE="1"/>
                 <CROSSSECTION TYPE="Constant" VALUE="1"/>
@@ -194,7 +191,10 @@
                 <CROSSSECTION TYPE="Constant" VALUE="1"/>
             </R> -->
 
-            
+            <!-- <S TYPE="Specular" SPECIES="D,T">
+                <REGION REF="1,2"/>
+                <RATE TYPE="Constant" VALUE="0.1"/>
+            </S> -->
             <S TYPE="Absorption" SPECIES="D,T">
                 <REGION REF="1,2"/>
                 <RATE TYPE="Constant" VALUE="1.0"/>

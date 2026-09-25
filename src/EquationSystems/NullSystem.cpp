@@ -43,8 +43,6 @@ void NullSystem::v_InitObject(bool DeclareFields)
     if (this->n_indep_fields)
         this->ee_idx = m_indfields.size() - this->n_indep_fields;
 
-    int npoints = m_indfields[0]->GetNpoints();
-
     m_session->MatchSolverInfo("SpectralVanishingViscosity", "True",
                                m_useSpecVanVisc, false);
     m_session->LoadParameter("epsilon", m_epsilon, 1.0);

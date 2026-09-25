@@ -202,23 +202,6 @@ public:
     void add_sources(double time, double dt);
     void add_sinks(double time, double dt);
 
-    /**
-     *  Project the plasma source and momentum contributions from particle data
-     *  onto field data.
-     */
-    inline virtual void project_source_terms()
-    {
-        NESOASSERT(this->field_project != nullptr,
-                   "Field project object is null. Was setup_project called?");
-
-        this->field_project->project(this->particle_group, this->src_syms,
-                                     this->src_components);
-    }
-
-    inline virtual void zero_source_dats()
-    {
-    }
-
     virtual void setup_evaluate_fields(
         std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
         std::vector<int> &eval_comps,
@@ -524,7 +507,6 @@ protected:
 
     std::vector<Sym<REAL>> src_syms;
     std::vector<int> src_components;
-    std::shared_ptr<FieldProject<DisContField>> field_project;
 
     std::vector<Sym<REAL>> diag_syms;
     std::vector<int> diag_components;

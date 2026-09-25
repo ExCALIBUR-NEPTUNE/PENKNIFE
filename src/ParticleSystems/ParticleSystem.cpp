@@ -344,8 +344,6 @@ void ParticleSystem::finish_setup(
 {
     this->src_syms       = syms;
     this->src_components = components;
-    this->field_project  = std::make_shared<FieldProject<DisContField>>(
-        src_fields, this->particle_group, this->cell_id_translation);
 
     int num_subgroups = this->species_map.size();
     auto partitions   = particle_group_partition(

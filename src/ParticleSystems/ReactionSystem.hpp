@@ -42,7 +42,14 @@ public:
 
     inline void apply_timestep(const double dt) override
     {
+        this->zeroer_transform->transform(
+            particle_sub_group(this->particle_group));
+        if (this->marker_group)
+            this->zeroer_transform->transform(
+                particle_sub_group(this->marker_group));
+
         ParticleSystem::apply_timestep(dt);
+
         if (reaction_controller)
             reaction_controller->apply(this->particle_group, dt);
         if (recomb_controller)
@@ -58,19 +65,6 @@ public:
         {
             species_map[k].sub_group = partitions[s++];
         };
-    }
-
-    inline void project_source_terms() override
-    {
-    }
-
-    inline void zero_source_dats() override
-    {
-        this->zeroer_transform->transform(
-            particle_sub_group(this->particle_group));
-        if (this->marker_group)
-            this->zeroer_transform->transform(
-                particle_sub_group(this->marker_group));
     }
 
     void set_up_reactions();
