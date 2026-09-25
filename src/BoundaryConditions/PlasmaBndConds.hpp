@@ -3,18 +3,11 @@
 
 #include "PlasmaBaseBndCond.hpp"
 
-using namespace Nektar;
-namespace LU = Nektar::LibUtilities;
-namespace MR = Nektar::MultiRegions;
-namespace SD = Nektar::SpatialDomains;
-
 namespace PENKNIFE
 {
 
 class PlasmaSystem;
 class PlasmaBoundaryConditions;
-typedef std::shared_ptr<PlasmaBoundaryConditions>
-    IncBoundaryConditionsSharedPtr;
 
 class PlasmaBoundaryConditions
 {

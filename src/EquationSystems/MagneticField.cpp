@@ -1,6 +1,7 @@
+#include <FieldUtils/Interpolator.h>
+
 #include "MagneticField.hpp"
 #include "PlasmaSystem.hpp"
-#include <FieldUtils/Interpolator.h>
 
 namespace PENKNIFE
 {

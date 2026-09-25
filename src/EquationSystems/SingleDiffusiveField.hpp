@@ -1,5 +1,6 @@
 #ifndef SINGLEDIFFUSIVEFIELD_HPP
 #define SINGLEDIFFUSIVEFIELD_HPP
+
 #include "PlasmaSystem.hpp"
 
 namespace PENKNIFE

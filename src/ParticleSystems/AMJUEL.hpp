@@ -1,13 +1,9 @@
 #ifndef AMJUEL_HPP
 #define AMJUEL_HPP
 
-#include "../Misc/Constants.hpp"
-#include <cmath>
-#include <fstream>
 #include <reactions/reactions.hpp>
-#include <sstream>
-#include <string>
-#include <vector>
+
+#include "../Misc/Constants.hpp"
 
 namespace PENKNIFE
 {

@@ -1,8 +1,6 @@
 #include "PlasmaBaseBndCond.hpp"
 #include "../EquationSystems/PlasmaSystem.hpp"
 
-using namespace std;
-
 namespace PENKNIFE
 {
 PlasmaBaseBndCondFactory &GetPlasmaBaseBndCondFactory()

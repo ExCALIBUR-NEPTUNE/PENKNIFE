@@ -9,18 +9,6 @@ std::string DoubleDiffusiveField::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "DoubleDiffusiveField", DoubleDiffusiveField::create,
         "Solves for two diffusive fields (n, e) with anisotropy");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<DoubleDiffusiveField>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 DoubleDiffusiveField::DoubleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,
@@ -99,8 +87,8 @@ void DoubleDiffusiveField::v_InitObject(bool DeclareFields)
         src_syms.push_back(Sym<REAL>("ELECTRON_SOURCE_ENERGY"));
         src_components.push_back(0);
 
-        this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->Te, this->ve);
+        // this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
+        //                                           this->Te, this->ve);
 
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);
@@ -231,8 +219,8 @@ void DoubleDiffusiveField::CalcK(
 
     for (int p = 0; p < npoints; ++p)
     {
-        m_kpar[p] = this->k_ci * this->k_par * pow(in_arr[ee_idx][p], 2.5) /
-                    (Z * Z * in_arr[ni_idx][p]);
+        m_kpar[p]  = this->k_ci * this->k_par * pow(in_arr[ee_idx][p], 2.5) /
+                     (Z * Z * in_arr[ni_idx][p]);
         m_kperp[p] = this->k_perp * Z * Z * std::sqrt(A) * in_arr[ni_idx][p] /
                      (sqrt(in_arr[ee_idx][p]) * this->mag_B[p]);
         m_kcross[p] =
@@ -268,9 +256,9 @@ void DoubleDiffusiveField::CalcKappa(
     {
         this->m_kpar[p] = this->kappa_i_par * in_arr[ni_idx][p] *
                           (in_arr[ei_idx][p], 2.5) / (sqrt(A) * Z * Z * tmp[p]);
-        this->m_kperp[p] = this->kappa_i_perp * sqrt(A) * tmp[p] *
-                           in_arr[ni_idx][p] /
-                           (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
+        this->m_kperp[p]  = this->kappa_i_perp * sqrt(A) * tmp[p] *
+                            in_arr[ni_idx][p] /
+                            (this->mag_B[p] * sqrt(in_arr[ei_idx][p]));
         this->m_kcross[p] = this->kappa_i_cross * in_arr[ni_idx][p] *
                             in_arr[ei_idx][p] / (Z * sqrt(this->mag_B[p]));
     }
@@ -284,9 +272,9 @@ void DoubleDiffusiveField::CalcKappa(
     auto ne     = this->m_fields[0]->GetPhys();
     for (int p = 0; p < npoints; ++p)
     {
-        this->m_kpar[p]  = this->kappa_e_par * pow(in_arr[ee_idx][p], 2.5);
-        this->m_kperp[p] = this->kappa_e_perp * ne[p] * ne[p] /
-                           (this->mag_B[p] * sqrt(in_arr[ee_idx][p]));
+        this->m_kpar[p]   = this->kappa_e_par * pow(in_arr[ee_idx][p], 2.5);
+        this->m_kperp[p]  = this->kappa_e_perp * ne[p] * ne[p] /
+                            (this->mag_B[p] * sqrt(in_arr[ee_idx][p]));
         this->m_kcross[p] = this->kappa_e_cross * ne[p] * in_arr[ee_idx][p] /
                             (sqrt(this->mag_B[p]));
     }
@@ -372,7 +360,7 @@ void DoubleDiffusiveField::DoOdeRhs(
  * @param[out] outarray physical values with diffusion applied
  * @param pFwd Fwd trace values
  * @param pBwd Bwd trace values
- * 
+ *
  */
 void DoubleDiffusiveField::DoDiffusion(
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
@@ -635,10 +623,9 @@ void DoubleDiffusiveField::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     variables.push_back("Te");
-    Array<OneD, NekDouble> Fwd(nCoeffs);
+    Array<OneD, NekDouble> Fwd(this->n_coeffs);
     Array<OneD, NekDouble> tmp(this->n_pts);
     Vmath::Vdiv(this->n_pts, m_indfields[ee_idx]->GetPhys(), 1,
                 m_fields[0]->GetPhys(), 1, tmp, 1);
@@ -652,13 +639,13 @@ void DoubleDiffusiveField::v_ExtraFldOutput(
         for (auto &[k, v] : this->particle_sys->get_species())
         {
             variables.push_back(k + "_SOURCE_DENSITY");
-            Array<OneD, NekDouble> SrcFwd1(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd1(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[i]->GetPhys(),
                                            SrcFwd1);
             fieldcoeffs.push_back(SrcFwd1);
 
             variables.push_back(k + "_SOURCE_ENERGY");
-            Array<OneD, NekDouble> SrcFwd2(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd2(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[i + 1]->GetPhys(),
                                            SrcFwd2);
             fieldcoeffs.push_back(SrcFwd2);

@@ -19,9 +19,7 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">1</PARAM> 
-        </FILTER> 
+
         <PARAMETERS>        
             <!-- Conversion of mesh unit to m -->
             <P> mesh_length = 0.01</P> 
@@ -37,6 +35,7 @@
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
             <P> IO_InfoSteps   = 1                </P>
+            <P> CheckSteps   = 1                </P>
             <P> epsilon        = 1.0               </P>
 
             <!-- Coulomb logarithm -->

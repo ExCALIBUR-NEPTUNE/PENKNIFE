@@ -1,20 +1,17 @@
-#include <iomanip>
-#include <iostream>
+#include <LibUtilities/BasicUtils/Smath.hpp>
 
 #include "../EquationSystems/PlasmaSystem.hpp"
 #include "VariableConverter.hpp"
-#include <LibUtilities/BasicUtils/Smath.hpp>
-#include <LocalRegions/Expansion2D.h>
 
 namespace PENKNIFE
 {
 
-VariableConverter::VariableConverter(
-    const std::weak_ptr<PlasmaSystem> &pSystem, const int spaceDim)
+VariableConverter::VariableConverter(const std::weak_ptr<PlasmaSystem> &pSystem,
+                                     const int spaceDim)
     : m_system(pSystem), m_spacedim(spaceDim),
       field_to_index(pSystem.lock()->field_to_index)
 {
-    m_eos     = GetEquationOfStateFactory().CreateInstance("IdealGas");
+    m_eos = GetEquationOfStateFactory().CreateInstance("IdealGas");
 }
 
 void VariableConverter::GetElectronDensity(

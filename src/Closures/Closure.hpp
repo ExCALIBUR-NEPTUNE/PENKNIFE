@@ -4,16 +4,15 @@
 #include <LibUtilities/BasicConst/NektarUnivTypeDefs.hpp>
 #include <LibUtilities/BasicUtils/NekFactory.hpp>
 #include <LibUtilities/Memory/NekMemoryManager.hpp>
-
-#include "nektar_interface/utilities.hpp"
 #include <MultiRegions/ContField.h>
 #include <SolverUtils/UnsteadySystem.h>
 
-namespace SD = Nektar::SpatialDomains;
-namespace LU = Nektar::LibUtilities;
+#include "nektar_interface/utilities.hpp"
 
 namespace PENKNIFE
 {
+namespace SD = Nektar::SpatialDomains;
+namespace LU = Nektar::LibUtilities;
 // Forward declarations
 class PlasmaSystem;
 class Closure;

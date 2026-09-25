@@ -12,18 +12,6 @@ std::string ReducedBraginskii::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "ReducedBraginskii", ReducedBraginskii::create,
         "Solves reduced Braginskii equations");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<ReducedBraginskii>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
                                      const SD::MeshGraphSharedPtr &graph)
@@ -921,12 +909,11 @@ void ReducedBraginskii::DoOdeImplicitRhs(
     Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time)
 {
     int nvariables = inarray.size();
-    int ncoeffs    = m_fields[0]->GetNcoeffs();
 
     Array<OneD, Array<OneD, NekDouble>> tmpOut(nvariables);
     for (int i = 0; i < nvariables; ++i)
     {
-        tmpOut[i] = Array<OneD, NekDouble>(ncoeffs);
+        tmpOut[i] = Array<OneD, NekDouble>(this->n_coeffs);
     }
 
     DoOdeRhsCoeff(inarray, tmpOut, time);
@@ -947,7 +934,6 @@ void ReducedBraginskii::DoOdeRhsCoeff(
 
     int nvariables = inarray.size();
     int nTracePts  = GetTraceTotPoints();
-    int ncoeffs    = GetNcoeffs();
 
     // Store forwards/backwards space along trace space
     Array<OneD, Array<OneD, NekDouble>> Fwd(nvariables);
@@ -966,7 +952,7 @@ void ReducedBraginskii::DoOdeRhsCoeff(
     // Negate results
     for (int i = 0; i < nvariables; ++i)
     {
-        Vmath::Neg(ncoeffs, outarray[i], 1);
+        Vmath::Neg(this->n_coeffs, outarray[i], 1);
     }
 
     // Add diffusion terms
@@ -1008,13 +994,12 @@ void ReducedBraginskii::DoDiffusionCoeff(
     const Array<OneD, const Array<OneD, NekDouble>> &pBwd)
 {
     size_t nvariables = inarray.size();
-    size_t ncoeffs    = GetNcoeffs();
     size_t nTracePts  = GetTraceTotPoints();
 
     Array<OneD, Array<OneD, NekDouble>> outarrayDiff{nvariables};
     for (int i = 0; i < nvariables; ++i)
     {
-        outarrayDiff[i] = Array<OneD, NekDouble>{ncoeffs, 0.0};
+        outarrayDiff[i] = Array<OneD, NekDouble>(this->n_coeffs, 0.0);
     }
 
     // if (m_is_diffIP)
@@ -1024,7 +1009,7 @@ void ReducedBraginskii::DoDiffusionCoeff(
     //                                m_bndEvaluateTime, pFwd, pBwd);
     //     for (int i = 0; i < nvariables; ++i)
     //     {
-    //         Vmath::Vadd(ncoeffs, outarrayDiff[i], 1, outarray[i], 1,
+    //         Vmath::Vadd(this->n_coeffs, outarrayDiff[i], 1, outarray[i], 1,
     //                     outarray[i], 1);
     //     }
     // }
@@ -1075,7 +1060,7 @@ void ReducedBraginskii::DoDiffusionCoeff(
 
     for (int i = 0; i < nvariables; ++i)
     {
-        Vmath::Vadd(ncoeffs, outarrayDiff[i], 1, outarray[i], 1, outarray[i],
+        Vmath::Vadd(this->n_coeffs, outarrayDiff[i], 1, outarray[i], 1, outarray[i],
                     1);
     }
     //}
@@ -1088,8 +1073,7 @@ void ReducedBraginskii::DoParticlesCoeff(
     const Array<OneD, Array<OneD, NekDouble>> &inarray,
     Array<OneD, Array<OneD, NekDouble>> &outarray)
 {
-    int ncoeff = GetNcoeffs();
-    Array<OneD, NekDouble> tmp(ncoeff, 0.0);
+    Array<OneD, NekDouble> tmp(this->n_coeffs, 0.0);
 
     // Add contribution to electron energy
     m_indfields[ee_idx]->FwdTrans(this->src_fields[0]->GetPhys(), tmp);
@@ -1150,7 +1134,6 @@ void ReducedBraginskii::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     if (this->particles_enabled)
     {
@@ -1158,7 +1141,7 @@ void ReducedBraginskii::v_ExtraFldOutput(
         for (auto &[k, v] : this->GetIons())
         {
             variables.emplace_back(v.name + "_SOURCE_DENSITY");
-            Array<OneD, NekDouble> SrcFwd1(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd1(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd1);
             fieldcoeffs.emplace_back(SrcFwd1);
@@ -1167,14 +1150,14 @@ void ReducedBraginskii::v_ExtraFldOutput(
             {
                 variables.emplace_back(v.name + "_SOURCE_MOMENTUM" +
                                        std::to_string(d));
-                Array<OneD, NekDouble> SrcFwd(nCoeffs);
+                Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
                 m_fields[0]->FwdTransLocalElmt(
                     this->src_fields[cnt++]->GetPhys(), SrcFwd);
                 fieldcoeffs.emplace_back(SrcFwd);
             }
 
             variables.emplace_back(v.name + "_SOURCE_ENERGY");
-            Array<OneD, NekDouble> SrcFwd2(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd2(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd2);
             fieldcoeffs.emplace_back(SrcFwd2);

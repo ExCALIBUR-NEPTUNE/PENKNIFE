@@ -3,16 +3,35 @@
 namespace PENKNIFE
 {
 
-std::string ParticleSystem::class_name =
-    GetParticleSystemFactory().RegisterCreatorFunction(
-        "ParticleSystem", ParticleSystem::create, "Particle System");
+ParticleSystemFactory &GetParticleSystemFactory()
+{
+    static ParticleSystemFactory instance;
+    return instance;
+}
 
 ParticleSystem::ParticleSystem(NESOReaderSharedPtr session,
                                SD::MeshGraphSharedPtr graph, MPI_Comm comm)
-    : PartSysBase(session, graph, comm), vdim(3), simulation_time(0.0),
-      size(this->sycl_target->comm_pair.size_parent),
-      rank(this->sycl_target->comm_pair.rank_parent)
+    : config(session), graph(graph), ndim(graph->GetSpaceDimension()), vdim(3),
+      simulation_time(0.0)
 {
+    // Store options
+    this->options = PartSysOptions();
+
+    // Create interface between particles and nektar++
+    this->particle_mesh_interface =
+        std::make_shared<ParticleMeshInterface>(graph, 0, comm);
+    extend_halos_fixed_offset(this->options.extend_halos_offset,
+                              this->particle_mesh_interface);
+    this->sycl_target =
+        std::make_shared<SYCLTarget>(0, particle_mesh_interface->get_comm());
+    this->size                      = this->sycl_target->comm_pair.size_parent;
+    this->rank                      = this->sycl_target->comm_pair.rank_parent;
+    this->nektar_graph_local_mapper = std::make_shared<NektarGraphLocalMapper>(
+        this->sycl_target, this->particle_mesh_interface);
+    this->domain = std::make_shared<Domain>(this->particle_mesh_interface,
+                                            this->nektar_graph_local_mapper);
+    this->particle_remover =
+        std::make_shared<ParticleRemover>(this->sycl_target);
     this->sycl_target->profile_map.enable();
 }
 
@@ -42,6 +61,8 @@ void ParticleSystem::init_spec()
 
         ParticleProp(Sym<REAL>("ELECTRON_DENSITY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_TEMPERATURE"), 1),
+        ParticleProp(Sym<REAL>("ELECTRON_FLOW_SPEED"), this->vdim),
+
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_ENERGY"), 1),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->vdim),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1)};
@@ -82,19 +103,20 @@ void ParticleSystem::init_spec()
 
 void ParticleSystem::init_object()
 {
-    config->get_session()->LoadParameter("mesh_length", this->mesh_length, 1.);
-    config->get_session()->LoadParameter("Nnorm", this->Nnorm, 1e18);
-    config->get_session()->LoadParameter("Tnorm", this->Tnorm, 100.);
-    config->get_session()->LoadParameter("Bnorm", this->Bnorm, 1);
+    // Create ParticleSpec
+    this->init_spec();
+    this->read_params();
 
-    this->omega_c =
-        constants::qeomp * this->Bnorm; // Ion cyclotron frequency [1/s]
-    PartSysBase::init_object();
-
-    this->particle_remover =
-        std::make_shared<ParticleRemover>(this->sycl_target);
+    // Create ParticleGroup
+    this->particle_group = std::make_shared<ParticleGroup>(
+        this->domain, this->particle_spec, this->sycl_target);
+    this->cell_id_translation = std::make_shared<CellIDTranslation>(
+        this->sycl_target, this->particle_group->cell_id_dat,
+        this->particle_mesh_interface);
     this->particle_group_temporary = std::make_shared<ParticleGroupTemporary>();
 
+    this->set_up_species();
+    this->set_up_boundaries();
     this->transfer_particles();
     pre_advection(particle_sub_group(this->particle_group));
 }
@@ -104,14 +126,6 @@ void ParticleSystem::init_object()
  */
 void ParticleSystem::set_up_species()
 {
-    // get seed from file
-    std::srand(std::time(nullptr));
-    int seed;
-
-    this->config->get_session()->LoadParameter("particle_position_seed", seed,
-                                               std::rand());
-    this->rng_phasespace = std::mt19937(seed + this->rank);
-
     double particle_thermal_velocity;
 
     int s = 0;
@@ -122,6 +136,9 @@ void ParticleSystem::set_up_species()
                                                       1.0);
         this->config->load_particle_species_parameter(k, "Charge",
                                                       particle_charge, 0.0);
+        species_map[k] =
+            SpeciesInfo{s, particle_mass, particle_charge, nullptr};
+
         long particle_number = this->config->get_particle_species_initial_N(k);
 
         if (particle_number > 0)
@@ -287,8 +304,10 @@ void ParticleSystem::set_up_species()
                     initial_distribution[Sym<INT>("INTERNAL_STATE")][px][0] = s;
                     initial_distribution[Sym<REAL>("WEIGHT")][px][0] = weight;
 
+                    initial_distribution[Sym<REAL>("ELECTRON_DENSITY")][px][0] =
+                        1.0;
                     initial_distribution[Sym<REAL>("ELECTRON_TEMPERATURE")][px]
-                                        [0] = 2.0;
+                                        [0] = 5.0;
                 }
 
                 this->particle_group->add_particles_local(initial_distribution);
@@ -297,69 +316,23 @@ void ParticleSystem::set_up_species()
         }
         s++;
     }
-    auto partitions = particle_group_partition(this->particle_group,
-                                               Sym<INT>("INTERNAL_STATE"), s);
-
-    s = 0;
-    for (const auto &[k, v] : this->config->get_particle_species())
-    {
-        double particle_mass, particle_charge;
-        this->config->load_particle_species_parameter(k, "Mass", particle_mass,
-                                                      1.0);
-        this->config->load_particle_species_parameter(k, "Charge",
-                                                      particle_charge, 0.0);
-        species_map[k] =
-            SpeciesInfo{s, particle_mass, particle_charge, partitions[s++]};
-    }
-    set_up_boundaries();
 }
 
 /**
  * @brief Setup NESO evaluations
  */
 void ParticleSystem::setup_evaluate_fields(
-    Array<OneD, std::shared_ptr<DisContField>> &E,
-    Array<OneD, std::shared_ptr<DisContField>> &B,
-    std::shared_ptr<DisContField> ne, std::shared_ptr<DisContField> Te,
-    Array<OneD, std::shared_ptr<DisContField>> &ve)
+    std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
+    std::vector<int> &eval_comps,
+    std::vector<Array<OneD, NekDouble> *> &eval_srcs)
 {
-    auto mesh = std::dynamic_pointer_cast<ParticleMeshInterface>(
-        particle_group->domain->mesh);
+    this->eval_syms   = eval_syms;
+    this->eval_comps  = eval_comps;
+    this->eval_srcs   = eval_srcs;
+    this->proto_field = ne;
+
     this->field_evaluate = std::make_shared<BaryEvaluateBase<DisContField>>(
-        ne, mesh, this->cell_id_translation);
-
-    this->eval_comps.push_back(0);
-    this->eval_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
-    this->eval_srcs.push_back(&ne->UpdatePhys());
-
-    if (Te)
-    {
-        this->eval_comps.push_back(0);
-        this->eval_syms.push_back(Sym<REAL>("ELECTRON_TEMPERATURE"));
-        this->eval_srcs.push_back(&Te->UpdatePhys());
-    }
-
-    for (int d = 0; d < this->vdim; ++d)
-    {
-        if (ve[d])
-        {
-            this->eval_comps.push_back(d);
-            this->eval_syms.push_back(Sym<REAL>("ELECTRON_FLOW_SPEED"));
-            this->eval_srcs.push_back(&ve[d]->UpdatePhys());
-        }
-    }
-    for (int d = 0; d < 3; ++d)
-    {
-        this->eval_comps.push_back(d);
-        this->eval_syms.push_back(Sym<REAL>("ELECTRIC_FIELD"));
-        this->eval_srcs.push_back(&E[d]->UpdatePhys());
-    }
-    for (int d = 0; d < 3; ++d)
-    {
-        this->eval_comps.push_back(d);
-        this->eval_syms.push_back(Sym<REAL>("MAGNETIC_FIELD"));
-        this->eval_srcs.push_back(&B[d]->UpdatePhys());
-    }
+        ne, this->particle_mesh_interface, this->cell_id_translation);
 }
 
 /**
@@ -373,31 +346,45 @@ void ParticleSystem::finish_setup(
     this->src_components = components;
     this->field_project  = std::make_shared<FieldProject<DisContField>>(
         src_fields, this->particle_group, this->cell_id_translation);
+
+    int num_subgroups = this->species_map.size();
+    auto partitions   = particle_group_partition(
+        this->particle_group, Sym<INT>("INTERNAL_STATE"), num_subgroups);
+
+    int s = 0;
+    for (const auto &[k, v] : this->species_map)
+    {
+        species_map[k].sub_group = partitions[s++];
+    }
 }
 
-void ParticleSystem::diag_setup(
-    std::map<int, std::vector<std::shared_ptr<DisContField>>> &diag_fields,
-    std::vector<Sym<REAL>> &syms, std::vector<int> &components)
+void ParticleSystem::diag_setup()
 {
-    this->diag_syms       = syms;
-    this->diag_components = components;
-
+    this->diag_components = {0};
+    this->diag_syms       = {Sym<REAL>("WEIGHT")};
     for (auto &[k, v] : this->species_map)
     {
+
+        this->diag_fields[v.id].emplace_back(
+            MemoryManager<DisContField>::AllocateSharedPtr(
+                *std::dynamic_pointer_cast<DisContField>(this->proto_field)));
+
         this->diagnostic_project[v.id] =
             std::make_shared<FieldProject<DisContField>>(
-                diag_fields[v.id], this->particle_group,
+                this->diag_fields[v.id], this->particle_group,
                 this->cell_id_translation);
     }
 }
 
-void ParticleSystem::output_setup(std::vector<Sym<REAL>> &syms)
+void ParticleSystem::free()
 {
-    init_output("particle_trajectory.h5part", Sym<REAL>("POSITION"),
-                Sym<INT>("INTERNAL_STATE"), Sym<INT>("CELL_ID"),
-                Sym<REAL>("VELOCITY"), Sym<REAL>("MAGNETIC_FIELD"),
-                Sym<REAL>("ELECTRON_DENSITY"), syms, Sym<INT>("ID"),
-                Sym<REAL>("TOT_REACTION_RATE"));
+    if (this->h5part)
+    {
+        this->h5part->close();
+    }
+    this->particle_group->free();
+    this->sycl_target->free();
+    this->particle_mesh_interface->free();
 }
 
 template <typename RNG>
@@ -753,29 +740,6 @@ void ParticleSystem::add_sinks(double time, double dt)
     r.end();
     this->sycl_target->profile_map.add_region(r);
     remove_marked_particles();
-}
-
-void ParticleSystem::set_up_boundaries()
-{
-    auto store = std::make_shared<ParameterStore>();
-    store->set<REAL>("NektarCompositeTruncatedReflection/reset_distance",
-                     1.0e-3);
-    store->set<REAL>("CompositeIntersection/newton_tol", 1.0e-8);
-    store->set<REAL>("CompositeIntersection/line_intersection_tol", 1.0e-10);
-    auto mesh = std::make_shared<ParticleMeshInterface>(this->graph);
-
-    std::vector<int> reflection_composites;
-
-    for (auto &[sk, sv] : this->config->get_particle_species_boundary(0))
-    {
-        if (sv == ParticleBoundaryConditionType::eReflective)
-        {
-            reflection_composites.push_back(sk);
-        }
-    }
-    this->reflection = std::make_shared<NektarCompositeTruncatedReflection>(
-        Sym<REAL>("VELOCITY"), Sym<REAL>("TSP"), this->sycl_target, mesh,
-        reflection_composites, store);
 }
 
 } // namespace PENKNIFE

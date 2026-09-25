@@ -9,18 +9,6 @@ std::string NullSystem::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "NullSystem", NullSystem::create,
         "Only advances particles with no fluid solve");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<NullSystem>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 NullSystem::NullSystem(const LU::SessionReaderSharedPtr &session,
                        const SD::MeshGraphSharedPtr &graph)
@@ -71,16 +59,84 @@ void NullSystem::v_InitObject(bool DeclareFields)
     if (this->particles_enabled)
     {
         this->ne = std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]);
-        this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->Te, this->ve);
+
+        if (this->n_indep_fields)
+            this->Te = std::dynamic_pointer_cast<MR::DisContField>(m_fields[1]);
+
+        std::vector<Sym<REAL>> eval_syms;
+        std::vector<int> eval_comps;
+        std::vector<Array<OneD, NekDouble> *> eval_srcs;
+        std::vector<Sym<REAL>> out_syms;
+
+        eval_comps.push_back(0);
+        eval_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
+        eval_srcs.push_back(&ne->UpdatePhys());
+        out_syms.push_back(Sym<REAL>("ELECTRON_DENSITY"));
+
+        if (Te)
+        {
+            eval_comps.push_back(0);
+            eval_syms.push_back(Sym<REAL>("ELECTRON_TEMPERATURE"));
+            eval_srcs.push_back(&Te->UpdatePhys());
+        }
+
+        for (int d = 0; d < 3; ++d)
+        {
+            if (ve[d])
+            {
+                eval_comps.push_back(d);
+                eval_syms.push_back(Sym<REAL>("ELECTRON_FLOW_SPEED"));
+                eval_srcs.push_back(&ve[d]->UpdatePhys());
+            }
+        }
+
+        for (const auto &[k, v] : this->GetIons())
+        {
+            int ni_idx       = v.fields.at(field_to_index["n"]);
+            this->ni[v.name] = m_indfields[ni_idx]->UpdatePhys();
+
+            eval_comps.push_back(0);
+            eval_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
+            eval_srcs.push_back(&this->ni[v.name]);
+            out_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
+
+            this->Ti[v.name] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+            eval_comps.push_back(0);
+            eval_syms.push_back(Sym<REAL>(v.name + "_TEMPERATURE"));
+            eval_srcs.push_back(&this->Ti[v.name]);
+
+            this->vi[v.name] = std::vector<Array<OneD, NekDouble>>(3);
+            for (int d = 0; d < 3; ++d)
+            {
+                this->vi[v.name][d] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+                eval_comps.push_back(d);
+                eval_syms.push_back(Sym<REAL>(v.name + "_FLOW_SPEED"));
+                eval_srcs.push_back(&(this->vi[v.name][d]));
+            }
+        }
+
+        for (int d = 0; d < 3; ++d)
+        {
+            eval_comps.push_back(d);
+            eval_syms.push_back(Sym<REAL>("ELECTRIC_FIELD"));
+            eval_srcs.push_back(&E[d]->UpdatePhys());
+        }
+        for (int d = 0; d < 3; ++d)
+        {
+            eval_comps.push_back(d);
+            eval_syms.push_back(Sym<REAL>("MAGNETIC_FIELD"));
+            eval_srcs.push_back(&B[d]->UpdatePhys());
+        }
+
+        this->particle_sys->setup_evaluate_fields(this->ne, eval_syms,
+                                                  eval_comps, eval_srcs);
+
         std::vector<Sym<REAL>> src_syms;
         std::vector<int> src_components;
-        std::vector<Sym<REAL>> out_syms;
 
         int cnt = 0;
         for (const auto &[s, v] : this->GetIons())
         {
-
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
@@ -122,17 +178,7 @@ void NullSystem::v_InitObject(bool DeclareFields)
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);
 
-        std::vector<int> diag_components = {0};
-        std::vector<Sym<REAL>> diag_syms = {Sym<REAL>("WEIGHT")};
-
-        for (const auto &[s, v] : this->particle_sys->get_species())
-        {
-            this->diag_fields[v.id].emplace_back(
-                MemoryManager<MR::DisContField>::AllocateSharedPtr(
-                    *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-        }
-        this->particle_sys->diag_setup(this->diag_fields, diag_syms,
-                                       diag_components);
+        this->particle_sys->diag_setup();
         this->particle_sys->output_setup(out_syms);
     }
 }
@@ -250,8 +296,6 @@ void NullSystem::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nPhys   = m_fields[0]->GetNpoints();
-    const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     if (this->particles_enabled)
     {
@@ -260,7 +304,7 @@ void NullSystem::v_ExtraFldOutput(
         for (auto &[k, v] : this->GetIons())
         {
             variables.push_back(v.name + "_SOURCE_DENSITY");
-            Array<OneD, NekDouble> SrcFwd(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(
                 this->src_fields[ni_src_idx[cnt]]->GetPhys(), SrcFwd);
             fieldcoeffs.push_back(SrcFwd);
@@ -269,32 +313,26 @@ void NullSystem::v_ExtraFldOutput(
             {
                 variables.emplace_back(v.name + "_SOURCE_MOMENTUM" +
                                        std::to_string(d));
-                Array<OneD, NekDouble> SrcFwd(nCoeffs);
+                Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
                 m_fields[0]->FwdTransLocalElmt(
                     this->src_fields[vi_src_idx[cnt] + d]->GetPhys(), SrcFwd);
                 fieldcoeffs.emplace_back(SrcFwd);
             }
 
             variables.emplace_back(v.name + "_SOURCE_ENERGY");
-            Array<OneD, NekDouble> SrcFwd2(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd2(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(
                 this->src_fields[ei_src_idx[cnt]]->GetPhys(), SrcFwd2);
             fieldcoeffs.emplace_back(SrcFwd2);
+            cnt++;
         }
         variables.push_back("ELECTRON_SOURCE_ENERGY");
-        Array<OneD, NekDouble> ESrcFwd(nCoeffs);
+        Array<OneD, NekDouble> ESrcFwd(this->n_coeffs);
         m_fields[0]->FwdTransLocalElmt(this->src_fields.back()->GetPhys(),
                                        ESrcFwd);
         fieldcoeffs.push_back(ESrcFwd);
 
-        for (auto &[k, v] : this->particle_sys->get_species())
-        {
-            variables.emplace_back(k + "_DENSITY");
-            Array<OneD, NekDouble> DiagFwd(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(
-                this->diag_fields[v.id][0]->GetPhys(), DiagFwd);
-            fieldcoeffs.push_back(DiagFwd);
-        }
+        this->particle_sys->print_diagnostics(fieldcoeffs, variables);
     }
 }
 } // namespace PENKNIFE

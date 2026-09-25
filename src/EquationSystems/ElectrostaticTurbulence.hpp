@@ -2,6 +2,7 @@
 #define ELECTROSTATICTURBULENCE_HPP
 #include "../Advection/OmegaAdvection.h"
 // #include "../Diffusion/DiffusionLDGET.hpp"
+
 #include "../Misc/VariableConverter.hpp"
 #include "PlasmaSystem.hpp"
 

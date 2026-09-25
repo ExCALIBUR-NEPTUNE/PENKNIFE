@@ -9,18 +9,6 @@ std::string SingleDiffusiveField::class_name =
     SU::GetEquationSystemFactory().RegisterCreatorFunction(
         "SingleDiffusiveField", SingleDiffusiveField::create,
         "Solves for a single diffusive field (n) with anisotropy");
-/**
- * @brief Creates an instance of this class.
- */
-static SU::EquationSystemSharedPtr create(
-    const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph)
-{
-    SU::EquationSystemSharedPtr p =
-        MemoryManager<SingleDiffusiveField>::AllocateSharedPtr(session, graph);
-    p->InitObject();
-    return p;
-}
 
 SingleDiffusiveField::SingleDiffusiveField(
     const LU::SessionReaderSharedPtr &session,
@@ -104,23 +92,13 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
             out_syms.push_back(Sym<REAL>(s + "_SOURCE_DENSITY"));
         }
 
-        this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
-                                                  this->Te, this->ve);
+        // this->particle_sys->setup_evaluate_fields(this->E, this->B, this->ne,
+        //                                           this->Te, this->ve);
 
         this->particle_sys->finish_setup(this->src_fields, src_syms,
                                          src_components);
 
-        std::vector<int> diag_components = {0};
-        std::vector<Sym<REAL>> diag_syms = {Sym<REAL>("WEIGHT")};
-
-        for (auto &[k, v] : this->particle_sys->get_species())
-        {
-            this->diag_fields[v.id].emplace_back(
-                MemoryManager<MR::DisContField>::AllocateSharedPtr(
-                    *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-        }
-        this->particle_sys->diag_setup(this->diag_fields, diag_syms,
-                                       diag_components);
+        this->particle_sys->diag_setup();
         this->particle_sys->output_setup(out_syms);
     }
 }
@@ -426,8 +404,6 @@ void SingleDiffusiveField::v_ExtraFldOutput(
     std::vector<std::string> &variables)
 {
     PlasmaSystem::v_ExtraFldOutput(fieldcoeffs, variables);
-    const int nPhys   = m_fields[0]->GetNpoints();
-    const int nCoeffs = m_fields[0]->GetNcoeffs();
 
     if (this->particles_enabled)
     {
@@ -436,19 +412,12 @@ void SingleDiffusiveField::v_ExtraFldOutput(
         for (auto &[k, v] : this->GetIons())
         {
             variables.push_back(v.name + "_SOURCE_DENSITY");
-            Array<OneD, NekDouble> SrcFwd(nCoeffs);
+            Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[i++]->GetPhys(),
                                            SrcFwd);
             fieldcoeffs.push_back(SrcFwd);
         }
-        for (auto &[k, v] : this->particle_sys->get_species())
-        {
-            variables.emplace_back(k + "_DENSITY");
-            Array<OneD, NekDouble> DiagFwd(nCoeffs);
-            m_fields[0]->FwdTransLocalElmt(
-                this->diag_fields[v.id][0]->GetPhys(), DiagFwd);
-            fieldcoeffs.push_back(DiagFwd);
-        }
+        this->particle_sys->print_diagnostics(fieldcoeffs, variables);
     }
 }
 } // namespace PENKNIFE

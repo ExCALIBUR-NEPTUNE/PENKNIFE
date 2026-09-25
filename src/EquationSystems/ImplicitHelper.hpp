@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 //
-// File DriftWaveSystem.h
+// File ImplicitHelper.hpp
 //
 // For more information, please see: http://www.nektar.info
 //
@@ -38,10 +38,9 @@
 
 #include <LibUtilities/LinearAlgebra/NekNonlinSysIter.h>
 
-using namespace Nektar::SolverUtils;
-
 namespace Nektar
 {
+using namespace SolverUtils;
 
 /**
  * @brief An equation system for the drift-wave solver.
