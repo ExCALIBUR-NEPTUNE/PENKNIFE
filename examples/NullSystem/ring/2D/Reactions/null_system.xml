@@ -22,9 +22,6 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">10</PARAM> 
-        </FILTER> 
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
@@ -37,10 +34,10 @@
             <P> Bnorm = 1.0 </P>
             <!-- Timestepping and output options -->
             <P> TimeStep      = 5            </P>
-            <P> NumSteps      = 10              </P>
+            <P> NumSteps      = 20              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps  = 10     </P>
-            <P> IO_CheckSteps  = 10     </P>
+            <P> CheckSteps  = 10     </P>
             <P> particle_output_freq = 1          </P>
             <P> markers_per_cell = 200          </P>
 

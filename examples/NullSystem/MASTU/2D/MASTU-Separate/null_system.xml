@@ -20,9 +20,7 @@
             <METHOD> IMEX </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">100</PARAM> 
-        </FILTER> 
+
         <PARAMETERS>        
             <!-- Conversion of mesh unit to m -->
             <P> mesh_length = 0.01</P> 
@@ -34,11 +32,11 @@
             <P> Bnorm = 1.0</P>
             <!-- Time step in cyclotron units -->
             <P> TimeStep       = 957.883316               </P>
-            <P> NumSteps      = 500              </P>
+            <P> NumSteps      = 10000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
             <P> IO_InfoSteps   = 10                </P>
-            <P> IO_CheckSteps   = 100                </P>
+            <P> CheckSteps   = 100                </P>
             <P> epsilon        = 1.0               </P>
 
             <!-- Coulomb logarithm -->

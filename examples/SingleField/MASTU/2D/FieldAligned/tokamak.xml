@@ -21,7 +21,7 @@
             <P> TimeStep       = 1e-3               </P>
             <P> FinalTime      = 1e2            </P>
             <P> NumSteps       = FinalTime/TimeStep</P>
-            <P> IO_CheckSteps  = 10                </P>
+            <P> CheckSteps  = 10                </P>
             <P> IO_InfoSteps   = 10                </P>
             <P> epsilon        = 1.0               </P>
 

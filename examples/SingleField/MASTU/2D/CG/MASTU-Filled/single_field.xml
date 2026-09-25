@@ -30,7 +30,7 @@
             <P> NumSteps      = 10000              </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <!-- ~957883.316 -->
-            <P> IO_CheckSteps  = 100                </P>
+            <P> CheckSteps  = 100                </P>
             <P> IO_InfoSteps   = 100                </P>
             <P> epsilon        = 1.0               </P>
 

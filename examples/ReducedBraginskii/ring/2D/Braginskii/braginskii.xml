@@ -19,9 +19,6 @@
             <METHOD> DIRK </METHOD>
             <ORDER> 2 </ORDER>
         </TIMEINTEGRATIONSCHEME>
-        <FILTER TYPE="Checkpoint">  
-            <PARAM NAME="OutputFrequency">1</PARAM> 
-        </FILTER> 
 
         <PARAMETERS>
             <!-- Conversion of mesh unit to m -->
@@ -37,6 +34,7 @@
             <P> NumSteps = 1000 </P>
             <P> TFinal        = NumSteps*TimeStep </P>
             <P> IO_InfoSteps   = 1                </P>
+            <P> CheckSteps   = 1                </P>
 
             <P>LDGc11 = 100</P>
 

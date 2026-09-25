@@ -88,6 +88,7 @@ protected:
     /// Store mesh dims and number of quad points as member vars for convenience
     int n_dims;
     int n_pts;
+    int n_coeffs;
 
     /// Particle system
     std::shared_ptr<ParticleSystem> particle_sys;
