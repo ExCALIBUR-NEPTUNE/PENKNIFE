@@ -25,14 +25,13 @@ void SingleDiffusiveField::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
 
-    int npoints = m_indfields[0]->GetNpoints();
-    m_kpar      = Array<OneD, NekDouble>(npoints);
-    m_kperp     = Array<OneD, NekDouble>(npoints);
+    m_kpar  = Array<OneD, NekDouble>(this->n_pts);
+    m_kperp = Array<OneD, NekDouble>(this->n_pts);
     for (int i = 0; i < 3; i++)
     {
         for (int j = 0; j < 3; j++)
         {
-            m_D[i][j] = Array<OneD, NekDouble>(npoints);
+            m_D[i][j] = Array<OneD, NekDouble>(this->n_pts);
         }
     }
 
@@ -114,8 +113,6 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
     Array<OneD, Array<OneD, NekDouble>> &outarray,
     [[maybe_unused]] const NekDouble time, const NekDouble lambda)
 {
-
-    int npoints = m_indfields[0]->GetNpoints();
     StdRegions::ConstFactorMap factors;
     factors[StdRegions::eFactorLambda] = 1.0 / lambda / m_epsilon;
     if (m_useSpecVanVisc)
@@ -133,7 +130,7 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
         for (const auto &[s, v] : GetIons())
         {
             int ni_idx = v.fields.at(field_to_index.at("n"));
-            Vmath::Zero(npoints, outarray[ni_idx], 1);
+            Vmath::Zero(this->n_pts, outarray[ni_idx], 1);
         }
 
         for (auto &x : m_forcing)
@@ -148,18 +145,18 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
         if (m_intScheme->GetIntegrationSchemeType() == LibUtilities::eImplicit)
         {
             // Multiply forcing term by -1 for definition of HelmSolve function
-            Vmath::Smul(npoints, -1.0, outarray[ni_idx], 1, outarray[ni_idx],
-                        1);
+            Vmath::Smul(this->n_pts, -1.0, outarray[ni_idx], 1,
+                        outarray[ni_idx], 1);
 
             // Multiply 1.0/timestep/lambda
-            Vmath::Svtvp(npoints, -factors[StdRegions::eFactorLambda],
+            Vmath::Svtvp(this->n_pts, -factors[StdRegions::eFactorLambda],
                          inarray[ni_idx], 1, outarray[ni_idx], 1,
                          outarray[ni_idx], 1);
         }
         else
         {
             // Multiply 1.0/timestep/lambda
-            Vmath::Smul(npoints, -factors[StdRegions::eFactorLambda],
+            Vmath::Smul(this->n_pts, -factors[StdRegions::eFactorLambda],
                         inarray[ni_idx], 1, outarray[ni_idx], 1);
         }
         CalcDiffTensor(s);
@@ -194,30 +191,28 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
 
 void SingleDiffusiveField::CalcKPar(int f)
 {
-    int npoints = m_fields[0]->GetNpoints();
     if (m_session->DefinesParameter("k_par"))
     {
         double k = m_session->GetParameter("k_par");
-        Vmath::Fill(npoints, k, m_kpar, 1);
+        Vmath::Fill(this->n_pts, k, m_kpar, 1);
     }
     else
     {
         double Z   = m_ions[f].charge;
         int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-        Vmath::Fill(npoints, this->k_par / (Z * Z), m_kpar, 1);
-        Vmath::Vdiv(npoints, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1,
+        Vmath::Fill(this->n_pts, this->k_par / (Z * Z), m_kpar, 1);
+        Vmath::Vdiv(this->n_pts, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1,
                     m_kpar, 1);
     }
 }
 
 void SingleDiffusiveField::CalcKPerp(int f)
 {
-    int npoints = m_fields[0]->GetNpoints();
     if (m_session->DefinesParameter("k_perp"))
     {
         double k = m_session->GetParameter("k_perp");
-        Vmath::Fill(npoints, k, m_kperp, 1);
+        Vmath::Fill(this->n_pts, k, m_kperp, 1);
     }
     else
     {
@@ -225,18 +220,17 @@ void SingleDiffusiveField::CalcKPerp(int f)
         double A   = m_ions[f].mass;
         int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
 
-        Vmath::Fill(npoints, this->k_perp * Z * Z * std::sqrt(A), m_kperp, 1);
-        Vmath::Vmul(npoints, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1,
+        Vmath::Fill(this->n_pts, this->k_perp * Z * Z * std::sqrt(A), m_kperp,
+                    1);
+        Vmath::Vmul(this->n_pts, m_kperp, 1, m_indfields[ni_idx]->GetPhys(), 1,
                     m_kperp, 1);
-        Vmath::Vdiv(npoints, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
+        Vmath::Vdiv(this->n_pts, m_kperp, 1, this->mag_B, 1, m_kperp, 1);
     }
 }
 
 void SingleDiffusiveField::CalcKPerpAnomalous(int f)
 {
-    int npoints = m_fields[0]->GetNpoints();
-
-    for (int p = 0; p < npoints; ++p)
+    for (int p = 0; p < this->n_pts; ++p)
     {
         m_kperp[p] = this->k_perp / std::sqrt(this->mag_B[p]);
     }
@@ -248,8 +242,6 @@ void SingleDiffusiveField::CalcKPerpAnomalous(int f)
  */
 void SingleDiffusiveField::CalcDiffTensor(int f)
 {
-    int npoints = m_fields[0]->GetNpoints();
-
     CalcKPar(f);
     CalcKPerp(f);
 
@@ -257,7 +249,7 @@ void SingleDiffusiveField::CalcDiffTensor(int f)
     {
         for (int j = 0; j < 3; j++)
         {
-            for (int k = 0; k < npoints; k++)
+            for (int k = 0; k < this->n_pts; k++)
             {
                 m_D[i][j][k] =
                     (m_kpar[k] - m_kperp[k]) * b_unit[i][k] * b_unit[j][k];
@@ -323,7 +315,6 @@ void SingleDiffusiveField::GetFluxVectorDiff(
 {
     unsigned int nDim = qfield.size();
     unsigned int nFld = qfield[0].size();
-    unsigned int nPts = qfield[0][0].size();
 
     for (auto &[k, v] : this->GetIons())
     {
@@ -332,11 +323,12 @@ void SingleDiffusiveField::GetFluxVectorDiff(
         for (unsigned int j = 0; j < nDim; ++j)
         {
             // Calc diffusion of n with D tensor
-            Vmath::Vmul(nPts, m_D[j][0], 1, qfield[0][f], 1, fluxes[j][f], 1);
+            Vmath::Vmul(this->n_pts, m_D[j][0], 1, qfield[0][f], 1,
+                        fluxes[j][f], 1);
             for (unsigned int k = 1; k < nDim; ++k)
             {
-                Vmath::Vvtvp(nPts, m_D[j][k], 1, qfield[k][f], 1, fluxes[j][f],
-                             1, fluxes[j][f], 1);
+                Vmath::Vvtvp(this->n_pts, m_D[j][k], 1, qfield[k][f], 1,
+                             fluxes[j][f], 1, fluxes[j][f], 1);
             }
         }
     }
