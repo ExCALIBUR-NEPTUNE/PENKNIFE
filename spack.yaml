@@ -20,10 +20,12 @@ spack:
     cxx:
       require:
         - gcc
+    mpi:
+      require:
+        - openmpi
     all:
       providers:
         sycl: [adaptivecpp]
-        mpi: [mpich, openmpi]
   develop:
     nektar:
       path: ./NESO/nektar
