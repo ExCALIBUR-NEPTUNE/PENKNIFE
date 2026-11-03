@@ -1,24 +1,24 @@
 #ifndef PLASMA_SYSTEM_HPP
 #define PLASMA_SYSTEM_HPP
 
-#include <SolverUtils/AdvectionSystem.h>
-#include <SolverUtils/Core/Misc.h>
-#include <SolverUtils/Diffusion/Diffusion.h>
-#include <SolverUtils/EquationSystem.h>
-#include <SolverUtils/Forcing/Forcing.h>
-
 #include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
 #include "nektar_interface/utilities.hpp"
-#include <solvers/solver_callback_handler.hpp>
 
-#include "../BoundaryConditions/PlasmaBndConds.hpp"
-#include "../Closures/Closure.hpp"
+#include "../BndCond/PlasmaBndConds.hpp"
+#include "../MagneticField/MagneticFieldOp.hpp"
+#include "../Quasineutrality/QuasineutralityOp.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
 #include "ImplicitHelper.hpp"
-#include "MagneticField.hpp"
 
+#include <limits>
+#include <vector>
 
+#include <LibUtilities/BasicUtils/Field/Field.hpp>
+#include <MultiRegions/ElmtOps/Expression/ExpressionOp.hpp>
+#include <MultiRegions/ElmtOps/PhysTraceExtract/PhysTraceExtractOp.hpp>
+#include <SolverCore/EquationSystems/UnsteadySystem.h>
+#include <SolverCore/Forcing/Forcing.h>
 
 namespace PENKNIFE
 {
@@ -26,13 +26,13 @@ using namespace Nektar;
 namespace LU = Nektar::LibUtilities;
 namespace MR = Nektar::MultiRegions;
 namespace SD = Nektar::SpatialDomains;
-namespace SU = Nektar::SolverUtils;
+namespace SC = Nektar::SolverCore;
 
 /**
  * @brief Equation system for the PENKNIFE solver
  *
  */
-class PlasmaSystem : public SU::UnsteadySystem
+class PlasmaSystem : public SC::UnsteadySystem
 {
     friend class MagneticField;
     friend class PlasmaBaseBndCond;
@@ -42,40 +42,97 @@ class PlasmaSystem : public SU::UnsteadySystem
 public:
     virtual std::shared_ptr<ParticleSystem> GetParticleSystem();
 
-    /// Callback handler to call user-defined callbacks
-    SolverCallbackHandler<PlasmaSystem> solver_callback_handler;
+    // One global species index addresses every metadata vector. Ion and
+    // neutral lists contain these indices, not positions within a subset.
+    static constexpr unsigned int InvalidId =
+        std::numeric_limits<unsigned int>::max();
 
-    struct Species
+    unsigned int GetNumSpecies() const
     {
-        double mass;
-        std::string name;
-        std::map<int, int> fields;
-    };
-    std::map<int, Species> m_species;
-    std::map<int, Species> &GetSpecies()
-    {
-        return m_species;
+        return m_names.size();
     }
-
-    struct Ion : public Species
+    const std::vector<std::string> &GetSpeciesNames() const
     {
-        double charge;
-    };
-    std::map<int, Ion> m_ions;
-    std::map<int, Ion> &GetIons()
+        return m_names;
+    }
+    const std::vector<unsigned int> &GetIons() const
     {
         return m_ions;
     }
-
-    struct Neutral : public Species
-    {
-        int ion;
-    };
-    std::map<int, Neutral> m_neutrals;
-    std::map<int, Neutral> &GetNeutrals()
+    const std::vector<unsigned int> &GetNeutrals() const
     {
         return m_neutrals;
     }
+    const std::vector<double> &GetMasses() const
+    {
+        return m_masses;
+    }
+    const std::vector<double> &GetCharges() const
+    {
+        return m_charges;
+    }
+    const std::vector<unsigned int> &GetDensityIds() const
+    {
+        return n_ids;
+    }
+    const std::vector<unsigned int> &GetMomentumIds() const
+    {
+        return v_ids;
+    }
+    const std::vector<unsigned int> &GetEnergyIds() const
+    {
+        return e_ids;
+    }
+    bool HasDensity(unsigned int s) const
+    {
+        return n_ids.at(s) != InvalidId;
+    }
+    bool HasMomentum(unsigned int s) const
+    {
+        return v_ids.at(s) != InvalidId;
+    }
+    bool HasEnergy(unsigned int s) const
+    {
+        return e_ids.at(s) != InvalidId;
+    }
+    unsigned int GetDensityId(unsigned int s) const
+    {
+        ASSERTL0(HasDensity(s),
+                 "Species " + m_names.at(s) + " has no density field.");
+        return n_ids[s];
+    }
+    unsigned int GetMomentumId(unsigned int s) const
+    {
+        ASSERTL0(HasMomentum(s),
+                 "Species " + m_names.at(s) + " has no momentum field.");
+        return v_ids[s];
+    }
+    unsigned int GetEnergyId(unsigned int s) const
+    {
+        ASSERTL0(HasEnergy(s),
+                 "Species " + m_names.at(s) + " has no energy field.");
+        return e_ids[s];
+    }
+    unsigned int GetFieldId(unsigned int s, const std::string &field) const
+    {
+        if (field == "n")
+            return GetDensityId(s);
+        if (field == "v")
+            return GetMomentumId(s);
+        if (field == "e")
+            return GetEnergyId(s);
+        ASSERTL0(false,
+                 "Unknown species field '" + field + "'; expected n, v or e.");
+        return InvalidId;
+    }
+    unsigned int GetNeutralIonId(unsigned int s) const
+    {
+        ASSERTL0(m_neutral_ions.at(s) != InvalidId,
+                 "Species " + m_names.at(s) + " has no associated ion.");
+        return m_neutral_ions[s];
+    }
+
+    void Quasineutrality(LU::Field<double, FieldState::Phys> &in);
 
 protected:
     PlasmaSystem(const LU::SessionReaderSharedPtr &session,
@@ -84,11 +141,6 @@ protected:
     NESOReaderSharedPtr neso_config;
 
     NESO::NektarFieldIndexMap field_to_index;
-
-    /// Store mesh dims and number of quad points as member vars for convenience
-    int n_dims;
-    int n_pts;
-    int n_coeffs;
 
     /// Particle system
     std::shared_ptr<ParticleSystem> particle_sys;
@@ -113,42 +165,50 @@ protected:
 
     bool transient_field;
 
-    std::shared_ptr<MagneticField> mag_field;
+    std::shared_ptr<MagneticFieldOp<double>> mag_field;
+
     /// Magnetic field vector
-    Array<OneD, MR::DisContFieldSharedPtr> B;
+    LU::Field<double, FieldState::Phys> B;
     /// Normalised magnetic field vector
-    Array<OneD, Array<OneD, NekDouble>> b_unit;
+    LU::Field<double, FieldState::Phys> b_unit;
+    LU::Field<double, FieldState::Phys> b_unit_trace;
+    std::shared_ptr<PhysTraceExtractOp<double>> m_BTraceExtractOp;
 
     /// Squared Magnitude of the magnetic field
-    Array<OneD, NekDouble> mag_B;
+    LU::Field<double, FieldState::Phys> mag_B;
 
     /// Electric Field
-    Array<OneD, MR::DisContFieldSharedPtr> E;
+    LU::Field<double, FieldState::Phys> E;
 
-    /// Diffusion object used in anisotropic diffusion
-    SU::DiffusionSharedPtr m_diffusion;
+    LU::Field<double, FieldState::Phys> ne;
+    /// Parallel current normalized by e Nnorm cs; prescribed zero for now.
+    LU::Field<double, FieldState::Phys> j_par;
+    /// Parallel electron momentum density: M_e = m_e n_e u_e_parallel.
+    LU::Field<double, FieldState::Phys> Me;
+    std::shared_ptr<QuasineutralityOp<double>> m_quasineutralityOp;
 
-    MR::DisContFieldSharedPtr ne;
-    MR::DisContFieldSharedPtr Te;
-    Array<OneD, MR::DisContFieldSharedPtr> ve;
+    unsigned int n_species = 0;
+    std::vector<std::string> m_names;
+    std::vector<double> m_masses;
+    std::vector<double> m_charges;
+    std::vector<unsigned int> m_ions;
+    std::vector<unsigned int> m_neutrals;
+    // Indexed by global species ID; InvalidId for species without an ion link.
+    std::vector<unsigned int> m_neutral_ions;
 
-    Array<OneD, MR::ExpListSharedPtr> m_indfields;
-    int n_indep_fields;
-    int n_species;
-    int n_fields_per_species;
+    // Exactly one entry per species, including InvalidId for absent fields.
+    std::vector<unsigned int> n_ids;
+    std::vector<unsigned int> v_ids;
+    std::vector<unsigned int> e_ids;
+    int ee_idx;
 
     /** Density source fields cast to DisContFieldSharedPtr for use in
      * particle evaluation/projection methods
      */
-    std::vector<MR::DisContFieldSharedPtr> src_fields;
-
-    VariableConverterSharedPtr m_varConv;
-
-    /// Boundary Conditions
-    std::shared_ptr<PlasmaBoundaryConditions> m_bndConds;
+    LU::Field<double, FieldState::Phys> src_fields;
 
     /// Forcing terms
-    std::vector<SolverUtils::ForcingSharedPtr> m_forcing;
+    std::vector<SC::ForcingSharedPtr> m_forcing;
 
     // Convenience key for varcoeffmaps
     static constexpr StdRegions::VarCoeffType vc[3][3] = {
@@ -161,28 +221,19 @@ protected:
 
     std::shared_ptr<ImplicitHelper> m_implHelper;
 
-    virtual void load_params();
+    virtual void LoadParams();
 
-    void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-                  Array<OneD, Array<OneD, NekDouble>> &out_arr,
-                  const NekDouble time);
-
-    void DoOdeProjection(
-        const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-        Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time);
-
-    void SetBoundaryConditions(NekDouble time);
-
-    virtual void v_ExtraFldOutput(
-        std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-        std::vector<std::string> &variables) override;
-    void v_DoSolve() override;
+    virtual void v_GenerateSummary(SummaryList &s) override;
+    virtual void v_WriteFld(const std::string &) override;
     virtual void v_DoInitialise(bool dump_initial_conditions) override;
-    virtual void v_InitObject(bool DeclareField) override;
-    virtual bool v_PostIntegrate(int step) override;
-    virtual bool v_PreIntegrate(int step) override;
-    virtual void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                        const int domain) override;
+
+    virtual void v_InitObject(bool declareExpansionLists = true) override;
+    virtual void v_InitialiseFields() override;
+    virtual void v_InitialiseOperators() override;
+
+    virtual bool v_PostIntegrate() override;
+    virtual bool v_PreIntegrate() override;
+    virtual void v_SetInitialConditions(NekDouble init_time) override;
 
     NESOSessionFunctionSharedPtr get_species_function(
         const std::string &, std::string name,
@@ -190,7 +241,7 @@ protected:
         bool cache                        = false);
     std::map<std::string, std::map<std::string, NESOSessionFunctionSharedPtr>>
         m_nesoSessionFunctions;
-};
+}; // namespace Nektar::SolverCore
 
 } // namespace PENKNIFE
 #endif

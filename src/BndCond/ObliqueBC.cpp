@@ -27,9 +27,9 @@ void ObliqueBC::v_Apply(
     [[maybe_unused]] const NekDouble &time)
 {
 
-    for (const auto &[k, v] : m_system.lock()->GetIons())
+    for (const auto k : m_system.lock()->GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+        int ni_idx = m_system.lock()->GetDensityId(k);
 
         Array<OneD, NekDouble> ni_bndelmt;
         m_fields[ni_idx]->ExtractPhysToBndElmt(m_bcRegion, physarray[ni_idx],

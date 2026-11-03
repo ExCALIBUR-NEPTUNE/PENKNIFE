@@ -18,11 +18,11 @@ public:
     /**
      * @brief Create an instance of this class and initialise it.
      */
-    static SU::EquationSystemSharedPtr create(
+    static SC::EquationSystemSharedPtr create(
         const LU::SessionReaderSharedPtr &session,
         const SD::MeshGraphSharedPtr &graph)
     {
-        SU::EquationSystemSharedPtr p =
+        SC::EquationSystemSharedPtr p =
             MemoryManager<ElectrostaticTurbulence>::AllocateSharedPtr(session,
                                                                       graph);
         p->InitObject();
@@ -34,6 +34,8 @@ protected:
     ElectrostaticTurbulence(const LU::SessionReaderSharedPtr &session,
                             const SD::MeshGraphSharedPtr &graph);
     void v_InitObject(bool DeclareFields = true) override;
+    void v_InitialiseOperators() override;
+
     void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
                                 const int domain) override;
 
@@ -94,27 +96,6 @@ protected:
     void DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                      Array<OneD, Array<OneD, NekDouble>> &outarray);
 
-    // Functions for the Implicit Solve
-    void DoOdeImplicitRhs(
-        const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-        Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time);
-
-    void DoOdeRhsCoeff(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-                       Array<OneD, Array<OneD, NekDouble>> &outarray,
-                       const NekDouble time);
-    void DoAdvectionCoeff(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                          Array<OneD, Array<OneD, NekDouble>> &outarray,
-                          const NekDouble time,
-                          const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-                          const Array<OneD, Array<OneD, NekDouble>> &pBwd);
-    void DoParticlesCoeff(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                          Array<OneD, Array<OneD, NekDouble>> &out_arr);
-    void DoDiffusionCoeff(
-        const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        const Array<OneD, const Array<OneD, NekDouble>> &pFwd,
-        const Array<OneD, const Array<OneD, NekDouble>> &pBwd);
-
     void load_params() override;
 
     void v_ExtraFldOutput(std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
@@ -129,11 +110,8 @@ private:
     std::vector<int> vi_src_idx;
     std::vector<int> ei_src_idx;
 
-    /// Hasegawa-Wakatani α
-    NekDouble alpha;
-    /// Hasegawa-Wakatani κ
-    NekDouble kappa;
-
+    std::shared_ptr<LinearSystemOp<double>> m_linearSystemOp;
+    std::shared_ptr<LinearSolverOp<double>> m_linearSolverOp;
     /// Velocities
     /// Storage for ExB drift velocity
     Array<OneD, Array<OneD, NekDouble>> v_ExB;
@@ -159,7 +137,7 @@ private:
     Array<OneD, NekDouble> omega_flux_norm;
     Array<OneD, NekDouble> trace_b_norm;
 
-    MR::ExpListSharedPtr phi;
+    LU::Field<double, FieldState::Phys> phi;
 
     StdRegions::VarCoeffMap m_phi_varcoeff;
 

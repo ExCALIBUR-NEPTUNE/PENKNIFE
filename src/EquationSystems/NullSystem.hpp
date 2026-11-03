@@ -16,11 +16,11 @@ public:
     /**
      * @brief Create an instance of this class and initialise it.
      */
-    static SU::EquationSystemSharedPtr create(
+    static SC::EquationSystemSharedPtr create(
         const LU::SessionReaderSharedPtr &session,
         const SD::MeshGraphSharedPtr &graph)
     {
-        SU::EquationSystemSharedPtr p =
+        SC::EquationSystemSharedPtr p =
             MemoryManager<NullSystem>::AllocateSharedPtr(session, graph);
         p->InitObject();
         return p;

@@ -1,7 +1,6 @@
 #include "ReducedBraginskii.hpp"
-#include "../RiemannSolvers/PlasmaSolver.hpp"
-#include <SolverUtils/Advection/AdvectionNonConservative.h>
-#include <SolverUtils/Advection/AdvectionWeakDG.h>
+#include "../FluxVolAdvDiff/FluxVolAdvDiffOp.hpp"
+#include <LibUtilities/BasicUtils/StringUtils.hpp>
 
 namespace PENKNIFE
 {
@@ -17,7 +16,6 @@ ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
                                      const SD::MeshGraphSharedPtr &graph)
     : PlasmaSystem(session, graph)
 {
-    this->n_indep_fields = 1; // p_e
 }
 
 /**
@@ -26,6 +24,9 @@ ReducedBraginskii::ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
 void ReducedBraginskii::v_InitObject(bool DeclareFields)
 {
     PlasmaSystem::v_InitObject(DeclareFields);
+    m_timeOp->DefineImplicit(&ImplicitHelper::ImplicitTimeInt, m_implHelper);
+    m_timeOp->DefineExplicitRhs(&ReducedBraginskii::DoOdeRhs, this);
+
     this->ee_idx      = m_indfields.size() - this->n_indep_fields;
     m_varConv->ee_idx = this->ee_idx;
 
@@ -64,15 +65,16 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
         std::vector<Sym<REAL>> out_syms;
 
         int cnt = 0;
-        for (const auto &[s, v] : this->GetIons())
+        for (const auto s : this->GetIons())
         {
+            const auto &name_s = this->GetSpeciesNames().at(s);
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-            src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_DENSITY"));
+            src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_DENSITY"));
             src_components.push_back(0);
             ni_src_idx.push_back(cnt++);
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_DENSITY"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_DENSITY"));
 
             for (int d = 0; d < this->m_spacedim; ++d)
             {
@@ -80,21 +82,21 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
                     MemoryManager<MR::DisContField>::AllocateSharedPtr(
                         *std::dynamic_pointer_cast<MR::DisContField>(
                             m_fields[0])));
-                src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
+                src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_MOMENTUM"));
                 src_components.push_back(d);
             }
             vi_src_idx.push_back(cnt);
             cnt += m_spacedim;
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_MOMENTUM"));
 
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
 
-            src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
+            src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_ENERGY"));
             src_components.push_back(0);
             ei_src_idx.push_back(cnt++);
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_ENERGY"));
         }
         this->src_fields.emplace_back(
             MemoryManager<MR::DisContField>::AllocateSharedPtr(
@@ -108,23 +110,137 @@ void ReducedBraginskii::v_InitObject(bool DeclareFields)
     }
 }
 
+/*
+ *  Create and initialise Fields.
+ */
+void ReducedBraginskii::v_InitialiseFields()
+{
+    // Initialise solution "m_fields" via EquationSystem routine
+    PlasmaSystem::v_InitialiseFields();
+
+    // Get interleave width
+    auto interleaveWidth =
+        Operator<double>::GetDefaultInterleaveWidth(m_session);
+
+    // Create blocks.
+    auto bAtr_phys = MultiRegions::GetBlockAttributes<double, FieldState::Phys>(
+        m_expansionLists[0], interleaveWidth);
+    m_advectionVel = LibUtilities::Field<double, FieldState::Phys>(
+        "advectionVel", bAtr_phys, m_coordim, m_npointsZ);
+
+    auto bAtr_phys_trace =
+        MultiRegions::GetLocTraceBlockAttributes<double, FieldState::Phys>(
+            m_expansionLists[0]);
+    m_traceAdvVel = LibUtilities::Field<double, FieldState::Phys>(
+        "traceAdvVel", bAtr_phys_trace, m_coordim, m_npointsZ);
+}
+
+void ReducedBraginskii::SetUpBoundaryConditions()
+{
+    // Bohm Boundary Condition Type
+    auto bndCondBohmOp =
+        BndCondBohmOp<double>::Create(m_expansionLists[0], m_variables);
+    m_advDiffusionOp->AddBndCondUpdateOp(bndCondBohmOp);
+}
+
+void ReducedBraginskii::v_InitialiseOperators()
+{
+    PlasmaSystem::v_InitialiseOperators();
+    std::string execName =
+        MultiRegions::Operator<double>::GetOpExecSpace(m_session);
+
+    // Create advection operators
+    m_advDiffusionOp = AdvWeakDGDiffusionIPOp<double>::Create(
+        m_expansionLists[0], m_variables);
+
+    std::string riemannMethod = m_session->GetSolverInfo("UpwindType");
+
+    std::string AdvDiffMethod =
+        "FluxTraceAdvDiff" + riemannMethod; // add prefix for local version
+    auto advDiffusionTraceFluxOp = SolverCore::TraceFluxOp<double>::Create(
+        m_expansionLists[0], m_variables, AdvDiffMethod);
+    advDiffusionTraceFluxOp->SetViscousTraceForm(ReadViscousTraceForm());
+    advDiffusionTraceFluxOp->SetTraceAdvVel(m_traceAdvVel);
+    advDiffusionTraceFluxOp->SetTraceB(this->b_unit_trace);
+    advDiffusionTraceFluxOp->SetIndices(n_ids, v_ids, e_ids, m_masses,
+                                        m_charges);
+    m_advDiffusionOp->SetAdvDiffTraceFlux(advDiffusionTraceFluxOp);
+
+    auto advVolFluxOp =
+        FluxVolAdvOp<double>::Create(m_expansionLists[0], m_variables);
+    advVolFluxOp->SetAdvVel(m_advectionVel);
+    advVolFluxOp->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_advDiffusionOp->SetAdvVolFlux(advVolFluxOp);
+
+    m_physTraceExtractOp = PhysTraceExtractOp<double>::Create(
+        m_expansionLists[0], m_advectionVel.GetComponentNames());
+
+    auto diffVolFluxOp =
+        FluxVolDiffOp<double>::Create(m_expansionLists[0], m_variables);
+    diffVolFluxOp->SetMagneticField(this->b_unit);
+    diffVolFluxOp->SetElectronEnergyId(ee_idx);
+    diffVolFluxOp->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_advDiffusionOp->SetDiffVolFlux(diffVolFluxOp);
+
+    // The average-of-normal-fluxes form needs the viscous flux on its own as
+    // well as the total; the CFE operator forms both in one pass.
+    if (advDiffusionTraceFluxOp->GetViscousTraceForm() ==
+        SolverCore::TraceFluxOp<
+            double>::ViscousTraceForm::AverageOfNormalFluxes)
+    {
+        auto advDiffVolFlux = FluxVolAdvDiffOp<double>::Create(
+            m_expansionLists[0], m_variables);
+        advDiffVolFlux->SetMagneticField(this->b_unit);
+        advDiffVolFlux->SetElectronEnergyId(ee_idx);
+        advDiffVolFlux->SetElectronFields(ne, Me, me);
+        advDiffVolFlux->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
+        m_advDiffusionOp->SetAdvDiffVolFlux(advDiffVolFlux);
+    }
+
+    SetUpBoundaryConditions();
+}
+
+/**
+ * @brief The viscous trace form SOLVERINFO ViscousTraceFlux selects.
+ *
+ * FluxOfAverages (default) evaluates the viscous trace flux from the
+ * averaged state and gradient; AverageOfNormalFluxes averages the two
+ * elements' own normal viscous fluxes. Both add the same interior-penalty
+ * term, and boundary traces keep the first form in either case.
+ */
+SolverCore::TraceFluxOp<double>::ViscousTraceForm ReducedBraginskii::
+    ReadViscousTraceForm()
+{
+    using Form = SolverCore::TraceFluxOp<double>::ViscousTraceForm;
+    std::string form;
+    m_session->LoadSolverInfo("ViscousTraceFlux", form, "FluxOfAverages");
+    if (StringUtils::IEquals(form, "AverageOfNormalFluxes"))
+    {
+        return Form::AverageOfNormalFluxes;
+    }
+    ASSERTL0(StringUtils::IEquals(form, "FluxOfAverages"),
+             "Unknown ViscousTraceFlux '" + form +
+                 "'; expected FluxOfAverages or AverageOfNormalFluxes.");
+    return Form::FluxOfAverages;
+}
+
 /**
  * @brief Initialise the advection object.
  */
 void ReducedBraginskii::InitAdvection()
 {
-    for (const auto &[s, v] : this->GetSpecies())
+    for (unsigned int s = 0; s < this->GetNumSpecies(); ++s)
     {
-        if (v.fields.find(field_to_index["v"]) != v.fields.end())
+        if (this->HasMomentum(s))
         {
-            int ni_idx = v.fields.at(field_to_index["n"]);
-            int vi_idx = v.fields.at(field_to_index["v"]);
+            int ni_idx = this->GetDensityId(s);
+            int vi_idx = this->GetMomentumId(s);
             this->advected_fields.push_back(ni_idx);
             this->advected_fields.push_back(vi_idx);
 
-            if (v.fields.find(field_to_index["e"]) != v.fields.end())
+            if (this->HasEnergy(s))
             {
-                int ei_idx = v.fields.at(field_to_index["e"]);
+                int ei_idx = this->GetEnergyId(s);
                 this->advected_fields.push_back(ei_idx);
             }
         }
@@ -220,152 +336,41 @@ bool ReducedBraginskii::v_PostIntegrate(int step)
  * @param inarray physical values of all fields
  * @param[out] outarray output array (RHSs of time integration equations)
  */
-void ReducedBraginskii::DoOdeRhs(
-    const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time)
+void ReducedBraginskii::DoOdeRhs(LU::Field<double, FieldState::Phys> &in,
+                                 LU::Field<double, FieldState::Phys> &out,
+                                 [[maybe_unused]] const double &time,
+                                 const double &dt)
 {
-    // Get field indices
-    int nTracePts = GetTraceTotPoints();
-    for (int f = 0; f < outarray.size(); ++f)
-    {
-        Vmath::Zero(this->n_pts, outarray[f], 1);
-    }
-
-    int nvariables = inarray.size();
-
-    m_varConv->GetElectronDensity(inarray, m_fields[0]->UpdatePhys());
-
-    // Store forwards/backwards space along trace space
-    Array<OneD, Array<OneD, NekDouble>> Fwd(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> Bwd(nvariables);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Fwd[i] = Array<OneD, NekDouble>(nTracePts, 0.0);
-        Bwd[i] = Array<OneD, NekDouble>(nTracePts, 0.0);
-        m_indfields[i]->GetFwdBwdTracePhys(inarray[i], Fwd[i], Bwd[i]);
-    }
+    m_quasineutralityOp->Apply(in, j_par, ne, Me);
 
     // Calculate E
     ComputeE();
     // Calculate ExB, parallel and diamagnetic velocities
-    CalcVelocities(inarray);
+    CalcVelocities(in);
 
-    // Perform advection
-    DoAdvection(inarray, outarray, time, Fwd, Bwd);
-
-    m_bndConds->Update(inarray, time);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Vmath::Neg(this->n_pts, outarray[i], 1);
-    }
-
-    // Perform Diffusion
-    DoDiffusion(inarray, outarray, Fwd, Bwd);
+    m_advDiffusionOp->SetScale(dt);
+    m_advDiffusionOp->Apply(in, out);
 
     if (this->particles_enabled)
     {
-        DoParticles(inarray, outarray);
+        DoParticles(in, out);
     }
 
     // Add forcing terms
-    for (auto &x : m_forcing)
+    for (unsigned int i = 0; i < m_forcing.size(); ++i)
     {
-        x->Apply(m_fields, inarray, outarray, time);
+        m_forcing[i]->SetAppend(true);
+        m_forcing[i]->Apply(in, out, time, dt);
     }
 }
 
 /**
  * @brief Compute the advection terms for the right-hand side
  */
-void ReducedBraginskii::DoAdvection(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time,
-    const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-    const Array<OneD, Array<OneD, NekDouble>> &pBwd)
+void ReducedBraginskii::DoParticles(LU::Field<double, FieldState::Phys> &in,
+                                    LU::Field<double, FieldState::Phys> &out)
 {
-    int nvariables = this->advected_fields.size();
-    int nTracePts  = GetTraceTotPoints();
-
-    Array<OneD, Array<OneD, NekDouble>> advVel(m_spacedim);
-
-    Array<OneD, Array<OneD, NekDouble>> outarrayAdv(nvariables);
-    for (int i = 0; i < nvariables; ++i)
-    {
-        outarrayAdv[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
-    }
-
-    Array<OneD, Array<OneD, NekDouble>> inarrayAdv(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inFwd(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inBwd(nvariables);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        inarrayAdv[i] = inarray[advected_fields[i]];
-        inFwd[i]      = pFwd[advected_fields[i]];
-        inBwd[i]      = pBwd[advected_fields[i]];
-    }
-
-    m_advection->Advect(nvariables, m_advfields, advVel, inarrayAdv,
-                        outarrayAdv, time, inFwd, inBwd);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Vmath::Vadd(this->n_pts, outarrayAdv[i], 1,
-                    outarray[this->advected_fields[i]], 1,
-                    outarray[this->advected_fields[i]], 1);
-    }
-}
-
-/**
- * @brief Compute the advection terms for the right-hand side
- */
-void ReducedBraginskii::DoParticles(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray)
-{
-    // Add contribution to electron energy
-    Vmath::Vadd(this->n_pts, outarray[ee_idx], 1,
-                this->src_fields[0]->GetPhys(), 1, outarray[ee_idx], 1);
-
-    for (const auto &[s, v] : this->GetIons())
-    {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        //  Add contribution to ion density
-        Vmath::Vadd(this->n_pts, outarray[ni_idx], 1,
-                    this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                    outarray[ni_idx], 1);
-
-        if (v.fields.find(field_to_index["v"]) != v.fields.end())
-        {
-            int vi_idx = v.fields.at(field_to_index["v"]);
-
-            for (int d = 0; d < m_spacedim; ++d)
-            {
-                Vmath::Vvtvp(this->n_pts, this->b_unit[d], 1,
-                             this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
-                             outarray[vi_idx], 1, outarray[vi_idx], 1);
-            }
-        }
-
-        if (v.fields.find(field_to_index["e"]) != v.fields.end())
-        {
-            int ei_idx = v.fields.at(field_to_index["e"]);
-
-            // Add contribution to ion energy
-            Vmath::Vadd(this->n_pts, outarray[ei_idx], 1,
-                        this->src_fields[ei_src_idx[s]]->GetPhys(), 1,
-                        outarray[ei_idx], 1);
-
-            // Add number density source contribution to ion energy
-            Array<OneD, NekDouble> dynamic_energy(this->n_pts);
-            m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
-            Vmath::Vvtvp(this->n_pts, dynamic_energy, 1,
-                         this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                         outarray[ei_idx], 1, outarray[ei_idx], 1);
-        }
-    }
+    m_math.add(in, src_fields, out);
 }
 
 /**
@@ -382,8 +387,7 @@ void ReducedBraginskii::ComputeE()
     this->E[2]->FwdTrans(this->E[2]->GetPhys(), this->E[2]->UpdateCoeffs());
 }
 
-void ReducedBraginskii::CalcVelocities(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray)
+void ReducedBraginskii::CalcVelocities(LU::Field<double, FieldState::Phys> &in)
 {
     for (int f = 0; f < this->adv_vel.size(); ++f)
     {
@@ -396,16 +400,18 @@ void ReducedBraginskii::CalcVelocities(
     // Zero Electron velocity
     Array<OneD, NekDouble> &j_i = m_fields[1]->UpdatePhys();
     Vmath::Zero(this->n_pts, j_i, 1);
-    for (const auto &[s, v] : GetIons())
+    for (const auto s : GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int vi_idx = v.fields.at(field_to_index["v"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
+        const double mass_s   = GetMasses().at(s);
+        const double charge_s = GetCharges().at(s);
+        int ni_idx            = GetDensityId(s);
+        int vi_idx            = GetMomentumId(s);
+        int ei_idx            = GetEnergyId(s);
 
         for (int p = 0; p < this->n_pts; ++p)
         {
-            j_i[p] += v.charge * inarray[vi_idx][p] / v.mass;
-            double v_i_par = inarray[vi_idx][p] / (v.mass * inarray[ni_idx][p]);
+            j_i[p] += charge_s * inarray[vi_idx][p] / mass_s;
+            double v_i_par = inarray[vi_idx][p] / (mass_s * inarray[ni_idx][p]);
             for (int d = 0; d < m_spacedim; ++d)
             {
                 this->adv_vel[ni_idx][d][p] = v_i_par * this->b_unit[d][p];
@@ -433,15 +439,16 @@ void ReducedBraginskii::CalcVelocities(
         }
     }
 
-    for (const auto &[s, v] : GetNeutrals())
+    for (const auto s : GetNeutrals())
     {
-        int nn_idx = v.fields.at(field_to_index["n"]);
-        int vn_idx = v.fields.at(field_to_index["v"]);
-        int en_idx = v.fields.at(field_to_index["e"]);
+        const double mass_s = GetMasses().at(s);
+        int nn_idx          = GetDensityId(s);
+        int vn_idx          = GetMomentumId(s);
+        int en_idx          = GetEnergyId(s);
 
         for (int p = 0; p < this->n_pts; ++p)
         {
-            double v_i_par = inarray[vn_idx][p] / (v.mass * inarray[nn_idx][p]);
+            double v_i_par = inarray[vn_idx][p] / (mass_s * inarray[nn_idx][p]);
             for (int d = 0; d < m_spacedim; ++d)
             {
                 this->adv_vel[nn_idx][d][p] = v_i_par * this->b_unit[d][p];
@@ -450,171 +457,8 @@ void ReducedBraginskii::CalcVelocities(
             }
         }
     }
-}
 
-/**
- *  @brief Compute components of advection velocities normal to trace elements
- * (faces, in 3D).
- */
-Array<OneD, Array<OneD, NekDouble>> &ReducedBraginskii::GetAdvVelNorm()
-{
-    // Number of trace (interface) points
-    int num_trace_pts = GetTraceNpoints();
-    // Auxiliary variable to compute normal velocities
-
-    // Compute advection vel dot trace normals and store
-    for (int j = 0; j < this->adv_vel_trace.size(); ++j)
-    {
-        Array<OneD, Array<OneD, NekDouble>> normals(m_spacedim);
-
-        for (int d = 0; d < m_spacedim; ++d)
-        {
-            normals[d] = Array<OneD, NekDouble>(num_trace_pts);
-        }
-        m_indfields[j]->GetTrace()->GetNormals(normals);
-        // Ensure output array is zeroed
-        Vmath::Zero(num_trace_pts, this->trace_vel_norm[j], 1);
-        for (int d = 0; d < this->adv_vel_trace[j].size(); ++d)
-        {
-            m_indfields[j]->ExtractTracePhys(this->adv_vel[j][d],
-                                             this->adv_vel_trace[j][d]);
-            for (int p = 0; p < num_trace_pts; ++p)
-            {
-                this->trace_vel_norm[j][p] +=
-                    normals[d][p] * this->adv_vel_trace[j][d][p];
-            }
-        }
-    }
-    return this->trace_vel_norm;
-}
-
-/**
- *  @brief Construct flux array.
- *
- * @param  field_vals Physical values for each advection field
- * @param[out] flux       Flux array
- */
-void ReducedBraginskii::GetFluxVector(
-    const Array<OneD, Array<OneD, NekDouble>> &field_vals,
-    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes)
-{
-    for (int d = 0; d < m_spacedim; ++d)
-    {
-        for (int p = 0; p < this->n_pts; ++p)
-        {
-            fluxes[ee_idx][d][p] =
-                this->adv_vel[ee_idx][d][p] * field_vals[ee_idx][p];
-        }
-    }
-
-    for (const auto &[s, v] : this->GetSpecies())
-    {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int vi_idx = v.fields.at(field_to_index["v"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
-
-        for (int d = 0; d < m_spacedim; ++d)
-        {
-            for (int p = 0; p < this->n_pts; ++p)
-            {
-                fluxes[ni_idx][d][p] =
-                    this->adv_vel[ni_idx][d][p] * field_vals[ni_idx][p];
-                fluxes[vi_idx][d][p] =
-                    this->adv_vel[vi_idx][d][p] * field_vals[vi_idx][p];
-                fluxes[ei_idx][d][p] =
-                    this->adv_vel[ei_idx][d][p] * field_vals[ei_idx][p];
-            }
-        }
-    }
-}
-
-/**
- * @brief Add diffusion to the rhs
- */
-void ReducedBraginskii::DoDiffusion(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray,
-    const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-    const Array<OneD, Array<OneD, NekDouble>> &pBwd)
-{
-    int nvariables = inarray.size();
-    int nTracePts  = GetTraceTotPoints();
-
-    // this should be preallocated
-    Array<OneD, Array<OneD, NekDouble>> outarrayDiff(nvariables);
-    for (int i = 0; i < nvariables; ++i)
-    {
-        outarrayDiff[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
-    }
-
-    Array<OneD, Array<OneD, NekDouble>> inarrayDiff(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inFwd(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inBwd(nvariables);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        inarrayDiff[i] = Array<OneD, NekDouble>(this->n_pts, 0.0);
-        inFwd[i]       = Array<OneD, NekDouble>(nTracePts, 0.0);
-        inBwd[i]       = Array<OneD, NekDouble>(nTracePts, 0.0);
-    }
-
-    // Extract temperature
-    m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
-
-    for (const auto &[s, v] : this->GetIons())
-    {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
-
-        inarrayDiff[ni_idx] = inarray[ni_idx];
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
-    }
-
-    // Repeat calculation for trace space
-    if (pFwd == NullNekDoubleArrayOfArray || pBwd == NullNekDoubleArrayOfArray)
-    {
-        inFwd = NullNekDoubleArrayOfArray;
-        inBwd = NullNekDoubleArrayOfArray;
-    }
-    else
-    {
-        m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
-        m_varConv->GetElectronTemperature(pBwd, inBwd[ee_idx]);
-        for (const auto &[s, v] : this->GetIons())
-        {
-            int ni_idx    = v.fields.at(field_to_index["n"]);
-            int ei_idx    = v.fields.at(field_to_index["e"]);
-            inFwd[ni_idx] = pFwd[ni_idx];
-            inBwd[ni_idx] = pBwd[ni_idx];
-
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
-        }
-    }
-
-    m_diffusion->Diffuse(nvariables, m_difffields, inarrayDiff, outarrayDiff,
-                         inFwd, inBwd);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Vmath::Vadd(this->n_pts, outarrayDiff[i], 1, outarray[i], 1,
-                    outarray[i], 1);
-        Vmath::Vadd(this->n_pts, friction[i], 1, outarray[i], 1, outarray[i],
-                    1);
-    }
-}
-
-/**
- * @brief Construct the flux vector for the anisotropic diffusion problem.
- */
-void ReducedBraginskii::GetFluxVectorDiff(
-    const Array<OneD, Array<OneD, NekDouble>> &in_arr,
-    const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &qfield,
-    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes)
-{
-
-    m_closure->EvaluateClosure(in_arr, qfield, fluxes, friction,
-                               m_fields[0]->GetPhys(), m_fields[1]->GetPhys());
+    m_physTraceExtractOp->Apply(m_advectionVel, m_traceAdvVel);
 }
 
 void ReducedBraginskii::CalcNeutralSources_nvp(
@@ -830,282 +674,61 @@ void ReducedBraginskii::AddNeutralSources(
     auto ne = m_fields[0]->GetPhys();
     Array<OneD, NekDouble> tmp(this->n_pts, 0.0);
 
-    for (const auto &[s, v] : this->GetNeutrals())
+    for (const auto s : this->GetNeutrals())
     {
-        int nn_idx = v.fields.at(field_to_index["n"]);
-        int ni_idx = this->m_ions[v.ion].fields.at(field_to_index["n"]);
+        const double mass_s = this->GetMasses().at(s);
+        int nn_idx          = this->GetDensityId(s);
+        int ni_idx          = this->GetDensityId(this->GetNeutralIonId(s));
 
-        if (v.fields.find(field_to_index["e"]) != v.fields.end())
+        if (this->HasEnergy(s))
         {
-            int en_idx = v.fields.at(field_to_index["e"]);
-            int ei_idx = this->m_ions[v.ion].fields.at(field_to_index["e"]);
+            int en_idx = this->GetEnergyId(s);
+            int ei_idx = this->GetEnergyId(this->GetNeutralIonId(s));
 
-            if (v.fields.find(field_to_index["v"]) != v.fields.end())
+            if (this->HasMomentum(s))
             {
                 // Neutral n,v,p; Ion n,v,p
-                int vn_idx = v.fields.at(field_to_index["v"]);
-                int vi_idx = this->m_ions[v.ion].fields.at(field_to_index["v"]);
-                CalcNeutralSources_nvp(v.mass, ee_idx, ni_idx, vi_idx, ei_idx,
+                int vn_idx = this->GetMomentumId(s);
+                int vi_idx = this->GetMomentumId(this->GetNeutralIonId(s));
+                CalcNeutralSources_nvp(mass_s, ee_idx, ni_idx, vi_idx, ei_idx,
                                        nn_idx, vn_idx, en_idx, inarray, ne,
                                        outarray, tmp);
             }
             else
             {
                 // Neutral n,p; Ion n,v,p; Ion n,p;
-                CalcNeutralSources_np(v.mass, ee_idx, ni_idx, ei_idx, nn_idx,
+                CalcNeutralSources_np(mass_s, ee_idx, ni_idx, ei_idx, nn_idx,
                                       en_idx, inarray, ne, outarray, tmp);
             }
         }
 
-        else if (v.fields.find(field_to_index["v"]) != v.fields.end())
+        else if (this->HasMomentum(s))
         {
-            int vn_idx = v.fields.at(field_to_index["v"]);
-            int vi_idx = this->m_ions[v.ion].fields.at(field_to_index["v"]);
-            if (this->m_ions[v.ion].fields.find(field_to_index["e"]) !=
-                this->m_ions[v.ion].fields.end())
+            int vn_idx = this->GetMomentumId(s);
+            int vi_idx = this->GetMomentumId(this->GetNeutralIonId(s));
+            if (this->HasEnergy(this->GetNeutralIonId(s)))
             {
                 // Neutral n,v; Ion n,v,p
-                int ei_idx = this->m_ions[v.ion].fields.at(field_to_index["e"]);
-                CalcNeutralSources_nv(v.mass, ee_idx, ni_idx, vi_idx, ei_idx,
+                int ei_idx = this->GetEnergyId(this->GetNeutralIonId(s));
+                CalcNeutralSources_nv(mass_s, ee_idx, ni_idx, vi_idx, ei_idx,
                                       nn_idx, vn_idx, inarray, ne, outarray,
                                       tmp);
             }
             else
             {
                 // Neutral n,v; Ion n,v
-                CalcNeutralSources_nv(v.mass, ee_idx, ni_idx, vi_idx, nn_idx,
+                CalcNeutralSources_nv(mass_s, ee_idx, ni_idx, vi_idx, nn_idx,
                                       vn_idx, inarray, ne, outarray, tmp);
             }
         }
         else
         {
             // Neutral n; Ion n; Ion n,v; Ion n,v,p
-            CalcNeutralSources_n(v.mass, ee_idx, ni_idx, nn_idx, inarray, ne,
+            CalcNeutralSources_n(mass_s, ee_idx, ni_idx, nn_idx, inarray, ne,
                                  outarray, tmp);
         }
     }
     Vmath::Vadd(this->n_pts, outarray[ee_idx], 1, tmp, 1, outarray[ee_idx], 1);
-}
-
-/**
- * @brief Populate rhs array ( @p outarray )
- *
- * @param inarray physical values of all fields
- * @param[out] outarray output array (RHSs of time integration equations)
- */
-void ReducedBraginskii::DoOdeImplicitRhs(
-    const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time)
-{
-    int nvariables = inarray.size();
-
-    Array<OneD, Array<OneD, NekDouble>> tmpOut(nvariables);
-    for (int i = 0; i < nvariables; ++i)
-    {
-        tmpOut[i] = Array<OneD, NekDouble>(this->n_coeffs);
-    }
-
-    DoOdeRhsCoeff(inarray, tmpOut, time);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        m_fields[i]->BwdTrans(tmpOut[i], outarray[i]);
-    }
-}
-
-/**
- * @brief Compute the right-hand side.
- */
-void ReducedBraginskii::DoOdeRhsCoeff(
-    const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time)
-{
-
-    int nvariables = inarray.size();
-    int nTracePts  = GetTraceTotPoints();
-
-    // Store forwards/backwards space along trace space
-    Array<OneD, Array<OneD, NekDouble>> Fwd(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> Bwd(nvariables);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Fwd[i] = Array<OneD, NekDouble>(nTracePts, 0.0);
-        Bwd[i] = Array<OneD, NekDouble>(nTracePts, 0.0);
-        m_indfields[i]->GetFwdBwdTracePhys(inarray[i], Fwd[i], Bwd[i]);
-    }
-
-    // Calculate advection
-    DoAdvectionCoeff(inarray, outarray, time, Fwd, Bwd);
-
-    // Negate results
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Vmath::Neg(this->n_coeffs, outarray[i], 1);
-    }
-
-    // Add diffusion terms
-
-    DoDiffusionCoeff(inarray, outarray, Fwd, Bwd);
-
-    if (this->particles_enabled)
-    {
-        DoParticlesCoeff(inarray, outarray);
-    }
-
-    // Add forcing terms
-    for (auto &x : m_forcing)
-    {
-        x->ApplyCoeff(m_indfields, inarray, outarray, time);
-    }
-}
-
-/**
- * @brief Compute the advection terms for the right-hand side
- */
-void ReducedBraginskii::DoAdvectionCoeff(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time,
-    const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-    const Array<OneD, Array<OneD, NekDouble>> &pBwd)
-{
-    int nvariables = inarray.size();
-    Array<OneD, Array<OneD, NekDouble>> advVel(m_spacedim);
-    std::dynamic_pointer_cast<SU::AdvectionWeakDG>(m_advection)
-        ->AdvectCoeffs(nvariables, m_indfields, advVel, inarray, outarray, time,
-                       pFwd, pBwd);
-}
-
-void ReducedBraginskii::DoDiffusionCoeff(
-    const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray,
-    const Array<OneD, const Array<OneD, NekDouble>> &pFwd,
-    const Array<OneD, const Array<OneD, NekDouble>> &pBwd)
-{
-    size_t nvariables = inarray.size();
-    size_t nTracePts  = GetTraceTotPoints();
-
-    Array<OneD, Array<OneD, NekDouble>> outarrayDiff{nvariables};
-    for (int i = 0; i < nvariables; ++i)
-    {
-        outarrayDiff[i] = Array<OneD, NekDouble>(this->n_coeffs, 0.0);
-    }
-
-    // if (m_is_diffIP)
-    // {
-    //     m_diffusion->DiffuseCoeffs(nvariables, m_fields, inarray,
-    //     outarrayDiff,
-    //                                m_bndEvaluateTime, pFwd, pBwd);
-    //     for (int i = 0; i < nvariables; ++i)
-    //     {
-    //         Vmath::Vadd(this->n_coeffs, outarrayDiff[i], 1, outarray[i], 1,
-    //                     outarray[i], 1);
-    //     }
-    // }
-    // else
-    // {
-    ASSERTL1(false, "LDGNS not yet validated for implicit compressible "
-                    "flow solver");
-    Array<OneD, Array<OneD, NekDouble>> inarrayDiff(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inFwd(nvariables);
-    Array<OneD, Array<OneD, NekDouble>> inBwd(nvariables);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        inarrayDiff[i] = Array<OneD, NekDouble>(this->n_pts);
-        inFwd[i]       = Array<OneD, NekDouble>(nTracePts);
-        inBwd[i]       = Array<OneD, NekDouble>(nTracePts);
-    }
-
-    // Extract temperature
-    m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
-    for (const auto &[s, v] : this->GetIons())
-    {
-        int ei_idx = v.fields.at(field_to_index["e"]);
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
-    }
-
-    // Repeat calculation for trace space
-    if (pFwd == NullNekDoubleArrayOfArray || pBwd == NullNekDoubleArrayOfArray)
-    {
-        inFwd = NullNekDoubleArrayOfArray;
-        inBwd = NullNekDoubleArrayOfArray;
-    }
-    else
-    {
-        m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
-        for (const auto &[s, v] : this->GetIons())
-        {
-            int ei_idx = v.fields.at(field_to_index["e"]);
-
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
-        }
-    }
-
-    // Diffusion term in coeff rhs form
-    m_diffusion->DiffuseCoeffs(nvariables, m_indfields, inarrayDiff,
-                               outarrayDiff, inFwd, inBwd);
-
-    for (int i = 0; i < nvariables; ++i)
-    {
-        Vmath::Vadd(this->n_coeffs, outarrayDiff[i], 1, outarray[i], 1, outarray[i],
-                    1);
-    }
-    //}
-}
-
-/**
- * @brief Compute the advection terms for the right-hand side
- */
-void ReducedBraginskii::DoParticlesCoeff(
-    const Array<OneD, Array<OneD, NekDouble>> &inarray,
-    Array<OneD, Array<OneD, NekDouble>> &outarray)
-{
-    Array<OneD, NekDouble> tmp(this->n_coeffs, 0.0);
-
-    // Add contribution to electron energy
-    m_indfields[ee_idx]->FwdTrans(this->src_fields[0]->GetPhys(), tmp);
-    Vmath::Vadd(this->n_pts, outarray[ee_idx], 1, tmp, 1, outarray[ee_idx], 1);
-
-    for (const auto &[s, v] : this->GetIons())
-    {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int vi_idx = v.fields.at(field_to_index["v"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
-        //  Add contribution to ion density
-        m_indfields[ni_idx]->FwdTrans(
-            this->src_fields[ni_src_idx[s]]->GetPhys(), tmp);
-        Vmath::Vadd(this->n_pts, outarray[ni_idx], 1, tmp, 1, outarray[ni_idx],
-                    1);
-
-        // Add contribution to ion energy
-        m_indfields[ei_idx]->FwdTrans(
-            this->src_fields[ei_src_idx[s]]->GetPhys(), tmp);
-        Vmath::Vadd(this->n_pts, outarray[ei_idx], 1, tmp, 1, outarray[ei_idx],
-                    1);
-
-        // Add number density source contribution to ion energy
-        Array<OneD, NekDouble> dynamic_energy(this->n_pts);
-        m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
-        Vmath::Vmul(this->n_pts, dynamic_energy, 1,
-                    this->src_fields[ni_src_idx[s]]->GetPhys(), 1,
-                    dynamic_energy, 1);
-        m_indfields[ei_idx]->FwdTrans(dynamic_energy, tmp);
-        Vmath::Vadd(this->n_pts, outarray[ei_idx], 1, tmp, 1, outarray[ei_idx],
-                    1);
-
-        Vmath::Zero(this->n_pts, dynamic_energy, 1);
-        for (int d = 0; d < m_spacedim; ++d)
-        {
-            Vmath::Vvtvp(this->n_pts, this->b_unit[d], 1,
-                         this->src_fields[vi_src_idx[s] + d]->GetPhys(), 1,
-                         dynamic_energy, 1, dynamic_energy, 1);
-        }
-        m_indfields[vi_idx]->FwdTrans(dynamic_energy, tmp);
-        Vmath::Vadd(this->n_pts, outarray[vi_idx], 1, tmp, 1, outarray[vi_idx],
-                    1);
-    }
 }
 
 /**
@@ -1127,9 +750,10 @@ void ReducedBraginskii::v_ExtraFldOutput(
     if (this->particles_enabled)
     {
         int cnt = 0;
-        for (auto &[k, v] : this->GetIons())
+        for (const auto k : this->GetIons())
         {
-            variables.emplace_back(v.name + "_SOURCE_DENSITY");
+            const auto &name_k = this->GetSpeciesNames().at(k);
+            variables.emplace_back(name_k + "_SOURCE_DENSITY");
             Array<OneD, NekDouble> SrcFwd1(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd1);
@@ -1137,7 +761,7 @@ void ReducedBraginskii::v_ExtraFldOutput(
 
             for (int d = 0; d < this->m_spacedim; ++d)
             {
-                variables.emplace_back(v.name + "_SOURCE_MOMENTUM" +
+                variables.emplace_back(name_k + "_SOURCE_MOMENTUM" +
                                        std::to_string(d));
                 Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
                 m_fields[0]->FwdTransLocalElmt(
@@ -1145,7 +769,7 @@ void ReducedBraginskii::v_ExtraFldOutput(
                 fieldcoeffs.emplace_back(SrcFwd);
             }
 
-            variables.emplace_back(v.name + "_SOURCE_ENERGY");
+            variables.emplace_back(name_k + "_SOURCE_ENERGY");
             Array<OneD, NekDouble> SrcFwd2(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[cnt++]->GetPhys(),
                                            SrcFwd2);

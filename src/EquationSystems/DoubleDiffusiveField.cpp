@@ -215,7 +215,7 @@ void DoubleDiffusiveField::CalcK(
     // this->neso_config->load_species_parameter(f, "Charge", Z);
     // this->neso_config->load_species_parameter(f, "Mass", A);
     auto ne    = this->m_fields[0]->GetPhys();
-    int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
+    int ni_idx = GetDensityId(f);
 
     for (int p = 0; p < this->n_pts; ++p)
     {
@@ -232,18 +232,20 @@ void DoubleDiffusiveField::CalcK(
 void DoubleDiffusiveField::CalcKappa(
     const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f)
 {
-    double Z   = this->m_ions[f].charge;
-    double A   = this->m_ions[f].mass;
-    int ei_idx = this->m_ions[f].fields[field_to_index["e"]];
-    int ni_idx = this->m_ions[f].fields[field_to_index["n"]];
+    double Z   = this->GetCharges().at(f);
+    double A   = this->GetMasses().at(f);
+    int ei_idx = this->GetEnergyId(f);
+    int ni_idx = this->GetDensityId(f);
 
     Array<OneD, NekDouble> tmp(this->n_pts, 0.0);
 
-    for (const auto &[s2, v2] : this->GetIons())
+    for (const auto s2 : this->GetIons())
     {
-        double Z2   = this->m_ions[s2].charge;
-        double A2   = this->m_ions[s2].mass;
-        int ni_idx2 = this->m_ions[s2].fields.at(field_to_index["n"]);
+        const double mass_s2   = this->GetMasses().at(s2);
+        const double charge_s2 = this->GetCharges().at(s2);
+        double Z2              = charge_s2;
+        double A2              = mass_s2;
+        int ni_idx2            = this->GetDensityId(s2);
 
         for (int p = 0; p < this->n_pts; ++p)
         {
@@ -388,12 +390,13 @@ void DoubleDiffusiveField::DoDiffusion(
     // Extract temperature
     m_varConv->GetElectronTemperature(inarray, inarrayDiff[ee_idx]);
 
-    for (const auto &[s, v] : this->GetSpecies())
+    for (unsigned int s = 0; s < this->GetNumSpecies(); ++s)
     {
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
+        const double mass_s = this->GetMasses().at(s);
+        int ni_idx          = this->GetDensityId(s);
+        int ei_idx          = this->GetEnergyId(s);
         Vmath::Vcopy(this->n_pts, inarray[ni_idx], 1, inarrayDiff[ni_idx], 1);
-        m_varConv->GetIonTemperature(s, v.mass, inarray, inarrayDiff[ei_idx]);
+        m_varConv->GetIonTemperature(s, mass_s, inarray, inarrayDiff[ei_idx]);
     }
 
     // Repeat calculation for trace space
@@ -407,15 +410,16 @@ void DoubleDiffusiveField::DoDiffusion(
         m_varConv->GetElectronTemperature(pFwd, inFwd[ee_idx]);
         m_varConv->GetElectronTemperature(pBwd, inBwd[ee_idx]);
 
-        for (const auto &[s, v] : this->GetSpecies())
+        for (unsigned int s = 0; s < this->GetNumSpecies(); ++s)
         {
-            int ni_idx = v.fields.at(field_to_index["n"]);
-            int ei_idx = v.fields.at(field_to_index["e"]);
+            const double mass_s = this->GetMasses().at(s);
+            int ni_idx          = this->GetDensityId(s);
+            int ei_idx          = this->GetEnergyId(s);
             Vmath::Vcopy(nTracePts, pFwd[ni_idx], 1, inFwd[ni_idx], 1);
             Vmath::Vcopy(nTracePts, pBwd[ni_idx], 1, inBwd[ni_idx], 1);
 
-            m_varConv->GetIonTemperature(s, v.mass, pFwd, inFwd[ei_idx]);
-            m_varConv->GetIonTemperature(s, v.mass, pBwd, inBwd[ei_idx]);
+            m_varConv->GetIonTemperature(s, mass_s, pFwd, inFwd[ei_idx]);
+            m_varConv->GetIonTemperature(s, mass_s, pBwd, inBwd[ei_idx]);
         }
     }
 
@@ -443,12 +447,12 @@ void DoubleDiffusiveField::GetFluxVectorDiff(
     unsigned int nDim = qfield.size();
     unsigned int nFld = qfield[0].size();
 
-    for (const auto &[s, v] : this->GetSpecies())
+    for (unsigned int s = 0; s < this->GetNumSpecies(); ++s)
     {
         CalcK(in_arr, s);
         CalcDiffTensor();
-        int ni_idx = v.fields.at(field_to_index["n"]);
-        int ei_idx = v.fields.at(field_to_index["e"]);
+        int ni_idx = this->GetDensityId(s);
+        int ei_idx = this->GetEnergyId(s);
 
         for (unsigned int j = 0; j < nDim; ++j)
         {
@@ -598,11 +602,12 @@ void DoubleDiffusiveField::load_params()
 bool DoubleDiffusiveField::v_PostIntegrate(int step)
 {
     Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-    for (const auto &[s, v] : GetIons())
+    for (const auto s : GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+        const double charge_s = GetCharges().at(s);
+        int ni_idx            = GetDensityId(s);
 
-        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+        Vmath::Svtvp(this->n_pts, charge_s, m_indfields[ni_idx]->GetPhys(), 1,
                      m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
                      1);
     }
