@@ -127,9 +127,9 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
     // where \hat = modal coeffs
     if (m_intScheme->GetIntegrationSchemeType() == LibUtilities::eImplicit)
     {
-        for (const auto &[s, v] : GetIons())
+        for (const auto s : GetIons())
         {
-            int ni_idx = v.fields.at(field_to_index.at("n"));
+            int ni_idx = GetDensityId(s);
             Vmath::Zero(this->n_pts, outarray[ni_idx], 1);
         }
 
@@ -139,9 +139,9 @@ void SingleDiffusiveField::ImplicitTimeIntCG(
         }
     }
 
-    for (const auto &[s, v] : GetIons())
+    for (const auto s : GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+        int ni_idx = GetDensityId(s);
         if (m_intScheme->GetIntegrationSchemeType() == LibUtilities::eImplicit)
         {
             // Multiply forcing term by -1 for definition of HelmSolve function
@@ -198,8 +198,8 @@ void SingleDiffusiveField::CalcKPar(int f)
     }
     else
     {
-        double Z   = m_ions[f].charge;
-        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
+        double Z   = GetCharges().at(f);
+        int ni_idx = GetDensityId(f);
 
         Vmath::Fill(this->n_pts, this->k_par / (Z * Z), m_kpar, 1);
         Vmath::Vdiv(this->n_pts, m_kpar, 1, m_indfields[ni_idx]->GetPhys(), 1,
@@ -216,9 +216,9 @@ void SingleDiffusiveField::CalcKPerp(int f)
     }
     else
     {
-        double Z   = m_ions[f].charge;
-        double A   = m_ions[f].mass;
-        int ni_idx = m_ions[f].fields.at(field_to_index.at("n"));
+        double Z   = GetCharges().at(f);
+        double A   = GetMasses().at(f);
+        int ni_idx = GetDensityId(f);
 
         Vmath::Fill(this->n_pts, this->k_perp * Z * Z * std::sqrt(A), m_kperp,
                     1);
@@ -316,9 +316,9 @@ void SingleDiffusiveField::GetFluxVectorDiff(
     unsigned int nDim = qfield.size();
     unsigned int nFld = qfield[0].size();
 
-    for (auto &[k, v] : this->GetIons())
+    for (const auto k : this->GetIons())
     {
-        int f = v.fields[field_to_index["n"]];
+        int f = this->GetDensityId(k);
         CalcDiffTensor(k);
         for (unsigned int j = 0; j < nDim; ++j)
         {
@@ -369,11 +369,12 @@ void SingleDiffusiveField::load_params()
 bool SingleDiffusiveField::v_PostIntegrate(int step)
 {
     Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-    for (const auto &[s, v] : GetIons())
+    for (const auto s : GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+        const double charge_s = GetCharges().at(s);
+        int ni_idx            = GetDensityId(s);
 
-        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+        Vmath::Svtvp(this->n_pts, charge_s, m_indfields[ni_idx]->GetPhys(), 1,
                      m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
                      1);
     }
@@ -401,9 +402,10 @@ void SingleDiffusiveField::v_ExtraFldOutput(
     {
         int i    = 0;
         int cnt2 = 0;
-        for (auto &[k, v] : this->GetIons())
+        for (const auto k : this->GetIons())
         {
-            variables.push_back(v.name + "_SOURCE_DENSITY");
+            const auto &name_k = this->GetSpeciesNames().at(k);
+            variables.push_back(name_k + "_SOURCE_DENSITY");
             Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(this->src_fields[i++]->GetPhys(),
                                            SrcFwd);

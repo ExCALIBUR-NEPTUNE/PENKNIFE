@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <boost/core/ignore_unused.hpp>
 
 #include <LibUtilities/BasicUtils/Vmath.hpp>
@@ -10,15 +11,113 @@ namespace PENKNIFE
 
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                            const SD::MeshGraphSharedPtr &graph)
-    : SU::UnsteadySystem(session, graph),
+    : SC::UnsteadySystem(session, graph),
       field_to_index(session->GetVariables())
 {
+    m_domains          = m_graph->GetDomain();
+    m_dom_to_offset[0] = 0;
+    int size           = 0;
+    for (size_t d = 0; d < m_domains.size(); ++d)
+    {
+        std::vector<int> global;
+        std::vector<int> local;
+        std::vector<int> phys_offset;
+        std::vector<int> coeff_offset;
+
+        for (auto &compIter : m_domains[d])
+        {
+            for (auto &x : compIter.second->m_geomVec)
+            {
+
+                global.push_back(x->GetGlobalID());
+
+                local.push_back(
+                    m_expansionLists[0]->GetElmtToExpId().at(global.back()));
+
+                phys_offset.push_back(
+                    m_expansionLists[0]->GetPhys_Offset(local.back()));
+
+                size +=
+                    m_expansionLists[0]->GetExp(local.back())->GetTotPoints();
+            }
+        }
+        m_dom_to_offset[d + 1] = size;
+    }
 
     this->particles_enabled = false;
     this->neso_config       = std::make_shared<NESOReader>(session);
 
     this->neso_config->read_species();
     this->neso_config->read_vantage();
+
+    // Session n/v/e variables describe templates. The evolved fields are
+    // constructed once from the species declarations, followed by ee.
+    m_variables.clear();
+    for (const auto &[name, spec] : this->neso_config->get_species())
+    {
+        const unsigned int s = m_names.size();
+        m_names.push_back(name);
+        n_ids.push_back(InvalidId);
+        v_ids.push_back(InvalidId);
+        e_ids.push_back(InvalidId);
+        m_neutral_ions.push_back(InvalidId);
+
+        double mass, charge;
+        this->neso_config->load_species_parameter(name, "Mass", mass, 1.0);
+        this->neso_config->load_species_parameter(name, "Charge", charge, 0.0);
+        m_masses.push_back(mass);
+        m_charges.push_back(charge);
+
+        for (const auto &field : std::get<2>(spec))
+        {
+            std::vector<unsigned int> *ids = nullptr;
+            if (field == "n")
+                ids = &n_ids;
+            else if (field == "v")
+                ids = &v_ids;
+            else if (field == "e")
+                ids = &e_ids;
+            else
+                ASSERTL0(false, "Unknown field '" + field + "' for " + name +
+                                    "; expected n, v or e.");
+
+            ASSERTL0((*ids)[s] == InvalidId,
+                     "Duplicate field '" + field + "' for species " + name);
+            (*ids)[s] = m_variables.size();
+            m_variables.push_back(name + "_" + field);
+        }
+
+        if (std::get<3>(spec).has_value())
+            m_neutrals.push_back(s);
+        else
+            m_ions.push_back(s);
+    }
+    n_species = m_names.size();
+
+    // Resolve neutral associations after all names and ion IDs are known.
+    // A neutral may sort before its associated ion in the configuration map.
+    unsigned int s = 0;
+    for (const auto &[name, spec] : this->neso_config->get_species())
+    {
+        if (const auto &ion_name = std::get<3>(spec); ion_name.has_value())
+        {
+            const auto ion =
+                std::find(m_names.begin(), m_names.end(), *ion_name);
+            ASSERTL0(ion != m_names.end(),
+                     "Unknown ion '" + *ion_name + "' associated with " + name);
+            const unsigned int ion_id = std::distance(m_names.begin(), ion);
+            ASSERTL0(std::find(m_ions.begin(), m_ions.end(), ion_id) !=
+                         m_ions.end(),
+                     "Species '" + *ion_name + "' associated with " + name +
+                         " is not an ion.");
+            m_neutral_ions[s] = ion_id;
+        }
+        ++s;
+    }
+
+    ee_idx = m_variables.size();
+    m_variables.push_back("ee");
+    m_nVariables = m_variables.size();
 
     if (session->DefinesSolverInfo("PARTTYPE"))
     {
@@ -50,6 +149,30 @@ PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
     }
 }
 
+void PlasmaSystem::v_GenerateSummary(SummaryList &s)
+{
+    std::stringstream ss;
+    ss << R"(
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║  ██████╗  ███████╗ ███╗   ██╗ ██╗  ██╗ ███╗   ██╗ ██╗ ███████╗ ███████╗   ║
+║  ██╔══██╗ ██╔════╝ ████╗  ██║ ██║ ██╔╝ ████╗  ██║ ██║ ██╔════╝ ██╔════╝   ║
+║  ██████╔╝ █████╗   ██╔██╗ ██║ █████╔╝  ██╔██╗ ██║ ██║ █████╗   █████╗     ║
+║  ██╔═══╝  ██╔══╝   ██║╚██╗██║ ██╔═██╗  ██║╚██╗██║ ██║ ██╔══╝   ██╔══╝     ║
+║  ██║      ███████╗ ██║ ╚████║ ██║  ██╗ ██║ ╚████║ ██║ ██║      ███████╗   ║
+║  ╚═╝      ╚══════╝ ╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝ ╚═╝ ╚═╝      ╚══════╝   ║
+║ Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+)";
+    AddSummaryItem(s, "", ss.str());
+    SC::UnsteadySystem::v_GenerateSummary(s);
+
+    AddSummaryItem(s, "Mesh length scale", this->mesh_length);
+    AddSummaryItem(s, "Density normalisation", this->Nnorm);
+    AddSummaryItem(s, "Temperature normalisation", this->Tnorm);
+    AddSummaryItem(s, "Magnetic Field normalisation", this->Bnorm);
+}
+
 std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
 {
     return this->particle_sys;
@@ -58,9 +181,8 @@ std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
 /**
  * @brief Load all required session parameters into member variables.
  */
-void PlasmaSystem::load_params()
+void PlasmaSystem::LoadParams()
 {
-    m_session->LoadParameter("CheckSteps", m_checksteps, 0);
     m_session->LoadParameter("mesh_length", this->mesh_length, 1.);
     m_session->LoadParameter("Nnorm", this->Nnorm, 1e18);
     m_session->LoadParameter("Tnorm", this->Tnorm, 100.);
@@ -79,60 +201,71 @@ void PlasmaSystem::load_params()
     this->transient_field = (transient_field_str == "Transient");
 }
 
-/**
- * @brief Perform projection into correct polynomial space.
- *
- * @details This routine projects the @p in_arr input and ensures the @p
- * out_arr output lives in the correct space. Since we are hard-coding DG,
- * this corresponds to a simple copy from in to out, since no elemental
- * connectivity is required and the output of the RHS function is
- * polynomial.
- *
- * @param in_arr Unprojected values
- * @param[out] out_arr Projected values
- * @param time Current simulation time
- *
- */
-void PlasmaSystem::DoOdeProjection(
-    const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-    Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time)
+void PlasmaSystem::v_InitialiseFields()
 {
-    int i;
-    int num_vars = in_arr.size();
+    EquationSystem::v_InitialiseFields();
+    auto interleaveWidth =
+        Operator<double>::GetDefaultInterleaveWidth(m_session);
+    auto bAtr_phys = MultiRegions::GetBlockAttributes<double, FieldState::Phys>(
+        m_expansionLists[0], interleaveWidth);
 
-    SetBoundaryConditions(time);
+    this->B = LibUtilities::Field<double, FieldState::Phys>(
+        "Magnetic Field", bAtr_phys, 3, m_npointsZ);
+    this->b_unit = LibUtilities::Field<double, FieldState::Phys>(
+        "Unit Magnetic Field", bAtr_phys, 3, m_npointsZ);
 
-    switch (m_projectionType)
+    this->mag_B = LibUtilities::Field<double, FieldState::Phys>(
+        "Squared Magnetic Field Magnitude", bAtr_phys, 1, m_npointsZ);
+    this->E = LibUtilities::Field<double, FieldState::Phys>(
+        "Electric Field", bAtr_phys, 3, m_npointsZ);
+
+    this->ne = LU::Field<double, FieldState::Phys>(
+        "Electron Density", bAtr_phys, 1, m_npointsZ);
+    m_math.zero(this->ne);
+    this->j_par = LU::Field<double, FieldState::Phys>(
+        "Parallel Current", bAtr_phys, 1, m_npointsZ);
+    m_math.zero(this->j_par);
+    this->Me = LU::Field<double, FieldState::Phys>(
+        "Parallel Electron Momentum", bAtr_phys, 1, m_npointsZ);
+    m_math.zero(this->Me);
+
+    auto bAtr_phys_trace =
+        MultiRegions::GetLocTraceBlockAttributes<double, FieldState::Phys>(
+            m_expansionLists[0]);
+    this->b_unit_trace = LibUtilities::Field<double, FieldState::Phys>(
+        "Unit B on trace", bAtr_phys_trace, m_coordim, m_npointsZ);
+}
+
+void PlasmaSystem::v_InitialiseOperators()
+{
+    EquationSystem::v_InitialiseOperators();
+    std::string execName =
+        MultiRegions::Operator<double>::GetOpExecSpace(m_session);
+
+    m_quasineutralityOp = QuasineutralityOp<double>::Create(
+        m_expansionLists[0], m_variables, execName);
+    std::vector<unsigned int> ionDensityIds;
+    std::vector<unsigned int> ionMomentumIds;
+    std::vector<double> ionCharges, ionMasses;
+    ionDensityIds.reserve(m_ions.size());
+    ionMomentumIds.reserve(m_ions.size());
+    ionCharges.reserve(m_ions.size());
+    ionMasses.reserve(m_ions.size());
+    for (const auto s : m_ions)
     {
-        case MultiRegions::eDiscontinuous:
-        {
-            // Just copy over array
-            if (in_arr != out_arr)
-            {
-                for (i = 0; i < num_vars; ++i)
-                {
-                    Vmath::Vcopy(this->n_pts, in_arr[i], 1, out_arr[i], 1);
-                }
-            }
-            break;
-        }
-        case MultiRegions::eGalerkin:
-        {
-            Array<OneD, NekDouble> coeffs(this->n_coeffs);
-
-            for (i = 0; i < num_vars; ++i)
-            {
-                m_indfields[i]->FwdTrans(in_arr[i], coeffs);
-                m_indfields[i]->BwdTrans(coeffs, out_arr[i]);
-            }
-            break;
-        }
-        default:
-        {
-            ASSERTL0(false, "Unknown projection scheme");
-            break;
-        }
+        ionDensityIds.push_back(GetDensityId(s));
+        ionMomentumIds.push_back(v_ids[s]);
+        ionCharges.push_back(m_charges[s]);
+        ionMasses.push_back(m_masses[s]);
     }
+    m_quasineutralityOp->SetSpecies(ionDensityIds, ionMomentumIds, ionCharges,
+                                  ionMasses, me);
+
+    m_BTraceExtractOp = PhysTraceExtractOp<double>::Create(
+        m_expansionLists[0], this->b_unit.GetComponentNames());
+    this->mag_field = MagneticFieldOp<double>::Create(
+        m_expansionLists[0], this->B.GetComponentNames());
+    this->mag_field->SetFields(this->B, this->b_unit, this->mag_B);
 }
 
 /**
@@ -140,72 +273,9 @@ void PlasmaSystem::DoOdeProjection(
  * @param fieldcoeffs field coefficients to be appended to
  * @param variables variable names to be appended to
  */
-void PlasmaSystem::v_ExtraFldOutput(
-    std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-    std::vector<std::string> &variables)
+void PlasmaSystem::v_WriteFld(const std::string &outname)
 {
-    bool extraFields;
-    m_session->MatchSolverInfo("OutputSpeciesFields", "True", extraFields,
-                               true);
-    if (extraFields)
-    {
-        for (const auto &[k, v] : this->GetSpecies())
-        {
-            for (const auto &[f, fi] : v.fields)
-            {
-                variables.emplace_back(m_session->GetVariable(f) + "_" +
-                                       v.name);
-                Array<OneD, NekDouble> Fwd(this->n_coeffs);
-                this->m_indfields[fi]->FwdTransLocalElmt(
-                    this->m_indfields[fi]->GetPhys(), Fwd);
-                fieldcoeffs.emplace_back(Fwd);
-            }
-        }
-    }
-
-    m_session->MatchSolverInfo("OutputEMFields", "True", extraFields, true);
-    if (extraFields)
-    {
-        variables.emplace_back("Bx");
-        Array<OneD, NekDouble> BxFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->B[0]->GetPhys(), BxFwd);
-        fieldcoeffs.emplace_back(BxFwd);
-
-        variables.emplace_back("By");
-        Array<OneD, NekDouble> ByFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->B[1]->GetPhys(), ByFwd);
-        fieldcoeffs.emplace_back(ByFwd);
-
-        variables.emplace_back("Bz");
-        Array<OneD, NekDouble> BzFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->B[2]->GetPhys(), BzFwd);
-        fieldcoeffs.emplace_back(BzFwd);
-
-        variables.emplace_back("Ex");
-        Array<OneD, NekDouble> ExFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->E[0]->GetPhys(), ExFwd);
-        fieldcoeffs.emplace_back(ExFwd);
-
-        variables.emplace_back("Ey");
-        Array<OneD, NekDouble> EyFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->E[1]->GetPhys(), EyFwd);
-        fieldcoeffs.emplace_back(EyFwd);
-
-        variables.emplace_back("Ez");
-        Array<OneD, NekDouble> EzFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(this->E[2]->GetPhys(), EzFwd);
-        fieldcoeffs.emplace_back(EzFwd);
-    }
-    m_session->MatchSolverInfo("OutputPartitions", "True", extraFields, false);
-    if (extraFields)
-    {
-        variables.emplace_back("Rank");
-        Array<OneD, NekDouble> Rank(this->n_pts,
-                                    this->m_session->GetComm()->GetRank());
-        Array<OneD, NekDouble> RankFwd(this->n_coeffs);
-        m_fields[0]->FwdTransLocalElmt(Rank, RankFwd);
-        fieldcoeffs.emplace_back(RankFwd);
-    }
+    EquationSystem::v_WriteFld(outname);
 }
 
 /**
@@ -214,158 +284,30 @@ void PlasmaSystem::v_ExtraFldOutput(
  * @param create_field if true, create a new field object and add it to
  * m_fields. Optional, defaults to true.
  */
-void PlasmaSystem::v_InitObject(bool create_field)
+void PlasmaSystem::v_InitObject(bool declareExpansionLists)
 {
-    SU::UnsteadySystem::v_InitObject(create_field);
-    this->n_dims   = m_graph->GetMeshDimension();
-    this->n_pts    = m_fields[0]->GetNpoints();
-    this->n_coeffs = m_fields[0]->GetNcoeffs();
-
+    SC::UnsteadySystem::v_InitObject(declareExpansionLists);
     // Load parameters
-    load_params();
+    LoadParams();
 
-    m_domains          = m_graph->GetDomain();
-    m_dom_to_offset[0] = 0;
-    int size           = 0;
-    for (size_t d = 0; d < m_domains.size(); ++d)
-    {
-        std::vector<int> global;
-        std::vector<int> local;
-        std::vector<int> phys_offset;
-        std::vector<int> coeff_offset;
+    ASSERTL0(m_session->DefinesSolverInfo("UPWINDTYPE"),
+             "No UPWINDTYPE defined in session.");
 
-        for (auto &compIter : m_domains[d])
-        {
-            for (auto &x : compIter.second->m_geomVec)
-            {
+    /// Create Field for solution m_fields and others
+    InitialiseFields();
 
-                global.push_back(x->GetGlobalID());
+    // Create and initialise all operators
+    InitialiseOperators();
+    // Configure Time-integration
+    InitialiseTimeOp();
 
-                local.push_back(
-                    m_fields[0]->GetElmtToExpId().at(global.back()));
-
-                phys_offset.push_back(
-                    m_fields[0]->GetPhys_Offset(local.back()));
-
-                size += m_fields[0]->GetExp(local.back())->GetTotPoints();
-            }
-        }
-        m_dom_to_offset[d + 1] = size;
-    }
-
-    // Store FieldSharedPtr casts of fields in a map, indexed by name
-
-    this->E = Array<OneD, MR::DisContFieldSharedPtr>(3);
-    this->B = Array<OneD, MR::DisContFieldSharedPtr>(3);
-    for (int d = 0; d < 3; ++d)
-    {
-        this->E[d] = MemoryManager<MR::DisContField>::AllocateSharedPtr(
-            *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]));
-        this->B[d] = MemoryManager<MR::DisContField>::AllocateSharedPtr(
-            *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0]));
-        this->B[d]->GetTrace();
-    }
-    this->mag_field = std::make_shared<MagneticField>(
-        m_session, as<PlasmaSystem>(), this->B, m_spacedim);
-    this->b_unit = this->mag_field->b_unit;
-    this->mag_B  = this->mag_field->mag_B;
-    this->mag_field->Update(0);
-
-    this->ve = Array<OneD, MR::DisContFieldSharedPtr>(3);
-
-    int nfields = 0;
-    std::map<std::string, int> ions_by_name;
-    int s_idx = 0;
-    int f_idx = 0;
-    for (auto &[k, v] : this->neso_config->get_species())
-    {
-        double mass, charge;
-        this->neso_config->load_species_parameter(k, "Mass", mass, 1.0);
-        this->neso_config->load_species_parameter(k, "Charge", charge, 0.0);
-
-        Species spec{mass, k};
-        for (const auto &str : std::get<2>(v))
-        {
-            spec.fields[field_to_index[str]] = f_idx++;
-        }
-        if (std::get<3>(v).has_value())
-        {
-            int ion = ions_by_name[*std::get<3>(v)];
-            Neutral neutral{spec, ion};
-            m_neutrals[s_idx] = neutral;
-        }
-        else
-        {
-            Ion ion{spec, charge};
-            m_ions[s_idx]   = ion;
-            ions_by_name[k] = s_idx;
-        }
-        m_species[s_idx++] = spec;
-    }
-
-    this->n_species = m_species.size();
-
-    m_indfields = Array<OneD, MR::ExpListSharedPtr>(n_indep_fields + f_idx);
-
-    for (const auto &[k, v] : this->GetSpecies())
-    {
-        std::string name = v.name;
-        for (const auto &[f, fi] : v.fields)
-        {
-            if (m_projectionType == MR::eGalerkin ||
-                m_projectionType == MR::eMixed_CG_Discontinuous)
-            {
-                m_indfields[fi] =
-                    MemoryManager<MR::ContField>::AllocateSharedPtr(
-                        *std::dynamic_pointer_cast<MR::ContField>(m_fields[0]),
-                        m_graph, m_session->GetVariable(f), true,
-                        m_checkIfSystemSingular[f]);
-            }
-            else
-            {
-                m_indfields[fi] =
-                    MemoryManager<MR::DisContField>::AllocateSharedPtr(
-                        *std::dynamic_pointer_cast<MR::DisContField>(
-                            m_fields[0]),
-                        m_graph, m_session->GetVariable(f));
-            }
-        }
-    }
-
-    for (int i = 0; i < n_indep_fields; ++i)
-    {
-        m_indfields[f_idx + i] = m_fields[m_fields.size() - n_indep_fields + i];
-    }
-    // Ensure DG is setup
-    for (int i = 1; i < m_indfields.size(); ++i)
-    {
-        m_indfields[i]->GetTrace();
-    }
-
-    // Bind projection function for time integration object
-    m_ode.DefineProjection(&PlasmaSystem::DoOdeProjection, this);
-    if (m_projectionType == MR::eDiscontinuous)
-    {
-        // Turn off forward-transform of initial conditions.
-        m_homoInitialFwd = false;
-        m_implHelper     = std::make_shared<ImplicitHelper>(
-            m_session, m_indfields, m_ode, m_indfields.size());
-        m_implHelper->InitialiseNonlinSysSolver();
-        m_ode.DefineImplicitSolve(&ImplicitHelper::ImplicitTimeInt,
-                                  m_implHelper);
-    }
-
-    m_varConv = MemoryManager<VariableConverter>::AllocateSharedPtr(
-        as<PlasmaSystem>(), m_spacedim);
+    // this->b_unit = this->mag_field->b_unit;
+    // this->mag_B  = this->mag_field->mag_B;
+    this->mag_field->Apply(m_time);
+    m_BTraceExtractOp->Apply(this->b_unit, this->b_unit_trace);
 
     // Forcing terms
-    m_forcing = SU::Forcing::Load(m_session, shared_from_this(), m_indfields,
-                                  m_indfields.size());
-
-    m_bndConds = MemoryManager<PlasmaBoundaryConditions>::AllocateSharedPtr();
-
-    m_bndConds->Initialize(m_session, as<PlasmaSystem>(), m_indfields, B, E,
-                           m_spacedim);
+    m_forcing = SC::Forcing::Load(m_session, m_expansionLists[0], m_variables);
 }
 
 void PlasmaSystem::v_DoInitialise(bool dump_initial_conditions)
@@ -377,255 +319,15 @@ void PlasmaSystem::v_DoInitialise(bool dump_initial_conditions)
     }
     UnsteadySystem::v_DoInitialise(dump_initial_conditions);
 }
-/**
- * @brief Initialises the time integration scheme (as specified in the
- * session file), and perform the time integration.
- */
-void PlasmaSystem::v_DoSolve()
-{
-    ASSERTL0(m_intScheme != nullptr, "No time integration scheme.");
-
-    int i          = 1;
-    int nvariables = 0;
-    int nfields    = m_indfields.size();
-    if (m_intVariables.empty())
-    {
-        for (i = 0; i < nfields; ++i)
-        {
-            m_intVariables.push_back(i);
-        }
-        nvariables = nfields;
-    }
-    else
-    {
-        nvariables = m_intVariables.size();
-    }
-
-    // Set up wrapper to fields data storage.
-    Array<OneD, Array<OneD, NekDouble>> fields(nvariables);
-
-    // Order storage to list time-integrated fields first.
-    // @TODO: Refactor to take coeffs (FwdTrans) if boolean flag (in constructor
-    // function) says to.
-    for (i = 0; i < nvariables; ++i)
-    {
-        fields[i] = m_indfields[m_intVariables[i]]->UpdatePhys();
-        m_indfields[m_intVariables[i]]->SetPhysState(false);
-    }
-
-    // @TODO: Virtual function that allows to transform the field space, embed
-    // the MultiplyMassMatrix in here.
-    // @TODO: Specify what the fields variables are physical or coefficient,
-    // boolean in UnsteadySystem class...
-
-    v_ALEPreMultiplyMass(fields);
-
-    // Initialise time integration scheme.
-    m_intScheme->InitializeScheme(m_timestep, fields, m_time, m_ode);
-
-    for (auto &x : m_filters)
-    {
-        x.second->Initialise(m_fields, m_time);
-    }
-
-    LibUtilities::Timer timer;
-    bool doCheckTime      = false;
-    int step              = m_initialStep;
-    int stepCounter       = 0;
-    NekDouble intTime     = 0.0;
-    NekDouble cpuTime     = 0.0;
-    NekDouble cpuPrevious = 0.0;
-    NekDouble elapsed     = 0.0;
-
-    m_lastCheckTime = 0.0;
-
-    Array<OneD, int> abortFlags(2, 0);
-    std::string abortFile = "abort";
-    if (m_session->DefinesSolverInfo("CheckAbortFile"))
-    {
-        abortFile = m_session->GetSolverInfo("CheckAbortFile");
-    }
-
-    NekDouble tmp_cflSafetyFactor = m_cflSafetyFactor;
-    while ((step < m_steps || m_time < m_fintime - NekConstants::kNekZeroTol) &&
-           abortFlags[1] == 0)
-    {
-        if (m_CFLGrowth > 1.0 && m_cflSafetyFactor < m_CFLEnd)
-        {
-            tmp_cflSafetyFactor =
-                std::min(m_CFLEnd, m_CFLGrowth * tmp_cflSafetyFactor);
-        }
-
-        // Frozen preconditioner checks.
-        if (!m_comm->IsParallelInTime())
-        {
-            if (v_UpdateTimeStepCheck())
-            {
-                m_cflSafetyFactor = tmp_cflSafetyFactor;
-
-                if (m_cflSafetyFactor)
-                {
-                    m_timestep = GetTimeStep(fields);
-                }
-
-                // Ensure that the final timestep finishes at the final
-                // time, or at a prescribed IO_CheckTime.
-                if (m_time + m_timestep > m_fintime && m_fintime > 0.0)
-                {
-                    m_timestep = m_fintime - m_time;
-                }
-                else if (m_checktime &&
-                         m_time + m_timestep - m_lastCheckTime >= m_checktime)
-                {
-                    m_lastCheckTime += m_checktime;
-                    m_timestep  = m_lastCheckTime - m_time;
-                    doCheckTime = true;
-                }
-            }
-        }
-
-        if (m_TimeIncrementFactor > 1.0)
-        {
-            NekDouble timeincrementFactor = m_TimeIncrementFactor;
-            m_timestep *= timeincrementFactor;
-
-            if (m_time + m_timestep > m_fintime && m_fintime > 0.0)
-            {
-                m_timestep = m_fintime - m_time;
-            }
-        }
-
-        // Perform any solver-specific pre-integration steps.
-        timer.Start();
-        if (v_PreIntegrate(
-                step)) // Could be possible to put a preintegrate step in the
-                       // ALEHelper class, put in the Unsteady Advection class
-        {
-            break;
-        }
-
-        ASSERTL0(m_timestep > 0, "m_timestep < 0");
-
-        fields = m_intScheme->TimeIntegrate(stepCounter, m_timestep);
-        timer.Stop();
-
-        m_time += m_timestep;
-        elapsed = timer.TimePerTest(1);
-        intTime += elapsed;
-        cpuTime += elapsed;
-
-        // Write out status information.
-        v_PrintStatusInformation(step, cpuTime);
-        if (m_infosteps &&
-            m_session->GetComm()->GetSpaceComm()->GetRank() == 0 &&
-            !((step + 1) % m_infosteps))
-        {
-            cpuPrevious = cpuTime;
-            cpuTime     = 0.0;
-        }
-
-        // Transform data into coefficient space
-        for (i = 0; i < nvariables; ++i)
-        {
-            // copy fields into ExpList::m_phys and assign the new
-            // array to fields
-            m_indfields[m_intVariables[i]]->SetPhys(fields[i]);
-            fields[i] = m_indfields[m_intVariables[i]]->UpdatePhys();
-            if (v_RequireFwdTrans())
-            {
-                if (m_comm->IsParallelInTime())
-                {
-                    m_indfields[m_intVariables[i]]->FwdTrans(
-                        m_indfields[m_intVariables[i]]->GetPhys(),
-                        m_indfields[m_intVariables[i]]->UpdateCoeffs());
-                }
-                else
-                {
-                    m_indfields[m_intVariables[i]]->FwdTransLocalElmt(
-                        m_indfields[m_intVariables[i]]->GetPhys(),
-                        m_indfields[m_intVariables[i]]->UpdateCoeffs());
-                }
-            }
-            m_indfields[m_intVariables[i]]->SetPhysState(false);
-        }
-
-        // Perform any solver-specific post-integration steps.
-        if (v_PostIntegrate(step))
-        {
-            break;
-        }
-
-        // Test for abort conditions (nan, or abort file).
-        if (m_abortSteps && !((step + 1) % m_abortSteps))
-        {
-            abortFlags[0] = 0;
-            for (i = 0; i < nvariables; ++i)
-            {
-                if (Vmath::Nnan(
-                        m_indfields[m_intVariables[i]]->GetPhys().size(),
-                        m_indfields[m_intVariables[i]]->GetPhys(), 1) > 0)
-                {
-                    abortFlags[0] = 1;
-                }
-            }
-
-            // Rank zero looks for abort file and deletes it
-            // if it exists. Communicates the abort.
-            if (m_session->GetComm()->GetSpaceComm()->GetRank() == 0)
-            {
-                if (fs::exists(abortFile))
-                {
-                    fs::remove(abortFile);
-                    abortFlags[1] = 1;
-                }
-            }
-
-            m_session->GetComm()->GetSpaceComm()->AllReduce(
-                abortFlags, LibUtilities::ReduceMax);
-
-            ASSERTL0(!abortFlags[0], "NaN found during time integration.");
-        }
-
-        // Write out checkpoint files.
-        if ((m_checksteps && !((step + 1) % m_checksteps)) || doCheckTime)
-        {
-
-            Checkpoint_Output(m_nchk);
-            m_nchk++;
-
-            doCheckTime = false;
-        }
-
-        // Step advance.
-        ++step;
-        ++stepCounter;
-    }
-
-    // Print out summary statistics.
-    v_PrintSummaryStatistics(intTime);
-
-    // If homogeneous, transform back into physical space if necessary.
-
-    for (i = 0; i < nvariables; ++i)
-    {
-        m_indfields[m_intVariables[i]]->SetPhysState(true);
-    }
-    if (this->particle_sys)
-    {
-        this->particle_sys->free();
-    }
-}
 
 /**
  * @brief Override v_PostIntegrate to do particle output and compute
  * diagnostics, if enabled
  * @param step Time step number
  */
-bool PlasmaSystem::v_PostIntegrate(int step)
+bool PlasmaSystem::v_PostIntegrate()
 {
-    this->solver_callback_handler.call_post_integrate(this);
-
-    return SU::UnsteadySystem::v_PostIntegrate(step);
+    return UnsteadySystem::v_PostIntegrate();
 }
 
 /**
@@ -633,250 +335,236 @@ bool PlasmaSystem::v_PostIntegrate(int step)
  *
  * @param step Time step number
  */
-bool PlasmaSystem::v_PreIntegrate(int step)
+bool PlasmaSystem::v_PreIntegrate()
 {
-    this->solver_callback_handler.call_pre_integrate(this);
-
     if (this->transient_field)
     {
-        this->mag_field->Update(m_time);
+        this->mag_field->Apply(m_time);
+        m_BTraceExtractOp->Apply(this->b_unit, this->b_unit_trace);
     }
 
     if (this->particles_enabled)
     {
-        for (auto &fld : this->src_fields)
-        {
-            Vmath::Zero(this->n_pts, fld->UpdatePhys(), 1);
-            Vmath::Zero(this->n_coeffs, fld->UpdateCoeffs(), 1);
-        }
-        this->particle_sys->integrate(m_time + m_timestep, m_timestep, step);
+        m_math.zero(src_fields);
+        this->particle_sys->integrate(m_time + m_timestep, m_timestep,
+                                      m_timeOp->GetStep());
     }
 
-    return UnsteadySystem::v_PreIntegrate(step);
+    return UnsteadySystem::v_PreIntegrate();
 }
 
 /**
  * @brief Returns a session function particular to a species
  */
-NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
-    const std::string &s, std::string name, const MR::ExpListSharedPtr &field,
-    bool cache)
-{
-    MR::ExpListSharedPtr vField = field;
-    if (!field)
-    {
-        vField = m_fields[0];
-    }
+// NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
+//     const std::string &s, std::string name, const MR::ExpListSharedPtr
+//     &field, bool cache)
+// {
+//     MR::ExpListSharedPtr vField = field;
+//     if (!field)
+//     {
+//         vField = m_fields[0];
+//     }
 
-    if (cache)
-    {
-        if ((m_nesoSessionFunctions[s].find(name) ==
-             m_nesoSessionFunctions[s].end()) ||
-            (m_nesoSessionFunctions[s][name]->GetSession() !=
-             this->neso_config) ||
-            (m_nesoSessionFunctions[s][name]->GetExpansion() != vField))
-        {
-            m_nesoSessionFunctions[s][name] =
-                MemoryManager<NESOSessionFunction>::AllocateSharedPtr(
-                    s, this->neso_config, vField, name, cache);
-        }
+//     if (cache)
+//     {
+//         if ((m_nesoSessionFunctions[s].find(name) ==
+//              m_nesoSessionFunctions[s].end()) ||
+//             (m_nesoSessionFunctions[s][name]->GetSession() !=
+//              this->neso_config) ||
+//             (m_nesoSessionFunctions[s][name]->GetExpansion() != vField))
+//         {
+//             m_nesoSessionFunctions[s][name] =
+//                 MemoryManager<NESOSessionFunction>::AllocateSharedPtr(
+//                     s, this->neso_config, vField, name, cache);
+//         }
 
-        return m_nesoSessionFunctions[s][name];
-    }
-    else
-    {
-        return std::make_shared<NESOSessionFunction>(s, this->neso_config,
-                                                     vField, name, cache);
-    }
-}
+//         return m_nesoSessionFunctions[s][name];
+//     }
+//     else
+//     {
+//         return std::make_shared<NESOSessionFunction>(s, this->neso_config,
+//                                                      vField, name, cache);
+//     }
+// }
 
 /**
  * @brief After reading ICs, calculate phi and grad(phi)
  */
-void PlasmaSystem::v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                          [[maybe_unused]] const int domain)
-{
-    if (m_session->DefinesFunction("InitialConditions"))
-    {
-        for (int i = 0; i < m_fields.size(); ++i)
-        {
-            Array<OneD, NekDouble> phys = m_fields[i]->UpdatePhys();
-            Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
-            for (size_t d = 0; d < m_domains.size(); ++d)
-            {
-                GetFunction("InitialConditions")
-                    ->Evaluate(m_session->GetVariables()[i], tmpphys, m_time,
-                               d);
-                Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
-                             tmpphys.data() + m_dom_to_offset[d], 1,
-                             phys.data() + m_dom_to_offset[d], 1);
-            }
+// void PlasmaSystem::v_SetInitialConditions(NekDouble init_time)
+// {
+//     if (m_session->DefinesFunction("InitialConditions"))
+//     {
+//         for (int i = 0; i < m_fields.size(); ++i)
+//         {
+//             Array<OneD, NekDouble> phys = m_fields[i]->UpdatePhys();
+//             Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
+//             for (size_t d = 0; d < m_domains.size(); ++d)
+//             {
+//                 GetFunction("InitialConditions")
+//                     ->Evaluate(m_session->GetVariables()[i], tmpphys, m_time,
+//                                d);
+//                 Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
+//                              tmpphys.data() + m_dom_to_offset[d], 1,
+//                              phys.data() + m_dom_to_offset[d], 1);
+//             }
 
-            if (m_fields[i]->GetWaveSpace())
-            {
-                m_fields[i]->HomogeneousFwdTrans(m_fields[i]->GetTotPoints(),
-                                                 m_fields[i]->GetPhys(),
-                                                 m_fields[i]->UpdatePhys());
-            }
-            m_fields[i]->FwdTransLocalElmt(m_fields[i]->GetPhys(),
-                                           m_fields[i]->UpdateCoeffs());
-        }
+//             if (m_fields[i]->GetWaveSpace())
+//             {
+//                 m_fields[i]->HomogeneousFwdTrans(m_fields[i]->GetTotPoints(),
+//                                                  m_fields[i]->GetPhys(),
+//                                                  m_fields[i]->UpdatePhys());
+//             }
+//             m_fields[i]->FwdTransLocalElmt(m_fields[i]->GetPhys(),
+//                                            m_fields[i]->UpdateCoeffs());
+//         }
 
-        // Enforce C0 Continuity of initial condiiton
-        if ((m_projectionType == MultiRegions::eGalerkin) ||
-            (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
-        {
-            for (int i = 0; i < m_fields.size(); ++i)
-            {
-                m_fields[i]->AvgAssemble();
-                m_fields[i]->GlobalToLocal();
-                m_fields[i]->BwdTrans(m_fields[i]->GetCoeffs(),
-                                      m_fields[i]->UpdatePhys());
-            }
-        }
+//         // Enforce C0 Continuity of initial condiiton
+//         if ((m_projectionType == MultiRegions::eGalerkin) ||
+//             (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
+//         {
+//             for (int i = 0; i < m_fields.size(); ++i)
+//             {
+//                 m_fields[i]->AvgAssemble();
+//                 m_fields[i]->GlobalToLocal();
+//                 m_fields[i]->BwdTrans(m_fields[i]->GetCoeffs(),
+//                                       m_fields[i]->UpdatePhys());
+//             }
+//         }
 
-        if (m_session->GetComm()->GetRank() == 0)
-        {
-            std::cout << "Initial Conditions:" << std::endl;
-            for (int i = 0; i < m_fields.size(); ++i)
-            {
-                std::string varName = m_session->GetVariable(i);
-                std::cout << "  - Field " << varName << std::endl;
-                for (size_t d = 0; d < m_domains.size(); ++d)
-                {
-                    std::cout << "\tDomain " << d << ": "
-                              << GetFunction("InitialConditions")
-                                     ->Describe(varName, d)
-                              << std::endl;
-                }
-            }
-        }
-    }
-    else
-    {
-        for (int i = 0; i < m_fields.size(); i++)
-        {
-            Vmath::Zero(this->n_pts, m_fields[i]->UpdatePhys(), 1);
-            m_fields[i]->SetPhysState(true);
-            Vmath::Zero(this->n_coeffs, m_fields[i]->UpdateCoeffs(), 1);
-            if (m_session->GetComm()->GetRank() == 0)
-            {
-                std::cout << "Initial Conditions:" << std::endl;
-                std::cout << "  - Field " << m_session->GetVariable(i)
-                          << ": 0 (default)" << std::endl;
-            }
-        }
-    }
-    int s = 0;
-    for (const auto &[k, v] : this->GetSpecies())
-    {
-        if (this->neso_config->defines_species_function(v.name,
-                                                        "InitialConditions"))
-        {
-            auto fn = this->get_species_function(v.name, "InitialConditions");
-            for (const auto &[f, fi] : v.fields)
-            {
-                Array<OneD, NekDouble> phys = m_indfields[fi]->UpdatePhys();
-                Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
-                for (size_t d = 0; d < m_domains.size(); ++d)
-                {
-                    fn->Evaluate(m_session->GetVariables()[f], tmpphys, m_time,
-                                 d);
-                    Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
-                                 tmpphys.data() + m_dom_to_offset[d], 1,
-                                 phys.data() + m_dom_to_offset[d], 1);
-                }
-                if (m_indfields[fi]->GetWaveSpace())
-                {
-                    m_indfields[fi]->HomogeneousFwdTrans(
-                        m_indfields[fi]->GetTotPoints(),
-                        m_indfields[fi]->GetPhys(),
-                        m_indfields[fi]->UpdatePhys());
-                }
-                m_indfields[fi]->FwdTransLocalElmt(
-                    m_indfields[fi]->GetPhys(),
-                    m_indfields[fi]->UpdateCoeffs());
+//         if (m_session->GetComm()->GetRank() == 0)
+//         {
+//             std::cout << "Initial Conditions:" << std::endl;
+//             for (int i = 0; i < m_fields.size(); ++i)
+//             {
+//                 std::string varName = m_session->GetVariable(i);
+//                 std::cout << "  - Field " << varName << std::endl;
+//                 for (size_t d = 0; d < m_domains.size(); ++d)
+//                 {
+//                     std::cout << "\tDomain " << d << ": "
+//                               << GetFunction("InitialConditions")
+//                                      ->Describe(varName, d)
+//                               << std::endl;
+//                 }
+//             }
+//         }
+//     }
+//     else
+//     {
+//         for (int i = 0; i < m_fields.size(); i++)
+//         {
+//             Vmath::Zero(this->n_pts, m_fields[i]->UpdatePhys(), 1);
+//             m_fields[i]->SetPhysState(true);
+//             Vmath::Zero(this->n_coeffs, m_fields[i]->UpdateCoeffs(), 1);
+//             if (m_session->GetComm()->GetRank() == 0)
+//             {
+//                 std::cout << "Initial Conditions:" << std::endl;
+//                 std::cout << "  - Field " << m_session->GetVariable(i)
+//                           << ": 0 (default)" << std::endl;
+//             }
+//         }
+//     }
+//     int s = 0;
+//     for (const auto &[k, v] : this->GetSpecies())
+//     {
+//         if (this->neso_config->defines_species_function(v.name,
+//                                                         "InitialConditions"))
+//         {
+//             auto fn = this->get_species_function(v.name,
+//             "InitialConditions"); for (const auto &[f, fi] : v.fields)
+//             {
+//                 Array<OneD, NekDouble> phys = m_indfields[fi]->UpdatePhys();
+//                 Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
+//                 for (size_t d = 0; d < m_domains.size(); ++d)
+//                 {
+//                     fn->Evaluate(m_session->GetVariables()[f], tmpphys,
+//                     m_time,
+//                                  d);
+//                     Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
+//                                  tmpphys.data() + m_dom_to_offset[d], 1,
+//                                  phys.data() + m_dom_to_offset[d], 1);
+//                 }
+//                 if (m_indfields[fi]->GetWaveSpace())
+//                 {
+//                     m_indfields[fi]->HomogeneousFwdTrans(
+//                         m_indfields[fi]->GetTotPoints(),
+//                         m_indfields[fi]->GetPhys(),
+//                         m_indfields[fi]->UpdatePhys());
+//                 }
+//                 m_indfields[fi]->FwdTransLocalElmt(
+//                     m_indfields[fi]->GetPhys(),
+//                     m_indfields[fi]->UpdateCoeffs());
 
-                if ((m_projectionType == MultiRegions::eGalerkin) ||
-                    (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
-                {
+//                 if ((m_projectionType == MultiRegions::eGalerkin) ||
+//                     (m_projectionType ==
+//                     MultiRegions::eMixed_CG_Discontinuous))
+//                 {
 
-                    m_indfields[fi]->AvgAssemble();
-                    m_indfields[fi]->GlobalToLocal();
-                    m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
-                                              m_indfields[fi]->UpdatePhys());
-                }
-                if (m_session->GetComm()->GetRank() == 0)
-                {
-                    std::string varName = m_session->GetVariable(f);
-                    std::cout << "  - Species " << v.name << " Field "
-                              << varName << std::endl;
-                    for (size_t d = 0; d < m_domains.size(); ++d)
-                    {
-                        std::cout << "\tDomain " << d << ": "
-                                  << this->get_species_function(
-                                             v.name, "InitialConditions")
-                                         ->Describe(varName, d)
-                                  << std::endl;
-                    }
-                }
-            }
-        }
-        else
-        {
-            for (const auto &[f, fi] : v.fields)
-            {
-                Vmath::Zero(this->n_pts, m_indfields[fi]->UpdatePhys(), 1);
-                m_indfields[fi]->SetPhysState(true);
-                Vmath::Zero(this->n_coeffs, m_indfields[fi]->UpdateCoeffs(), 1);
-                if (m_session->GetComm()->GetRank() == 0)
-                {
-                    std::cout << "Initial Conditions:" << std::endl;
-                    std::cout << "  - Field " << m_session->GetVariable(f)
-                              << ": 0 (default)" << std::endl;
-                }
-            }
-        }
-        s++;
-    }
-    Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-    for (const auto &[s, v] : GetIons())
-    {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+//                     m_indfields[fi]->AvgAssemble();
+//                     m_indfields[fi]->GlobalToLocal();
+//                     m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
+//                                               m_indfields[fi]->UpdatePhys());
+//                 }
+//                 if (m_session->GetComm()->GetRank() == 0)
+//                 {
+//                     std::string varName = m_session->GetVariable(f);
+//                     std::cout << "  - Species " << v.name << " Field "
+//                               << varName << std::endl;
+//                     for (size_t d = 0; d < m_domains.size(); ++d)
+//                     {
+//                         std::cout << "\tDomain " << d << ": "
+//                                   << this->get_species_function(
+//                                              v.name, "InitialConditions")
+//                                          ->Describe(varName, d)
+//                                   << std::endl;
+//                     }
+//                 }
+//             }
+//         }
+//         else
+//         {
+//             for (const auto &[f, fi] : v.fields)
+//             {
+//                 Vmath::Zero(this->n_pts, m_indfields[fi]->UpdatePhys(), 1);
+//                 m_indfields[fi]->SetPhysState(true);
+//                 Vmath::Zero(this->n_coeffs, m_indfields[fi]->UpdateCoeffs(),
+//                 1); if (m_session->GetComm()->GetRank() == 0)
+//                 {
+//                     std::cout << "Initial Conditions:" << std::endl;
+//                     std::cout << "  - Field " << m_session->GetVariable(f)
+//                               << ": 0 (default)" << std::endl;
+//                 }
+//             }
+//         }
+//         s++;
+//     }
+//     Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
+//     for (const auto &[s, v] : GetIons())
+//     {
+//         int ni_idx = v.fields.at(field_to_index.at("n"));
 
-        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
-                     m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
-                     1);
-    }
-    m_fields[0]->FwdTrans(m_fields[0]->GetPhys(), m_fields[0]->UpdateCoeffs());
+//         Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(),
+//         1,
+//                      m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
+//                      1);
+//     }
+//     m_fields[0]->FwdTrans(m_fields[0]->GetPhys(),
+//     m_fields[0]->UpdateCoeffs());
 
-    if (m_session->GetComm()->GetRank() == 0)
-    {
-        std::cout << "============================================="
-                     "================"
-                     "=========="
-                  << std::endl
-                  << std::endl;
-    }
-    if (dump_ICs && m_checksteps && m_nchk == 0 && !m_comm->IsParallelInTime())
-    {
-        Checkpoint_Output(m_nchk);
-    }
-    ++m_nchk;
-}
-
-void PlasmaSystem::SetBoundaryConditions(NekDouble time)
-{
-    EquationSystem::SetBoundaryConditions(time);
-    std::string varName;
-    for (const auto &[k, v] : this->GetSpecies())
-    {
-        for (const auto &[f, fi] : v.fields)
-        {
-            varName = m_session->GetVariable(f);
-            m_indfields[fi]->EvaluateBoundaryConditions(time, varName);
-        }
-    }
-}
+//     if (m_session->GetComm()->GetRank() == 0)
+//     {
+//         std::cout << "============================================="
+//                      "================"
+//                      "=========="
+//                   << std::endl
+//                   << std::endl;
+//     }
+//     if (dump_ICs && m_checksteps && m_nchk == 0 &&
+//     !m_comm->IsParallelInTime())
+//     {
+//         Checkpoint_Output(m_nchk);
+//     }
+//     ++m_nchk;
+// }
 
 } // namespace PENKNIFE

@@ -53,19 +53,22 @@ void BohmBC::v_Apply(const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
     // Get electron density on boundary
     Array<OneD, NekDouble> ne(m_nEdgePts, 0.0);
 
-    for (const auto &[k, v] : m_system.lock()->GetIons())
+    for (const auto k : m_system.lock()->GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
-        Vmath::Svtvp(m_nEdgePts, v.charge, Fwd[ni_idx], 1, ne, 1, ne, 1);
+        const double charge_k = m_system.lock()->GetCharges().at(k);
+        int ni_idx            = m_system.lock()->GetDensityId(k);
+        Vmath::Svtvp(m_nEdgePts, charge_k, Fwd[ni_idx], 1, ne, 1, ne, 1);
     }
 
     Array<OneD, NekDouble> ion_sum(m_nEdgePts, 0.0);
 
-    for (const auto &[k, v] : m_system.lock()->GetIons())
+    for (const auto k : m_system.lock()->GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
-        int vi_idx = v.fields.at(field_to_index.at("v"));
-        int pi_idx = v.fields.at(field_to_index.at("p"));
+        const double mass_k   = m_system.lock()->GetMasses().at(k);
+        const double charge_k = m_system.lock()->GetCharges().at(k);
+        int ni_idx            = m_system.lock()->GetDensityId(k);
+        int vi_idx            = m_system.lock()->GetMomentumId(k);
+        int pi_idx            = m_system.lock()->GetFieldId(k, "p");
 
         // Obtain pressure gradient in boundary elements
         Array<OneD, NekDouble> pi_bndelmt;
@@ -129,11 +132,11 @@ void BohmBC::v_Apply(const Array<OneD, const Array<OneD, NekDouble>> &Fwd,
             bn /= std::sqrt(mag_B[p]);
 
             NekDouble c_i_sq = (gamma_i * Fwd[pi_idx][p] / Fwd[ni_idx][p] +
-                                v.charge * Fwd[pe_idx][p] / ne[p]) /
-                               v.mass;
+                                charge_k * Fwd[pe_idx][p] / ne[p]) /
+                               mass_k;
             NekDouble c_i = bn > 0 ? std::sqrt(c_i_sq) : -std::sqrt(c_i_sq);
 
-            v_par[p] = std::max(v.mass * Fwd[ni_idx][p] *
+            v_par[p] = std::max(mass_k * Fwd[ni_idx][p] *
                                     (c_i * bn - v_en - v_dn) / bn,
                                 Fwd[vi_idx][p]);
         }

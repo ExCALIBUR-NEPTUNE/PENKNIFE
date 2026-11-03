@@ -88,28 +88,29 @@ void NullSystem::v_InitObject(bool DeclareFields)
             }
         }
 
-        for (const auto &[k, v] : this->GetIons())
+        for (const auto k : this->GetIons())
         {
-            int ni_idx       = v.fields.at(field_to_index["n"]);
-            this->ni[v.name] = m_indfields[ni_idx]->UpdatePhys();
+            const auto &name_k = this->GetSpeciesNames().at(k);
+            int ni_idx         = this->GetDensityId(k);
+            this->ni[name_k]   = m_indfields[ni_idx]->UpdatePhys();
 
             eval_comps.push_back(0);
-            eval_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
-            eval_srcs.push_back(&this->ni[v.name]);
-            out_syms.push_back(Sym<REAL>(v.name + "_DENSITY"));
+            eval_syms.push_back(Sym<REAL>(name_k + "_DENSITY"));
+            eval_srcs.push_back(&this->ni[name_k]);
+            out_syms.push_back(Sym<REAL>(name_k + "_DENSITY"));
 
-            this->Ti[v.name] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+            this->Ti[name_k] = Array<OneD, NekDouble>(this->n_pts, 0.0);
             eval_comps.push_back(0);
-            eval_syms.push_back(Sym<REAL>(v.name + "_TEMPERATURE"));
-            eval_srcs.push_back(&this->Ti[v.name]);
+            eval_syms.push_back(Sym<REAL>(name_k + "_TEMPERATURE"));
+            eval_srcs.push_back(&this->Ti[name_k]);
 
-            this->vi[v.name] = std::vector<Array<OneD, NekDouble>>(3);
+            this->vi[name_k] = std::vector<Array<OneD, NekDouble>>(3);
             for (int d = 0; d < 3; ++d)
             {
-                this->vi[v.name][d] = Array<OneD, NekDouble>(this->n_pts, 0.0);
+                this->vi[name_k][d] = Array<OneD, NekDouble>(this->n_pts, 0.0);
                 eval_comps.push_back(d);
-                eval_syms.push_back(Sym<REAL>(v.name + "_FLOW_SPEED"));
-                eval_srcs.push_back(&(this->vi[v.name][d]));
+                eval_syms.push_back(Sym<REAL>(name_k + "_FLOW_SPEED"));
+                eval_srcs.push_back(&(this->vi[name_k][d]));
             }
         }
 
@@ -133,15 +134,16 @@ void NullSystem::v_InitObject(bool DeclareFields)
         std::vector<int> src_components;
 
         int cnt = 0;
-        for (const auto &[s, v] : this->GetIons())
+        for (const auto s : this->GetIons())
         {
+            const auto &name_s = this->GetSpeciesNames().at(s);
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
-            src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_DENSITY"));
+            src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_DENSITY"));
             src_components.push_back(0);
             ni_src_idx.push_back(cnt++);
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_DENSITY"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_DENSITY"));
 
             for (int d = 0; d < this->m_spacedim; ++d)
             {
@@ -149,21 +151,21 @@ void NullSystem::v_InitObject(bool DeclareFields)
                     MemoryManager<MR::DisContField>::AllocateSharedPtr(
                         *std::dynamic_pointer_cast<MR::DisContField>(
                             m_fields[0])));
-                src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
+                src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_MOMENTUM"));
                 src_components.push_back(d);
             }
             vi_src_idx.push_back(cnt);
             cnt += m_spacedim;
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_MOMENTUM"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_MOMENTUM"));
 
             this->src_fields.emplace_back(
                 MemoryManager<MR::DisContField>::AllocateSharedPtr(
                     *std::dynamic_pointer_cast<MR::DisContField>(m_fields[0])));
 
-            src_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
+            src_syms.push_back(Sym<REAL>(name_s + "_SOURCE_ENERGY"));
             src_components.push_back(0);
             ei_src_idx.push_back(cnt++);
-            out_syms.push_back(Sym<REAL>(v.name + "_SOURCE_ENERGY"));
+            out_syms.push_back(Sym<REAL>(name_s + "_SOURCE_ENERGY"));
         }
 
         this->src_fields.emplace_back(
@@ -216,16 +218,17 @@ void NullSystem::DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
                              Array<OneD, Array<OneD, NekDouble>> &outarray)
 {
     int cnt = 0;
-    for (const auto &[s, v] : this->GetIons())
+    for (const auto s : this->GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index["n"]);
+        const double mass_s = this->GetMasses().at(s);
+        int ni_idx          = this->GetDensityId(s);
         //  Add contribution to ion density
         Vmath::Vadd(this->n_pts, outarray[ni_idx], 1,
                     this->src_fields[ni_src_idx[cnt]]->GetPhys(), 1,
                     outarray[ni_idx], 1);
-        if (v.fields.find(field_to_index.get_idx("v")) != v.fields.end())
+        if (this->HasMomentum(s))
         {
-            int vi_idx = v.fields.at(field_to_index["v"]);
+            int vi_idx = this->GetMomentumId(s);
 
             for (int d = 0; d < m_spacedim; ++d)
             {
@@ -235,9 +238,9 @@ void NullSystem::DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
             }
         }
 
-        if (v.fields.find(field_to_index.get_idx("e")) != v.fields.end())
+        if (this->HasEnergy(s))
         {
-            int ei_idx = v.fields.at(field_to_index["e"]);
+            int ei_idx = this->GetEnergyId(s);
 
             // Add contribution to ion energy
             Vmath::Vadd(this->n_pts, outarray[ei_idx], 1,
@@ -246,7 +249,7 @@ void NullSystem::DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
 
             // Add number density source contribution to ion energy
             Array<OneD, NekDouble> dynamic_energy(this->n_pts);
-            m_varConv->GetIonDynamicEnergy(s, v.mass, inarray, dynamic_energy);
+            m_varConv->GetIonDynamicEnergy(s, mass_s, inarray, dynamic_energy);
             Vmath::Vvtvp(this->n_pts, dynamic_energy, 1,
                          this->src_fields[ni_src_idx[cnt]]->GetPhys(), 1,
                          outarray[ei_idx], 1, outarray[ei_idx], 1);
@@ -265,11 +268,12 @@ void NullSystem::DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
 bool NullSystem::v_PostIntegrate(int step)
 {
     Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-    for (const auto &[s, v] : GetIons())
+    for (const auto s : GetIons())
     {
-        int ni_idx = v.fields.at(field_to_index.at("n"));
+        const double charge_s = GetCharges().at(s);
+        int ni_idx            = GetDensityId(s);
 
-        Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(), 1,
+        Vmath::Svtvp(this->n_pts, charge_s, m_indfields[ni_idx]->GetPhys(), 1,
                      m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
                      1);
     }
@@ -299,9 +303,10 @@ void NullSystem::v_ExtraFldOutput(
     {
         int cnt = 0;
 
-        for (auto &[k, v] : this->GetIons())
+        for (const auto k : this->GetIons())
         {
-            variables.push_back(v.name + "_SOURCE_DENSITY");
+            const auto &name_k = this->GetSpeciesNames().at(k);
+            variables.push_back(name_k + "_SOURCE_DENSITY");
             Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(
                 this->src_fields[ni_src_idx[cnt]]->GetPhys(), SrcFwd);
@@ -309,7 +314,7 @@ void NullSystem::v_ExtraFldOutput(
 
             for (int d = 0; d < this->m_spacedim; ++d)
             {
-                variables.emplace_back(v.name + "_SOURCE_MOMENTUM" +
+                variables.emplace_back(name_k + "_SOURCE_MOMENTUM" +
                                        std::to_string(d));
                 Array<OneD, NekDouble> SrcFwd(this->n_coeffs);
                 m_fields[0]->FwdTransLocalElmt(
@@ -317,7 +322,7 @@ void NullSystem::v_ExtraFldOutput(
                 fieldcoeffs.emplace_back(SrcFwd);
             }
 
-            variables.emplace_back(v.name + "_SOURCE_ENERGY");
+            variables.emplace_back(name_k + "_SOURCE_ENERGY");
             Array<OneD, NekDouble> SrcFwd2(this->n_coeffs);
             m_fields[0]->FwdTransLocalElmt(
                 this->src_fields[ei_src_idx[cnt]]->GetPhys(), SrcFwd2);
