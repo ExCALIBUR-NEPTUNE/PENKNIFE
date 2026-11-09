@@ -1,15 +1,13 @@
 #ifndef PLASMA_SYSTEM_HPP
 #define PLASMA_SYSTEM_HPP
 
-#include "../../NESO/include/nektar_interface/solver_base/neso_session_function.hpp"
 #include "nektar_interface/utilities.hpp"
+#include <nektar_interface/solver_base/neso_reader.hpp>
 
-#include "../BndCond/PlasmaBndConds.hpp"
 #include "../MagneticField/MagneticFieldOp.hpp"
-#include "../Quasineutrality/QuasineutralityOp.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
-#include "ImplicitHelper.hpp"
+#include "../Quasineutrality/QuasineutralityOp.hpp"
 
 #include <limits>
 #include <vector>
@@ -140,16 +138,11 @@ protected:
 
     NESOReaderSharedPtr neso_config;
 
-    NESO::NektarFieldIndexMap field_to_index;
-
     /// Particle system
     std::shared_ptr<ParticleSystem> particle_sys;
 
     /// Flag identifying whether particles were enabled in the config file
     bool particles_enabled;
-
-    /// List of field names required by the solver
-    std::vector<std::string> required_fld_names;
 
     NekDouble mesh_length; // mesh conversion to m
     NekDouble Nnorm;       // Density normalisation to m^-3
@@ -159,9 +152,6 @@ protected:
     NekDouble rho_s;       // Reference ion length scale
     NekDouble cs;          // Reference ion sound speed
     NekDouble me;          // Electron mass
-
-    std::map<int, std::map<int, CompositeSharedPtr>> m_domains;
-    std::map<int, int> m_dom_to_offset;
 
     bool transient_field;
 
@@ -200,30 +190,33 @@ protected:
     std::vector<unsigned int> n_ids;
     std::vector<unsigned int> v_ids;
     std::vector<unsigned int> e_ids;
-    int ee_idx;
+    unsigned int ee_idx = InvalidId;
 
-    /** Density source fields cast to DisContFieldSharedPtr for use in
-     * particle evaluation/projection methods
-     */
-    LU::Field<double, FieldState::Phys> src_fields;
+    using PhysField  = LU::Field<double, FieldState::Phys>;
+    using CoeffField = LU::Field<double, FieldState::Coeff>;
+    PhysField m_particleSources, m_particleFields;
+    CoeffField m_particleSourceCoeffs;
+    std::vector<unsigned> m_sourceDensity, m_sourceMomentum, m_sourceEnergy;
+    unsigned m_sourceElectron = InvalidId;
+    std::vector<std::string> m_fieldTemplates, m_particleSourceNames;
+    double m_backgroundTemperature = 0;
+
+    void SetupParticles();
+    void UpdateParticleFields();
+    void AddSources(PhysField &in, PhysField &out, double time, double factor);
+    void UpdateMagneticField(double time);
+    virtual void UpdateElectricField(PhysField &, double)
+    {
+    }
+    SC::CoefficientFieldViews v_GetOutputFieldViews() override;
+    void v_InitialiseTimeOp() override;
 
     /// Forcing terms
     std::vector<SC::ForcingSharedPtr> m_forcing;
 
-    // Convenience key for varcoeffmaps
-    static constexpr StdRegions::VarCoeffType vc[3][3] = {
-        {StdRegions::eVarCoeffD00, StdRegions::eVarCoeffD01,
-         StdRegions::eVarCoeffD02},
-        {StdRegions::eVarCoeffD01, StdRegions::eVarCoeffD11,
-         StdRegions::eVarCoeffD12},
-        {StdRegions::eVarCoeffD02, StdRegions::eVarCoeffD12,
-         StdRegions::eVarCoeffD22}};
-
-    std::shared_ptr<ImplicitHelper> m_implHelper;
-
     virtual void LoadParams();
 
-    virtual void v_GenerateSummary(SummaryList &s) override;
+    virtual void v_GenerateSummary(SC::SummaryList &s) override;
     virtual void v_WriteFld(const std::string &) override;
     virtual void v_DoInitialise(bool dump_initial_conditions) override;
 
@@ -234,14 +227,7 @@ protected:
     virtual bool v_PostIntegrate() override;
     virtual bool v_PreIntegrate() override;
     virtual void v_SetInitialConditions(NekDouble init_time) override;
-
-    NESOSessionFunctionSharedPtr get_species_function(
-        const std::string &, std::string name,
-        const MR::ExpListSharedPtr &field = MR::NullExpListSharedPtr,
-        bool cache                        = false);
-    std::map<std::string, std::map<std::string, NESOSessionFunctionSharedPtr>>
-        m_nesoSessionFunctions;
-}; // namespace Nektar::SolverCore
+};
 
 } // namespace PENKNIFE
 #endif

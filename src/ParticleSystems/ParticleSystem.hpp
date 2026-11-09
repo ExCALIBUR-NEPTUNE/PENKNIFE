@@ -1,19 +1,21 @@
 #ifndef PENKNIFE_PARTICLE_SYSTEM_HPP
 #define PENKNIFE_PARTICLE_SYSTEM_HPP
 
-#include <nektar_interface/function_evaluation.hpp>
-#include <nektar_interface/function_projection.hpp>
+#include <nektar_interface/field_evaluate_op.hpp>
+#include <nektar_interface/field_project_op.hpp>
 #include <nektar_interface/particle_boundary_conditions.hpp>
 #include <nektar_interface/particle_cell_mapping/particle_cell_mapping_common.hpp>
 #include <nektar_interface/solver_base/neso_reader.hpp>
 #include <nektar_interface/utilities.hpp>
 
 #include "../Misc/Constants.hpp"
+#include <SolverCore/Filters/FilterContext.h>
 
 namespace PENKNIFE
 {
 namespace LU = Nektar::LibUtilities;
 namespace SD = Nektar::SpatialDomains;
+namespace MR = Nektar::MultiRegions;
 
 /// Struct used to set common options for particle systems
 struct PartSysOptions
@@ -31,6 +33,10 @@ ParticleSystemFactory &GetParticleSystemFactory();
  */
 class ParticleSystem
 {
+public:
+    using PhysField  = LU::Field<double, Nektar::FieldState::Phys>;
+    using CoeffField = LU::Field<double, Nektar::FieldState::Coeff>;
+
 public:
     ParticleSystem(NESOReaderSharedPtr session, SD::MeshGraphSharedPtr graph,
                    MPI_Comm comm = MPI_COMM_WORLD);
@@ -170,9 +176,10 @@ public:
      * @param syms Corresponding Particle Syms
      * @param syms Corresponding components
      */
-    virtual void finish_setup(
-        std::vector<std::shared_ptr<DisContField>> &src_fields,
-        std::vector<Sym<REAL>> &syms, std::vector<int> &components);
+    virtual void finish_setup(const std::shared_ptr<ExpList> &expansion,
+                              PhysField &src_fields, CoeffField &src_coeffs,
+                              std::vector<Sym<REAL>> &syms,
+                              std::vector<int> &components);
 
     virtual void diag_setup();
     virtual void output_setup(std::vector<Sym<REAL>> &syms) {};
@@ -180,40 +187,35 @@ public:
     inline virtual void diag_project()
     {
         for (auto &[k, v] : this->species_map)
-            this->diagnostic_project[v.id]->project(
-                v.sub_group, this->diag_syms, this->diag_components);
+            this->diagnostic_project->Apply(
+                v.sub_group, this->diag_syms, this->diag_components,
+                this->diag_coeffs.at(v.id), this->diag_fields.at(v.id));
     }
 
-    inline virtual void print_diagnostics(
-        std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-        std::vector<std::string> &variables)
+    virtual void append_diagnostics(
+        Nektar::SolverCore::CoefficientFieldViews &views)
     {
-        int nCoeffs = fieldcoeffs[0].size();
-        for (auto &[k, v] : this->species_map)
-        {
-            variables.emplace_back(k + "_DENSITY");
-            Array<OneD, NekDouble> DiagFwd(nCoeffs);
-            this->proto_field->FwdTransLocalElmt(
-                this->diag_fields[v.id][0]->GetPhys(), DiagFwd);
-            fieldcoeffs.push_back(DiagFwd);
-        }
+        for (auto &[name, species] : species_map)
+            views.push_back({diag_coeffs.at(species.id),
+                             proto_field,
+                             unsigned(ndim),
+                             {{name + "_DENSITY", 0}}});
     }
 
     void add_sources(double time, double dt);
     void add_sinks(double time, double dt);
 
     virtual void setup_evaluate_fields(
-        std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
-        std::vector<int> &eval_comps,
-        std::vector<Array<OneD, NekDouble> *> &eval_srcs);
+        const std::shared_ptr<ExpList> &expansion, PhysField &fields,
+        const std::vector<Sym<REAL>> &syms, const std::vector<int> &components);
 
     /**
      * Evaluate E and B at the particle locations.
      */
     inline virtual void evaluate_fields()
     {
-        this->field_evaluate->evaluate(this->particle_group, this->eval_syms,
-                                       this->eval_comps, this->eval_srcs);
+        for (unsigned c = 0; c < eval_syms.size(); ++c)
+            field_evaluate->Apply(*eval_fields, eval_syms[c], c, eval_comps[c]);
     }
 
     inline void remove_marked_particles()
@@ -420,9 +422,9 @@ protected:
                         REAL vr   = V.at(0);
                         REAL vphi = V.at(2);
                         REAL r    = P.at(0);
-                        REAL r1 = sycl::sqrt(r * r + 2 * r * vr * dt_left +
-                                             (vr * vr + vphi * vphi) * dt_left *
-                                                 dt_left);
+                        REAL r1   = sycl::sqrt(r * r + 2 * r * vr * dt_left +
+                                               (vr * vr + vphi * vphi) * dt_left *
+                                                   dt_left);
 
                         P.at(0) = r1;
                         P.at(1) += dt_left * V.at(1);
@@ -510,15 +512,16 @@ protected:
 
     std::vector<Sym<REAL>> diag_syms;
     std::vector<int> diag_components;
-    std::map<int, std::shared_ptr<FieldProject<DisContField>>>
-        diagnostic_project;
-    std::map<int, std::vector<DisContFieldSharedPtr>> diag_fields;
+    std::shared_ptr<FieldProjectOp<double>> diagnostic_project;
+    std::map<int, PhysField> diag_fields;
+    std::map<int, CoeffField> diag_coeffs;
 
     std::shared_ptr<ExpList> proto_field;
-    std::shared_ptr<BaryEvaluateBase<DisContField>> field_evaluate;
+    std::string projection_variable;
+    std::shared_ptr<FieldEvaluateOp<double>> field_evaluate;
+    PhysField *eval_fields = nullptr;
     std::vector<Sym<REAL>> eval_syms;
     std::vector<int> eval_comps;
-    std::vector<Array<OneD, NekDouble> *> eval_srcs;
 
     /// Number of particle timesteps per fluid timestep.
     int num_part_substeps;

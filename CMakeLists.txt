@@ -113,6 +113,7 @@ endforeach()
 
 # Register PENKNIFE operators without Nektar++'s internal ADD_OPERATOR macro.
 list(APPEND PENKNIFE_OPERATORS_SOURCES
+     src/BndCond/BndCondBohm/BndCondBohmFactory.cpp
      src/MagneticField/MagneticFieldFactory.cpp
      src/Quasineutrality/QuasineutralityFactory.cpp
      src/FluxVolDiff/FluxVolDiffFactory.cpp
@@ -189,3 +190,9 @@ install(TARGETS ${EXEC_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 # Exec rpath
 set_target_properties(${EXEC_NAME} PROPERTIES INSTALL_RPATH ${INSTALL_RPATH}
                                               ${NEKTAR++_LIBRARY_DIRS})
+
+option(PENKNIFE_BUILD_TESTS "Build PENKNIFE equation-system checks" OFF)
+if(PENKNIFE_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests/EquationSystems)
+endif()

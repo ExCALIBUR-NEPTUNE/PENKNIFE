@@ -15,17 +15,22 @@ public:
     static std::shared_ptr<FluxVolDiffOp<TData>> Create(
         const MultiRegions::ExpListSharedPtr &expansionList,
         const std::vector<std::string> &components,
-        const std::string &execStr = "")
+        const std::string &execStr = "", const std::string &model = "")
     {
         std::string closureName = "Braginskii";
         expansionList->GetSession()->LoadSolverInfo("Closure", closureName,
                                                     "Braginskii");
+        if (!model.empty())
+            closureName = model;
         ASSERTL0(
-            closureName == "Braginskii",
+            closureName == "Braginskii" || closureName == "SingleDiffusive" ||
+                closureName == "DoubleDiffusive",
             "Only the Braginskii parallel heat-flux closure is implemented.");
-        return std::dynamic_pointer_cast<FluxVolDiffOp<TData>>(
+        auto op = std::dynamic_pointer_cast<FluxVolDiffOp<TData>>(
             SolverCore::DiffusionVolumeFluxOp<TData>::Create(
                 expansionList, components, name + closureName, execStr));
+        op->m_requireEnergy = closureName != "SingleDiffusive";
+        return op;
     }
     static inline const std::string name = "FluxVolDiff";
     static constexpr unsigned InvalidId  = std::numeric_limits<unsigned>::max();
@@ -66,7 +71,7 @@ public:
             for (const unsigned id : {n_ids[s], v_ids[s], e_ids[s]})
                 ASSERTL0(id == InvalidId || id < this->m_components.size(),
                          "Diffusion species index is outside the state.");
-            ASSERTL0(charges[s] == 0 ||
+            ASSERTL0(!m_requireEnergy || charges[s] == 0 ||
                          (n_ids[s] != InvalidId && e_ids[s] != InvalidId),
                      "Braginskii conduction requires density and energy for "
                      "every ion.");
@@ -87,6 +92,7 @@ protected:
                               const std::vector<unsigned> &,
                               const std::vector<TData> &,
                               const std::vector<TData> &)    = 0;
+    bool m_requireEnergy                                     = true;
     unsigned m_electronEnergyId                              = InvalidId;
     bool m_indicesConfigured                                 = false;
     LibUtilities::Field<TData, FieldState::Phys> *m_b_unit   = nullptr;

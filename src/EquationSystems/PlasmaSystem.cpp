@@ -1,5 +1,9 @@
+#include <FieldUtils/Interpolator.h>
+#include <SolverUtils/Core/SessionFunction.h>
 #include <algorithm>
 #include <boost/core/ignore_unused.hpp>
+#include <nektar_interface/solver_base/neso_session_function.hpp>
+#include <set>
 
 #include <LibUtilities/BasicUtils/Vmath.hpp>
 #include <LibUtilities/TimeIntegration/TimeIntegrationScheme.h>
@@ -11,39 +15,8 @@ namespace PENKNIFE
 
 PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                            const SD::MeshGraphSharedPtr &graph)
-    : SC::UnsteadySystem(session, graph),
-      field_to_index(session->GetVariables())
+    : SC::UnsteadySystem(session, graph)
 {
-    m_domains          = m_graph->GetDomain();
-    m_dom_to_offset[0] = 0;
-    int size           = 0;
-    for (size_t d = 0; d < m_domains.size(); ++d)
-    {
-        std::vector<int> global;
-        std::vector<int> local;
-        std::vector<int> phys_offset;
-        std::vector<int> coeff_offset;
-
-        for (auto &compIter : m_domains[d])
-        {
-            for (auto &x : compIter.second->m_geomVec)
-            {
-
-                global.push_back(x->GetGlobalID());
-
-                local.push_back(
-                    m_expansionLists[0]->GetElmtToExpId().at(global.back()));
-
-                phys_offset.push_back(
-                    m_expansionLists[0]->GetPhys_Offset(local.back()));
-
-                size +=
-                    m_expansionLists[0]->GetExp(local.back())->GetTotPoints();
-            }
-        }
-        m_dom_to_offset[d + 1] = size;
-    }
-
     this->particles_enabled = false;
     this->neso_config       = std::make_shared<NESOReader>(session);
 
@@ -85,6 +58,7 @@ PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
                      "Duplicate field '" + field + "' for species " + name);
             (*ids)[s] = m_variables.size();
             m_variables.push_back(name + "_" + field);
+            m_fieldTemplates.push_back(field);
         }
 
         if (std::get<3>(spec).has_value())
@@ -117,6 +91,7 @@ PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
 
     ee_idx = m_variables.size();
     m_variables.push_back("ee");
+    m_fieldTemplates.push_back("e");
     m_nVariables = m_variables.size();
 
     if (session->DefinesSolverInfo("PARTTYPE"))
@@ -149,7 +124,7 @@ PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
     }
 }
 
-void PlasmaSystem::v_GenerateSummary(SummaryList &s)
+void PlasmaSystem::v_GenerateSummary(SC::SummaryList &s)
 {
     std::stringstream ss;
     ss << R"(
@@ -164,13 +139,13 @@ void PlasmaSystem::v_GenerateSummary(SummaryList &s)
 ║ Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 )";
-    AddSummaryItem(s, "", ss.str());
+    SC::AddSummaryItem(s, "", ss.str());
     SC::UnsteadySystem::v_GenerateSummary(s);
 
-    AddSummaryItem(s, "Mesh length scale", this->mesh_length);
-    AddSummaryItem(s, "Density normalisation", this->Nnorm);
-    AddSummaryItem(s, "Temperature normalisation", this->Tnorm);
-    AddSummaryItem(s, "Magnetic Field normalisation", this->Bnorm);
+    SC::AddSummaryItem(s, "Mesh length scale", this->mesh_length);
+    SC::AddSummaryItem(s, "Density normalisation", this->Nnorm);
+    SC::AddSummaryItem(s, "Temperature normalisation", this->Tnorm);
+    SC::AddSummaryItem(s, "Magnetic Field normalisation", this->Bnorm);
 }
 
 std::shared_ptr<ParticleSystem> PlasmaSystem::GetParticleSystem()
@@ -188,6 +163,7 @@ void PlasmaSystem::LoadParams()
     m_session->LoadParameter("Tnorm", this->Tnorm, 100.);
     m_session->LoadParameter("Bnorm", this->Bnorm, 1.);
     this->me = 1. / 1836;
+    m_session->LoadParameter("T_bg", m_backgroundTemperature, 0.0);
 
     this->cs = std::sqrt(constants::qeomp *
                          this->Tnorm); // Reference sound speed [m/s]
@@ -219,26 +195,30 @@ void PlasmaSystem::v_InitialiseFields()
     this->E = LibUtilities::Field<double, FieldState::Phys>(
         "Electric Field", bAtr_phys, 3, m_npointsZ);
 
-    this->ne = LU::Field<double, FieldState::Phys>(
-        "Electron Density", bAtr_phys, 1, m_npointsZ);
+    this->ne = LU::Field<double, FieldState::Phys>("Electron Density",
+                                                   bAtr_phys, 1, m_npointsZ);
     m_math.zero(this->ne);
-    this->j_par = LU::Field<double, FieldState::Phys>(
-        "Parallel Current", bAtr_phys, 1, m_npointsZ);
+    this->j_par = LU::Field<double, FieldState::Phys>("Parallel Current",
+                                                      bAtr_phys, 1, m_npointsZ);
     m_math.zero(this->j_par);
-    this->Me = LU::Field<double, FieldState::Phys>(
-        "Parallel Electron Momentum", bAtr_phys, 1, m_npointsZ);
+    this->Me = LU::Field<double, FieldState::Phys>("Parallel Electron Momentum",
+                                                   bAtr_phys, 1, m_npointsZ);
     m_math.zero(this->Me);
+    m_math.zero(this->E);
 
     auto bAtr_phys_trace =
         MultiRegions::GetLocTraceBlockAttributes<double, FieldState::Phys>(
             m_expansionLists[0]);
     this->b_unit_trace = LibUtilities::Field<double, FieldState::Phys>(
-        "Unit B on trace", bAtr_phys_trace, m_coordim, m_npointsZ);
+        "Unit B on trace", bAtr_phys_trace, 3, m_npointsZ);
 }
 
 void PlasmaSystem::v_InitialiseOperators()
 {
+    const auto variables = m_variables;
+    m_variables          = m_fieldTemplates;
     EquationSystem::v_InitialiseOperators();
+    m_variables = variables;
     std::string execName =
         MultiRegions::Operator<double>::GetOpExecSpace(m_session);
 
@@ -259,7 +239,7 @@ void PlasmaSystem::v_InitialiseOperators()
         ionMasses.push_back(m_masses[s]);
     }
     m_quasineutralityOp->SetSpecies(ionDensityIds, ionMomentumIds, ionCharges,
-                                  ionMasses, me);
+                                    ionMasses, me);
 
     m_BTraceExtractOp = PhysTraceExtractOp<double>::Create(
         m_expansionLists[0], this->b_unit.GetComponentNames());
@@ -286,12 +266,36 @@ void PlasmaSystem::v_WriteFld(const std::string &outname)
  */
 void PlasmaSystem::v_InitObject(bool declareExpansionLists)
 {
+    // Initialise Nektar's session-sized metadata before mapping the evolved
+    // species components onto the existing n/v/e expansion templates. This
+    // also keeps its restart scan within the original session variable list.
+    const auto variables = m_variables;
+    const auto count     = m_nVariables;
+    const auto templates = m_session->GetVariables();
+    m_variables          = templates;
+    m_nVariables         = templates.size();
     SC::UnsteadySystem::v_InitObject(declareExpansionLists);
+    m_variables  = variables;
+    m_nVariables = count;
+    if (declareExpansionLists)
+    {
+        const auto expansions = m_expansionLists;
+        const auto singular   = m_checkIfSystemSingular;
+        m_expansionLists.clear();
+        m_checkIfSystemSingular.clear();
+        for (const auto &field : m_fieldTemplates)
+        {
+            const auto it =
+                std::find(templates.begin(), templates.end(), field);
+            ASSERTL0(it != templates.end(),
+                     "Missing session field template: " + field);
+            const auto index = std::distance(templates.begin(), it);
+            m_expansionLists.push_back(expansions[index]);
+            m_checkIfSystemSingular.push_back(singular[index]);
+        }
+    }
     // Load parameters
     LoadParams();
-
-    ASSERTL0(m_session->DefinesSolverInfo("UPWINDTYPE"),
-             "No UPWINDTYPE defined in session.");
 
     /// Create Field for solution m_fields and others
     InitialiseFields();
@@ -301,13 +305,12 @@ void PlasmaSystem::v_InitObject(bool declareExpansionLists)
     // Configure Time-integration
     InitialiseTimeOp();
 
-    // this->b_unit = this->mag_field->b_unit;
-    // this->mag_B  = this->mag_field->mag_B;
-    this->mag_field->Apply(m_time);
-    m_BTraceExtractOp->Apply(this->b_unit, this->b_unit_trace);
+    UpdateMagneticField(m_time);
+    SetupParticles();
 
     // Forcing terms
-    m_forcing = SC::Forcing::Load(m_session, m_expansionLists[0], m_variables);
+    m_forcing =
+        SC::Forcing::Load(m_session, m_expansionLists[0], m_fieldTemplates);
 }
 
 void PlasmaSystem::v_DoInitialise(bool dump_initial_conditions)
@@ -327,6 +330,8 @@ void PlasmaSystem::v_DoInitialise(bool dump_initial_conditions)
  */
 bool PlasmaSystem::v_PostIntegrate()
 {
+    if (particles_enabled)
+        particle_sys->diag_project();
     return UnsteadySystem::v_PostIntegrate();
 }
 
@@ -337,15 +342,17 @@ bool PlasmaSystem::v_PostIntegrate()
  */
 bool PlasmaSystem::v_PreIntegrate()
 {
-    if (this->transient_field)
-    {
-        this->mag_field->Apply(m_time);
-        m_BTraceExtractOp->Apply(this->b_unit, this->b_unit_trace);
-    }
+    if (transient_field)
+        UpdateMagneticField(m_time);
+    j_par.SetInterleaveWidth(m_fields);
+    m_quasineutralityOp->Apply(m_fields, j_par, ne, Me);
+    UpdateElectricField(m_fields, m_time);
 
     if (this->particles_enabled)
     {
-        m_math.zero(src_fields);
+        UpdateParticleFields();
+        m_math.zero(m_particleSources);
+        m_math.zero(m_particleSourceCoeffs);
         this->particle_sys->integrate(m_time + m_timestep, m_timestep,
                                       m_timeOp->GetStep());
     }
@@ -353,218 +360,349 @@ bool PlasmaSystem::v_PreIntegrate()
     return UnsteadySystem::v_PreIntegrate();
 }
 
-/**
- * @brief Returns a session function particular to a species
- */
-// NESOSessionFunctionSharedPtr PlasmaSystem::get_species_function(
-//     const std::string &s, std::string name, const MR::ExpListSharedPtr
-//     &field, bool cache)
-// {
-//     MR::ExpListSharedPtr vField = field;
-//     if (!field)
-//     {
-//         vField = m_fields[0];
-//     }
+void PlasmaSystem::UpdateMagneticField(double time)
+{
+    mag_field->Apply(time);
+    m_BTraceExtractOp->Apply(b_unit, b_unit_trace);
+}
 
-//     if (cache)
-//     {
-//         if ((m_nesoSessionFunctions[s].find(name) ==
-//              m_nesoSessionFunctions[s].end()) ||
-//             (m_nesoSessionFunctions[s][name]->GetSession() !=
-//              this->neso_config) ||
-//             (m_nesoSessionFunctions[s][name]->GetExpansion() != vField))
-//         {
-//             m_nesoSessionFunctions[s][name] =
-//                 MemoryManager<NESOSessionFunction>::AllocateSharedPtr(
-//                     s, this->neso_config, vField, name, cache);
-//         }
+void PlasmaSystem::v_InitialiseTimeOp()
+{
+    const auto &scheme = m_session->GetTimeIntScheme();
+    if (scheme.method == "RungeKutta" || scheme.method == "AdamsBashforth" ||
+        scheme.method == "ExplicitSDC" || scheme.method == "ExplicitGEM")
+        UnsteadySystem::v_InitialiseTimeOp();
+    else
+    {
+        m_timeOp = SC::TimeOp<double>::Create(m_expansionLists[0], m_variables,
+                                              "RungeKutta", 4, "");
+        m_timeOp->DefineProjection(&SC::EquationSystem::DoProjection, this);
+        WARNINGL0(false, "PENKNIFE currently uses explicit RK4 in place of the "
+                         "requested implicit or IMEX scheme.");
+    }
+}
 
-//         return m_nesoSessionFunctions[s][name];
-//     }
-//     else
-//     {
-//         return std::make_shared<NESOSessionFunction>(s, this->neso_config,
-//                                                      vField, name, cache);
-//     }
-// }
+void PlasmaSystem::SetupParticles()
+{
+    if (!particles_enabled)
+        return;
+    ASSERTL0(m_npointsZ == 1,
+             "NESO Field coupling requires non-homogeneous fields.");
+    auto attr =
+        MR::GetBlockAttributes<double, FieldState::Phys>(m_expansionLists[0]);
+    std::vector<Sym<REAL>> evalSyms, sourceSyms, outputSyms;
+    std::vector<int> evalComps, sourceComps;
+    std::vector<std::string> evalNames, sourceNames, projectionNames;
+    auto evaluate = [&](const std::string &name, int count)
+    {
+        for (int d = 0; d < count; ++d)
+        {
+            evalSyms.emplace_back(name);
+            evalComps.push_back(d);
+            evalNames.push_back(name + std::to_string(d));
+        }
+    };
+    evaluate("ELECTRON_DENSITY", 1);
+    evaluate("ELECTRON_TEMPERATURE", 1);
+    evaluate("ELECTRON_FLOW_SPEED", 3);
+    evaluate("ELECTRIC_FIELD", 3);
+    evaluate("MAGNETIC_FIELD", 3);
+    for (const auto &name : m_names)
+    {
+        evaluate(name + "_DENSITY", 1);
+        evaluate(name + "_TEMPERATURE", 1);
+        evaluate(name + "_FLOW_SPEED", 3);
+    }
+    auto source = [&](const std::string &name, unsigned count,
+                      const std::string &variable)
+    {
+        outputSyms.emplace_back(name);
+        const unsigned first = sourceNames.size();
+        for (unsigned d = 0; d < count; ++d)
+        {
+            sourceSyms.emplace_back(name);
+            sourceComps.push_back(d);
+            sourceNames.push_back(name + std::to_string(d));
+            projectionNames.push_back(variable);
+        }
+        return first;
+    };
+    m_sourceDensity.assign(n_species, InvalidId);
+    m_sourceMomentum.assign(n_species, InvalidId);
+    m_sourceEnergy.assign(n_species, InvalidId);
+    for (unsigned s = 0; s < n_species; ++s)
+    {
+        if (HasDensity(s))
+            m_sourceDensity[s] = source(m_names[s] + "_SOURCE_DENSITY", 1,
+                                        m_fieldTemplates[n_ids[s]]);
+        if (HasMomentum(s))
+            m_sourceMomentum[s] = source(m_names[s] + "_SOURCE_MOMENTUM", 3,
+                                         m_fieldTemplates[v_ids[s]]);
+        if (HasEnergy(s))
+            m_sourceEnergy[s] = source(m_names[s] + "_SOURCE_ENERGY", 1,
+                                       m_fieldTemplates[e_ids[s]]);
+    }
+    if (ee_idx != InvalidId)
+        m_sourceElectron =
+            source("ELECTRON_SOURCE_ENERGY", 1, m_fieldTemplates[ee_idx]);
+    m_particleFields =
+        PhysField("Particle evaluation fields", attr, evalNames, 1);
+    m_particleSources = PhysField("Particle sources", attr, projectionNames, 1);
 
-/**
- * @brief After reading ICs, calculate phi and grad(phi)
- */
-// void PlasmaSystem::v_SetInitialConditions(NekDouble init_time)
-// {
-//     if (m_session->DefinesFunction("InitialConditions"))
-//     {
-//         for (int i = 0; i < m_fields.size(); ++i)
-//         {
-//             Array<OneD, NekDouble> phys = m_fields[i]->UpdatePhys();
-//             Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
-//             for (size_t d = 0; d < m_domains.size(); ++d)
-//             {
-//                 GetFunction("InitialConditions")
-//                     ->Evaluate(m_session->GetVariables()[i], tmpphys, m_time,
-//                                d);
-//                 Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
-//                              tmpphys.data() + m_dom_to_offset[d], 1,
-//                              phys.data() + m_dom_to_offset[d], 1);
-//             }
+    m_particleSourceCoeffs = CoeffField(
+        "Particle source coefficients",
+        MR::GetBlockAttributes<double, FieldState::Coeff>(m_expansionLists[0]),
+        projectionNames, 1);
+    m_particleSourceNames = sourceNames;
+    m_math.zero(m_particleSources);
+    m_math.zero(m_particleSourceCoeffs);
+    particle_sys->setup_evaluate_fields(m_expansionLists[0], m_particleFields,
+                                        evalSyms, evalComps);
+    particle_sys->finish_setup(m_expansionLists[0], m_particleSources,
+                               m_particleSourceCoeffs, sourceSyms, sourceComps);
+    particle_sys->diag_setup();
+    particle_sys->output_setup(outputSyms);
+}
 
-//             if (m_fields[i]->GetWaveSpace())
-//             {
-//                 m_fields[i]->HomogeneousFwdTrans(m_fields[i]->GetTotPoints(),
-//                                                  m_fields[i]->GetPhys(),
-//                                                  m_fields[i]->UpdatePhys());
-//             }
-//             m_fields[i]->FwdTransLocalElmt(m_fields[i]->GetPhys(),
-//                                            m_fields[i]->UpdateCoeffs());
-//         }
+void PlasmaSystem::UpdateParticleFields()
+{
+    m_particleFields.SetInterleaveWidth(m_fields);
+    for (auto *field : {&B, &E, &b_unit, &ne, &Me})
+        field->SetInterleaveWidth(m_fields);
+    m_math.zero(m_particleFields);
+    for (unsigned blk = 0; blk < m_fields.GetBlocks().size(); ++blk)
+    {
+        auto &block         = m_fields.GetBlocks()[blk];
+        const size_t stride = block.CompSize();
+        auto u              = block.GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto n =
+            ne.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto momentum =
+            Me.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto b =
+            b_unit.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto magnetic =
+            B.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto electric =
+            E.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        auto values = m_particleFields.GetBlocks()[blk]
+                          .GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+        for (size_t p = 0; p < stride; ++p)
+        {
+            values[p]          = n[p];
+            values[stride + p] = n[p] > 0 && ee_idx != InvalidId
+                                     ? (2. / 3.) * u[ee_idx * stride + p] / n[p]
+                                     : m_backgroundTemperature;
+            for (unsigned d = 0; d < 3; ++d)
+            {
+                values[(2 + d) * stride + p] =
+                    n[p] > 0 ? momentum[p] * b[d * stride + p] / (me * n[p])
+                             : 0;
+                values[(5 + d) * stride + p] = electric[d * stride + p];
+                values[(8 + d) * stride + p] = magnetic[d * stride + p];
+            }
+            for (unsigned s = 0; s < n_species; ++s)
+            {
+                const size_t c  = 11 + 5 * s;
+                const double ns = HasDensity(s) ? u[n_ids[s] * stride + p] : 0;
+                values[c * stride + p] = ns;
+                values[(c + 1) * stride + p] =
+                    ns > 0 && HasEnergy(s)
+                        ? (2. / 3.) * u[e_ids[s] * stride + p] / ns
+                        : m_backgroundTemperature;
+                for (unsigned d = 0; d < 3; ++d)
+                    values[(c + 2 + d) * stride + p] =
+                        ns > 0 && HasMomentum(s)
+                            ? u[v_ids[s] * stride + p] * b[d * stride + p] /
+                                  (m_masses[s] * ns)
+                            : 0;
+            }
+        }
+    }
+}
 
-//         // Enforce C0 Continuity of initial condiiton
-//         if ((m_projectionType == MultiRegions::eGalerkin) ||
-//             (m_projectionType == MultiRegions::eMixed_CG_Discontinuous))
-//         {
-//             for (int i = 0; i < m_fields.size(); ++i)
-//             {
-//                 m_fields[i]->AvgAssemble();
-//                 m_fields[i]->GlobalToLocal();
-//                 m_fields[i]->BwdTrans(m_fields[i]->GetCoeffs(),
-//                                       m_fields[i]->UpdatePhys());
-//             }
-//         }
+void PlasmaSystem::AddSources(PhysField &in, PhysField &out, double time,
+                              double factor)
+{
+    if (particles_enabled)
+    {
+        m_particleSources.SetInterleaveWidth(out);
+        b_unit.SetInterleaveWidth(out);
+        for (unsigned blk = 0; blk < out.GetBlocks().size(); ++blk)
+        {
+            const auto stride = out.GetBlocks()[blk].CompSize();
+            auto source       = m_particleSources.GetBlocks()[blk]
+                              .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto b = b_unit.GetBlocks()[blk]
+                         .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto rhs = out.GetBlocks()[blk]
+                           .GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+            for (size_t p = 0; p < stride; ++p)
+            {
+                for (unsigned s = 0; s < n_species; ++s)
+                {
+                    if (HasDensity(s))
+                        rhs[n_ids[s] * stride + p] +=
+                            factor * source[m_sourceDensity[s] * stride + p] /
+                            m_timestep;
+                    if (HasEnergy(s))
+                        rhs[e_ids[s] * stride + p] +=
+                            factor * source[m_sourceEnergy[s] * stride + p] /
+                            m_timestep;
+                    if (HasMomentum(s))
+                        for (unsigned d = 0; d < 3; ++d)
+                            rhs[v_ids[s] * stride + p] +=
+                                factor * b[d * stride + p] *
+                                source[(m_sourceMomentum[s] + d) * stride + p] /
+                                m_timestep;
+                }
+                if (m_sourceElectron != InvalidId)
+                    rhs[ee_idx * stride + p] +=
+                        factor * source[m_sourceElectron * stride + p] /
+                        m_timestep;
+            }
+        }
+    }
+    for (auto &forcing : m_forcing)
+    {
+        forcing->SetAppend(true);
+        forcing->Apply(in, out, time, factor);
+    }
+}
 
-//         if (m_session->GetComm()->GetRank() == 0)
-//         {
-//             std::cout << "Initial Conditions:" << std::endl;
-//             for (int i = 0; i < m_fields.size(); ++i)
-//             {
-//                 std::string varName = m_session->GetVariable(i);
-//                 std::cout << "  - Field " << varName << std::endl;
-//                 for (size_t d = 0; d < m_domains.size(); ++d)
-//                 {
-//                     std::cout << "\tDomain " << d << ": "
-//                               << GetFunction("InitialConditions")
-//                                      ->Describe(varName, d)
-//                               << std::endl;
-//                 }
-//             }
-//         }
-//     }
-//     else
-//     {
-//         for (int i = 0; i < m_fields.size(); i++)
-//         {
-//             Vmath::Zero(this->n_pts, m_fields[i]->UpdatePhys(), 1);
-//             m_fields[i]->SetPhysState(true);
-//             Vmath::Zero(this->n_coeffs, m_fields[i]->UpdateCoeffs(), 1);
-//             if (m_session->GetComm()->GetRank() == 0)
-//             {
-//                 std::cout << "Initial Conditions:" << std::endl;
-//                 std::cout << "  - Field " << m_session->GetVariable(i)
-//                           << ": 0 (default)" << std::endl;
-//             }
-//         }
-//     }
-//     int s = 0;
-//     for (const auto &[k, v] : this->GetSpecies())
-//     {
-//         if (this->neso_config->defines_species_function(v.name,
-//                                                         "InitialConditions"))
-//         {
-//             auto fn = this->get_species_function(v.name,
-//             "InitialConditions"); for (const auto &[f, fi] : v.fields)
-//             {
-//                 Array<OneD, NekDouble> phys = m_indfields[fi]->UpdatePhys();
-//                 Array<OneD, NekDouble> tmpphys(phys.size(), 0.0);
-//                 for (size_t d = 0; d < m_domains.size(); ++d)
-//                 {
-//                     fn->Evaluate(m_session->GetVariables()[f], tmpphys,
-//                     m_time,
-//                                  d);
-//                     Vmath::Vcopy(m_dom_to_offset[d + 1] - m_dom_to_offset[d],
-//                                  tmpphys.data() + m_dom_to_offset[d], 1,
-//                                  phys.data() + m_dom_to_offset[d], 1);
-//                 }
-//                 if (m_indfields[fi]->GetWaveSpace())
-//                 {
-//                     m_indfields[fi]->HomogeneousFwdTrans(
-//                         m_indfields[fi]->GetTotPoints(),
-//                         m_indfields[fi]->GetPhys(),
-//                         m_indfields[fi]->UpdatePhys());
-//                 }
-//                 m_indfields[fi]->FwdTransLocalElmt(
-//                     m_indfields[fi]->GetPhys(),
-//                     m_indfields[fi]->UpdateCoeffs());
+SC::CoefficientFieldViews PlasmaSystem::v_GetOutputFieldViews()
+{
+    auto views = EquationSystem::v_GetOutputFieldViews();
+    if (particles_enabled)
+    {
+        views.push_back({m_particleSourceCoeffs, m_expansionLists[0], m_coordim,
+                         SC::MakeFieldComponents(m_particleSourceNames)});
+        particle_sys->append_diagnostics(views);
+    }
+    return views;
+}
 
-//                 if ((m_projectionType == MultiRegions::eGalerkin) ||
-//                     (m_projectionType ==
-//                     MultiRegions::eMixed_CG_Discontinuous))
-//                 {
-
-//                     m_indfields[fi]->AvgAssemble();
-//                     m_indfields[fi]->GlobalToLocal();
-//                     m_indfields[fi]->BwdTrans(m_indfields[fi]->GetCoeffs(),
-//                                               m_indfields[fi]->UpdatePhys());
-//                 }
-//                 if (m_session->GetComm()->GetRank() == 0)
-//                 {
-//                     std::string varName = m_session->GetVariable(f);
-//                     std::cout << "  - Species " << v.name << " Field "
-//                               << varName << std::endl;
-//                     for (size_t d = 0; d < m_domains.size(); ++d)
-//                     {
-//                         std::cout << "\tDomain " << d << ": "
-//                                   << this->get_species_function(
-//                                              v.name, "InitialConditions")
-//                                          ->Describe(varName, d)
-//                                   << std::endl;
-//                     }
-//                 }
-//             }
-//         }
-//         else
-//         {
-//             for (const auto &[f, fi] : v.fields)
-//             {
-//                 Vmath::Zero(this->n_pts, m_indfields[fi]->UpdatePhys(), 1);
-//                 m_indfields[fi]->SetPhysState(true);
-//                 Vmath::Zero(this->n_coeffs, m_indfields[fi]->UpdateCoeffs(),
-//                 1); if (m_session->GetComm()->GetRank() == 0)
-//                 {
-//                     std::cout << "Initial Conditions:" << std::endl;
-//                     std::cout << "  - Field " << m_session->GetVariable(f)
-//                               << ": 0 (default)" << std::endl;
-//                 }
-//             }
-//         }
-//         s++;
-//     }
-//     Vmath::Zero(this->n_pts, m_fields[0]->UpdatePhys(), 1);
-//     for (const auto &[s, v] : GetIons())
-//     {
-//         int ni_idx = v.fields.at(field_to_index.at("n"));
-
-//         Vmath::Svtvp(this->n_pts, v.charge, m_indfields[ni_idx]->GetPhys(),
-//         1,
-//                      m_fields[0]->UpdatePhys(), 1, m_fields[0]->UpdatePhys(),
-//                      1);
-//     }
-//     m_fields[0]->FwdTrans(m_fields[0]->GetPhys(),
-//     m_fields[0]->UpdateCoeffs());
-
-//     if (m_session->GetComm()->GetRank() == 0)
-//     {
-//         std::cout << "============================================="
-//                      "================"
-//                      "=========="
-//                   << std::endl
-//                   << std::endl;
-//     }
-//     if (dump_ICs && m_checksteps && m_nchk == 0 &&
-//     !m_comm->IsParallelInTime())
-//     {
-//         Checkpoint_Output(m_nchk);
-//     }
-//     ++m_nchk;
-// }
+void PlasmaSystem::v_SetInitialConditions(double time)
+{
+    m_time = time;
+    m_math.zero(m_fields);
+    m_math.zero(m_fields_coeff);
+    const auto expansion = m_expansionLists[0];
+    auto collections     = MR::GetCollections(expansion);
+    auto attrs = MR::GetBlockAttributes<double, FieldState::Phys>(expansion);
+    PhysField values("Initial component", attrs, 1, 1);
+    m_math.zero(values);
+    auto expression = MR::ExpressionOp<double>::Create(expansion, {"initial"});
+    for (const auto &[domain, composites] : m_graph->GetDomain())
+    {
+        std::set<int> geometries;
+        for (const auto &[id, composite] : composites)
+            for (const auto &geom : composite->m_geomVec)
+                geometries.insert(geom->GetGlobalID());
+        for (unsigned f = 0; f < m_variables.size(); ++f)
+        {
+            std::string species, field = m_fieldTemplates[f];
+            for (unsigned s = 0; s < n_species; ++s)
+                if (n_ids[s] == f || v_ids[s] == f || e_ids[s] == f)
+                {
+                    species = m_names[s];
+                    break;
+                }
+            const bool specific =
+                !species.empty() && neso_config->defines_species_function(
+                                        species, "InitialConditions");
+            const bool generic =
+                m_session->DefinesFunction("InitialConditions", m_variables[f],
+                                           domain) ||
+                m_session->DefinesFunction("InitialConditions", field, domain);
+            if (!specific && !generic)
+                continue;
+            const std::string variable =
+                m_session->DefinesFunction("InitialConditions", m_variables[f],
+                                           domain)
+                    ? m_variables[f]
+                    : field;
+            auto type = specific
+                            ? neso_config->get_species_function_type(
+                                  species, "InitialConditions", field, domain)
+                            : m_session->GetFunctionType("InitialConditions",
+                                                         variable, domain);
+            if (type == LU::eFunctionTypeExpression)
+            {
+                auto equation =
+                    specific ? neso_config->get_species_function(
+                                   species, "InitialConditions", field, domain)
+                             : m_session->GetFunction("InitialConditions",
+                                                      variable, domain);
+                expression->SetExpressions({equation});
+                expression->SetTime(time);
+                expression->Apply(values, values);
+            }
+            else
+            {
+                // File import is setup only; copy by element into the native
+                // Field blocks, rather than assuming expansion/collection
+                // order.
+                Array<OneD, double> imported(expansion->GetTotPoints(), 0.);
+                if (specific)
+                {
+                    NESO::NESOSessionFunction function(
+                        species, neso_config, expansion, "InitialConditions");
+                    function.Evaluate(field, imported, time, domain);
+                }
+                else
+                {
+                    SolverUtils::SessionFunction function(m_session, expansion,
+                                                          "InitialConditions");
+                    function.Evaluate(variable, imported, time, domain);
+                }
+                values.Initialize<NektarSpaces::HostSpace>(0.);
+                for (unsigned blk = 0; blk < collections.size(); ++blk)
+                {
+                    auto &block = values.GetBlocks()[blk];
+                    auto dst =
+                        block.GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+                    const size_t width   = block.GetInterleaveWidth(),
+                                 np      = block.GetNumData();
+                    const auto &elements = collections[blk].GetExpVector();
+                    for (unsigned e = 0; e < elements.size(); ++e)
+                    {
+                        const auto local = expansion->GetElmtToExpId().at(
+                            elements[e]->GetGeom()->GetGlobalID());
+                        const size_t offset = expansion->GetPhys_Offset(local);
+                        for (size_t p = 0; p < np; ++p)
+                            dst[(e / width) * np * width + p * width +
+                                e % width] = imported[offset + p];
+                    }
+                }
+            }
+            values.SetInterleaveWidth(m_fields);
+            for (unsigned blk = 0; blk < collections.size(); ++blk)
+            {
+                auto &block = m_fields.GetBlocks()[blk];
+                auto dst = block.GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+                auto src = values.GetBlocks()[blk]
+                               .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                const size_t width   = block.GetInterleaveWidth(),
+                             np      = block.GetNumData();
+                const auto &elements = collections[blk].GetExpVector();
+                for (unsigned e = 0; e < elements.size(); ++e)
+                    if (geometries.count(elements[e]->GetGeom()->GetGlobalID()))
+                        for (size_t p = 0; p < np; ++p)
+                        {
+                            const size_t point = (e / width) * np * width +
+                                                 p * width + e % width;
+                            dst[f * block.CompSize() + point] = src[point];
+                        }
+            }
+        }
+    }
+    // Use the redesigned projection for CG continuity and stage boundary data.
+    DoProjection(m_fields, m_fields, time);
+    m_quasineutralityOp->Apply(m_fields, j_par, ne, Me);
+    UpdateElectricField(m_fields, time);
+    if (particles_enabled)
+        UpdateParticleFields();
+}
 
 } // namespace PENKNIFE

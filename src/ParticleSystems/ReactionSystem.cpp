@@ -200,16 +200,18 @@ void ReactionSystem::set_up_reactions()
 /**
  * @brief Finish setup of the class, including projection of source fields
  */
-void ReactionSystem::finish_setup(
-    std::vector<std::shared_ptr<DisContField>> &src_fields,
-    std::vector<Sym<REAL>> &syms, std::vector<int> &components)
+void ReactionSystem::finish_setup(const std::shared_ptr<ExpList> &expansion,
+                                  PhysField &src_fields, CoeffField &src_coeffs,
+                                  std::vector<Sym<REAL>> &syms,
+                                  std::vector<int> &components)
 {
+    projection_variable  = src_fields.GetComponentNames().front();
     this->src_syms       = syms;
     this->src_components = components;
 
     this->project_transform = std::make_shared<ProjectTransformation>(
-        src_fields, this->src_syms, this->src_components, this->particle_group,
-        this->cell_id_translation);
+        expansion, src_fields, src_coeffs, this->src_syms, this->src_components,
+        this->particle_group, this->cell_id_translation);
     this->project_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(project_transform));
 
@@ -251,11 +253,23 @@ void ReactionSystem::finish_setup(
         src_names.push_back(k + "_SOURCE_MOMENTUM");
     }
 
+    for (const auto &[name, info] : config->get_species())
+        for (const auto &suffix :
+             {"_SOURCE_DENSITY", "_SOURCE_ENERGY", "_SOURCE_MOMENTUM"})
+        {
+            const std::string property = name + suffix;
+            if (std::find(src_names.begin(), src_names.end(), property) ==
+                src_names.end())
+                src_names.push_back(property);
+        }
+
     this->zeroer_transform =
         std::make_shared<ParticleDatZeroer<REAL>>(src_names);
     this->zeroer_wrapper = std::make_shared<TransformationWrapper>(
         std::dynamic_pointer_cast<TransformationStrategy>(zeroer_transform));
 
+    projection_fields = &src_fields;
+    projection_coeffs = &src_coeffs;
     set_up_reactions();
 
     auto partitions = particle_group_partition(this->particle_group,
@@ -301,9 +315,13 @@ void ReactionSystem::setup_recomb_controller()
 {
     if (!this->recomb_controller)
     {
+        marker_project_wrapper = std::make_shared<TransformationWrapper>(
+            std::make_shared<ProjectTransformation>(
+                proto_field, *projection_fields, *projection_coeffs, src_syms,
+                src_components, marker_group, marker_cell_id_translation));
         this->recomb_controller = std::make_shared<ReactionController>(
             std::vector<std::shared_ptr<TransformationWrapper>>{
-                project_wrapper},
+                marker_project_wrapper},
             std::vector<std::shared_ptr<TransformationWrapper>>{
                 merge_wrapper, remove_wrapper});
     }
@@ -312,29 +330,40 @@ void ReactionSystem::setup_recomb_controller()
 void ReactionSystem::diag_setup()
 {
     ParticleSystem::diag_setup();
-
-    this->marker_diag_components = {0};
-    this->marker_diag_syms       = {Sym<REAL>("WEIGHT")};
-    for (auto &[k, v] : this->marker_map)
+    marker_diag_components = {0};
+    marker_diag_syms       = {Sym<REAL>("WEIGHT")};
+    if (!marker_group)
+        return;
+    marker_diagnostic_project =
+        FieldProjectOp<double>::Create(proto_field, {projection_variable});
+    marker_diagnostic_project->SetParticles(marker_group,
+                                            marker_cell_id_translation);
+    for (const auto &[name, species] : marker_map)
     {
-        this->marker_diag_fields[v.id].emplace_back(
-            MemoryManager<DisContField>::AllocateSharedPtr(
-                *std::dynamic_pointer_cast<DisContField>(this->proto_field)));
-        this->marker_diagnostic_project[v.id] =
-            std::make_shared<FieldProject<DisContField>>(
-                this->marker_diag_fields[v.id], this->marker_group,
-                this->marker_cell_id_translation);
+        marker_diag_fields.emplace(
+            species.id,
+            PhysField(name + " marker density",
+                      MR::GetBlockAttributes<double, Nektar::FieldState::Phys>(
+                          proto_field),
+                      1, 1));
+        marker_diag_coeffs.emplace(
+            species.id,
+            CoeffField(
+                name + " marker coefficients",
+                MR::GetBlockAttributes<double, Nektar::FieldState::Coeff>(
+                    proto_field),
+                1, 1));
     }
 }
 
 void ReactionSystem::diag_project()
 {
     ParticleSystem::diag_project();
-    for (auto &[k, v] : this->marker_map)
-    {
-        this->marker_diagnostic_project[v.id]->project(
-            v.sub_group, this->marker_diag_syms, this->marker_diag_components);
-    }
+    for (const auto &[name, species] : marker_map)
+        marker_diagnostic_project->Apply(species.sub_group, marker_diag_syms,
+                                         marker_diag_components,
+                                         marker_diag_coeffs.at(species.id),
+                                         marker_diag_fields.at(species.id));
 }
 
 void ReactionSystem::create_markers(std::string k)
@@ -423,6 +452,9 @@ void ReactionSystem::set_marker_weights()
     for (auto &[k, v] : this->marker_map)
     {
         int dim = this->vdim;
+        const REAL thermal_scale =
+            constants::c * std::sqrt(Tnorm / (v.mass * constants::m_p)) /
+            (mesh_length * omega_c);
         particle_loop(
             "set_marker_weight", marker_map[k].sub_group,
             [=](auto ion_dens_prop, auto mass_prop, auto weight_prop,
@@ -433,11 +465,11 @@ void ReactionSystem::set_marker_weights()
                 weight_prop.at(0)   = updated_weight;
                 for (int dx = 0; dx < dim; dx++)
                 {
-                    vel_prop.at(dx) = speed_prop.at(dx) / updated_weight;
+                    vel_prop.at(dx) = speed_prop.at(dx);
                     bool valid;
                     vel_prop.at(dx) +=
-                        RNG.at(INDEX, dx, &valid) *
-                        sycl::sqrt(temp_prop.at(0) / updated_weight);
+                        RNG.at(INDEX, dx, &valid) * thermal_scale *
+                        sycl::sqrt(sycl::fmax(temp_prop.at(0), REAL(0)));
                 }
             },
             Access::read(Sym<REAL>(k + "_DENSITY")),

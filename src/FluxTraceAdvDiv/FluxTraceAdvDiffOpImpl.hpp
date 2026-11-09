@@ -1,4 +1,5 @@
 #pragma once
+#include "BndCond/BndCondBohm/BndCondBohmOp.hpp"
 #include "FluxTraceAdvDiffOp.hpp"
 
 #include "FluxTraceAdvDiv/FluxTraceAdvKernels.hpp"
@@ -24,10 +25,10 @@ class FluxTraceAdvDiffOpImpl
                                                  FluxTraceAdvDiffOp<TData>>
 {
     using MemSpace = typename ExecSpace::memory_space;
-    using Base = SolverCore::detail::TraceFluxOpImpl<ExecSpace, TData,
-                                                     FluxTraceAdvDiffOp<TData>>;
+    using Base     = SolverCore::detail::TraceFluxOpImpl<ExecSpace, TData,
+                                                         FluxTraceAdvDiffOp<TData>>;
 
-  public:
+public:
     /**
      * @brief Construct the operator, build the equation of state, size the
      * workspaces and read the transport parameters.
@@ -62,6 +63,11 @@ class FluxTraceAdvDiffOpImpl
         session->LoadParameter("Anomalous_D", m_anomD, 0.);
         session->LoadParameter("Anomalous_nu", m_anomNu, 0.);
         session->LoadParameter("Anomalous_chi", m_anomChi, 0.);
+        if constexpr (!std::is_same_v<ClosureType, closures::Braginskii<TData>>)
+        {
+            ClosureType::Load(session, m_parameters);
+            m_anomD = m_anomNu = m_anomChi = 0;
+        }
         session->LoadParameter("IPPenaltyCoeff", m_penaltyCoeff, 1.);
         ASSERTL0(std::isfinite(m_penaltyCoeff) && m_penaltyCoeff >= 0,
                  "IPPenaltyCoeff must be finite and nonnegative.");
@@ -106,7 +112,7 @@ class FluxTraceAdvDiffOpImpl
         // cheap way to keep that from being a debugging exercise, so it is
         // ASSERTL0: it runs once per construction and the failure it catches
         // is silent in a release build.
-        const size_t nDerivPts = maxNTraceNPts * m_nDim * m_nComp;
+        const size_t nDerivPts  = maxNTraceNPts * m_nDim * m_nComp;
         const size_t nScalarPts = maxNTraceNPts;
 
         // MemoryRegion rather than std::vector: these arrays reach the AVX
@@ -116,7 +122,7 @@ class FluxTraceAdvDiffOpImpl
         // so its base can fault before any offset is even added. MemoryRegion
         // defaults to NektarSpaces::host_memory_alignment for this reason.
         // The strides are padded so each array also starts on a vector.
-        const size_t derivStride = this->PadToVectorWidth(nDerivPts);
+        const size_t derivStride  = this->PadToVectorWidth(nDerivPts);
         const size_t scalarStride = this->PadToVectorWidth(nScalarPts);
 
         m_wspDeriv = LibUtilities::MemoryRegion<TData>(
@@ -124,9 +130,9 @@ class FluxTraceAdvDiffOpImpl
             this->PadToVectorWidth(maxNTraceNPts * m_nComp));
         m_wspDeriv.template Initialize<MemSpace>(0);
 
-        TData *base = m_wspDeriv.template GetPtr<MemSpace, WriteOnly>();
+        TData *base   = m_wspDeriv.template GetPtr<MemSpace, WriteOnly>();
         TData *cursor = base;
-        m_gloDerivT0 = cursor;
+        m_gloDerivT0  = cursor;
         cursor += derivStride;
         m_gloDerivT1 = cursor;
         cursor += derivStride;
@@ -168,6 +174,8 @@ class FluxTraceAdvDiffOpImpl
         m_bndGhostIsReflected.assign(this->m_bndTraceIdT1.size(), {});
         m_bndCondDiffState.assign(this->m_bndTraceIdT1.size(), {});
         m_bndCondDiffStateBlk.assign(this->m_bndTraceIdT1.size(), {});
+        m_bohmTraces.assign(this->m_bndTraceIdT1.size(), {});
+        m_riemannTraces.assign(this->m_bndTraceIdT1.size(), {});
 
         for (unsigned b = 0; b < this->m_bndTraceIdT1.size(); ++b)
         {
@@ -194,6 +202,11 @@ class FluxTraceAdvDiffOpImpl
                 // unweighted, which is what the defaults below give.
                 const auto *bndCondOp = this->GetBndCondUpdateOp(blk);
 
+                if (dynamic_cast<const BndCondBohmOp<TData> *>(bndCondOp))
+                    m_bohmTraces[b].push_back(t);
+                else
+                    m_riemannTraces[b].push_back(t);
+
                 if (bndCondOp)
                 {
                     // Reflective only if something has actually built the
@@ -217,7 +230,7 @@ class FluxTraceAdvDiffOpImpl
                     // of every block.
                     if (bndCondOp->HasDiffusionExteriorState())
                     {
-                        m_bndCondDiffState[b][t] = bndCondOp;
+                        m_bndCondDiffState[b][t]    = bndCondOp;
                         m_bndCondDiffStateBlk[b][t] = blk;
                     }
                 }
@@ -239,16 +252,16 @@ class FluxTraceAdvDiffOpImpl
      * @return A new operator instance, owned by the caller.
      */
     // instantiation function for CreatorFunction in OperatorFactory
-    static std::unique_ptr<MultiRegions::Operator<TData>>
-    Instantiate(const MultiRegions::ExpListSharedPtr &expansionList,
-                const std::vector<std::string> &components)
+    static std::unique_ptr<MultiRegions::Operator<TData>> Instantiate(
+        const MultiRegions::ExpListSharedPtr &expansionList,
+        const std::vector<std::string> &components)
     {
         return std::make_unique<FluxTraceAdvDiffOpImpl<
             RiemannKernel, ClosureType, ExecSpace, TData>>(expansionList,
                                                            components);
     }
 
-  protected:
+protected:
     /// Interleave width of an element-local field, which the gathers and
     /// scatters read and write it at; Field reshapes all its blocks together.
     template <typename TField> NEK_FORCE_INLINE static unsigned Width(TField &f)
@@ -292,6 +305,10 @@ class FluxTraceAdvDiffOpImpl
     /// trace, or null where none does. Indexed as m_bndTraceIdT1.
     std::vector<std::vector<const SolverCore::BndCondUpdateOp<TData> *>>
         m_bndCondDiffState;
+
+    // Boundary classification is fixed at setup; locations are already held
+    // by the base trace operator in m_bndCondLoc.
+    std::vector<std::vector<size_t>> m_bohmTraces, m_riemannTraces;
 
     /// Boundary storage block of each such trace, which the condition needs to
     /// tell its own regions apart. Indexed as m_bndTraceIdT1.
@@ -409,8 +426,8 @@ class FluxTraceAdvDiffOpImpl
     /// The gradient trace the boundary traces read: the second input under
     /// the flux-of-averages form, the field set through
     /// SetBoundaryGradientTrace() otherwise.
-    LibUtilities::Field<TData, FieldState::Phys> &
-    BoundaryGradientTrace(LibUtilities::Field<TData, FieldState::Phys> &inDeriv)
+    LibUtilities::Field<TData, FieldState::Phys> &BoundaryGradientTrace(
+        LibUtilities::Field<TData, FieldState::Phys> &inDeriv)
     {
         if (!UseAvgNormalFlux())
         {
@@ -425,7 +442,7 @@ class FluxTraceAdvDiffOpImpl
 
     typename ClosureType::Parameters m_parameters;
     TData m_anomD, m_anomNu, m_anomChi, m_penaltyCoeff;
-    TData m_diffusionScale = 1;
+    TData m_diffusionScale      = 1;
     unsigned m_electronEnergyId = std::numeric_limits<unsigned>::max();
     LibUtilities::MemoryRegion<TData> m_wspDiffusion;
     TraceDiffusionWorkspace<TData> m_diffusionWorkspace;
@@ -457,7 +474,7 @@ class FluxTraceAdvDiffOpImpl
     LibUtilities::MemoryRegion<TData> m_masses;
     LibUtilities::MemoryRegion<TData> m_charges;
 
-  public:
+public:
     void SetElectronEnergyIndex(unsigned id) override
     {
         ASSERTL0(id < m_nComp, "Electron-energy index is outside the state.");
@@ -495,13 +512,13 @@ class FluxTraceAdvDiffOpImpl
                         "Species component indices must be valid and unique.");
                     used[id] = true;
                 }
-            ASSERTL0(charges[spec] == 0 ||
+            ASSERTL0(!ClosureType::RequiresEnergy || charges[spec] == 0 ||
                          (n_ids[spec] != invalid && e_ids[spec] != invalid),
                      "Charged species require density and internal energy.");
         }
         m_speciesComponents = std::move(used);
         m_indicesConfigured = true;
-        m_n_species = n_ids.size();
+        m_n_species         = n_ids.size();
         m_n_ids = LibUtilities::MemoryRegion<unsigned int>::template FromVector<
             MemSpace, unsigned int>(n_ids);
         m_v_ids = LibUtilities::MemoryRegion<unsigned int>::template FromVector<
@@ -514,7 +531,7 @@ class FluxTraceAdvDiffOpImpl
             MemSpace, TData>(charges);
     }
 
-  protected:
+protected:
     // The base declares each hook twice, for the two- and three-field forms;
     // overriding one form alone would hide the other.
     using SolverCore::TraceFluxOp<TData>::v_Apply;
@@ -562,21 +579,21 @@ class FluxTraceAdvDiffOpImpl
         // using InteriorOp and BoundaryOp defined below
         switch (this->m_traceDim)
         {
-        case 0:
-            this->template InteriorOp<0>(in, inDeriv, flux);
-            this->template BoundaryOp<0>(in, bndDeriv, flux);
-            break;
-        case 1:
-            this->template InteriorOp<1>(in, inDeriv, flux);
-            this->template BoundaryOp<1>(in, bndDeriv, flux);
-            break;
-        case 2:
-            this->template InteriorOp<2>(in, inDeriv, flux);
-            this->template BoundaryOp<2>(in, bndDeriv, flux);
-            break;
-        default:
-            NEKERROR(ErrorUtil::efatal, "Uknown value of m_traceDim");
-            break;
+            case 0:
+                this->template InteriorOp<0>(in, inDeriv, flux);
+                this->template BoundaryOp<0>(in, bndDeriv, flux);
+                break;
+            case 1:
+                this->template InteriorOp<1>(in, inDeriv, flux);
+                this->template BoundaryOp<1>(in, bndDeriv, flux);
+                break;
+            case 2:
+                this->template InteriorOp<2>(in, inDeriv, flux);
+                this->template BoundaryOp<2>(in, bndDeriv, flux);
+                break;
+            default:
+                NEKERROR(ErrorUtil::efatal, "Uknown value of m_traceDim");
+                break;
         }
         this->ResetBndCondStreams();
         if (this->m_parT0.empty())
@@ -592,10 +609,10 @@ class FluxTraceAdvDiffOpImpl
      * must follow EndParallelExchange(); @p flux must be the field v_Apply()
      * wrote, whose partition slots this fills. Does nothing at all in serial.
      */
-    void
-    v_ApplyParallel(LibUtilities::Field<TData, FieldState::Phys> &in,
-                    LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
-                    LibUtilities::Field<TData, FieldState::Phys> &flux) override
+    void v_ApplyParallel(
+        LibUtilities::Field<TData, FieldState::Phys> &in,
+        LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
+        LibUtilities::Field<TData, FieldState::Phys> &flux) override
     {
         if (this->m_parT0.empty())
         {
@@ -609,18 +626,18 @@ class FluxTraceAdvDiffOpImpl
 
         switch (this->m_traceDim)
         {
-        case 0:
-            this->template ParallelOp<0>(in, inDeriv, flux);
-            break;
-        case 1:
-            this->template ParallelOp<1>(in, inDeriv, flux);
-            break;
-        case 2:
-            this->template ParallelOp<2>(in, inDeriv, flux);
-            break;
-        default:
-            NEKERROR(ErrorUtil::efatal, "Uknown value of m_traceDim");
-            break;
+            case 0:
+                this->template ParallelOp<0>(in, inDeriv, flux);
+                break;
+            case 1:
+                this->template ParallelOp<1>(in, inDeriv, flux);
+                break;
+            case 2:
+                this->template ParallelOp<2>(in, inDeriv, flux);
+                break;
+            default:
+                NEKERROR(ErrorUtil::efatal, "Uknown value of m_traceDim");
+                break;
         }
         m_auxReady = false;
         this->ReleaseBlockStreams();
@@ -640,13 +657,13 @@ class FluxTraceAdvDiffOpImpl
      * @param  flux     Trace-space output.
      */
     template <unsigned TRACEDIM>
-    NEK_FORCE_INLINE void
-    InteriorOp(LibUtilities::Field<TData, FieldState::Phys> &in,
-               LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
-               LibUtilities::Field<TData, FieldState::Phys> &flux)
+    NEK_FORCE_INLINE void InteriorOp(
+        LibUtilities::Field<TData, FieldState::Phys> &in,
+        LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
+        LibUtilities::Field<TData, FieldState::Phys> &flux)
     {
-        auto numflux = flux.GetNumComponents();
-        const unsigned dim = TRACEDIM + 1;
+        auto numflux             = flux.GetNumComponents();
+        const unsigned dim       = TRACEDIM + 1;
         const bool avgNormalFlux = UseAvgNormalFlux();
         // Components of the second input: the gradient, or under the
         // average-of-normal-fluxes form the normal viscous flux.
@@ -727,7 +744,7 @@ class FluxTraceAdvDiffOpImpl
                 this->m_opStreamID);
 
             const auto data = DiffusionData();
-            auto &aux = m_intAux[b];
+            auto &aux       = m_intAux[b];
             const auto *bTrace =
                 aux.b0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
             FluxKernelLauncher<RiemannKernel, ExecSpace>(
@@ -739,6 +756,7 @@ class FluxTraceAdvDiffOpImpl
                 this->m_gloT0, this->m_gloT1, this->m_flux, m_advectionScale,
                 this->m_opStreamID);
 
+            AddExtraFlux(aux, npTBlock, false);
             if (avgNormalFlux)
             {
                 // The second input holds each side's outward normal viscous
@@ -798,18 +816,18 @@ class FluxTraceAdvDiffOpImpl
      * @param  flux     Trace-space output.
      */
     template <unsigned TRACEDIM>
-    NEK_FORCE_INLINE void
-    ParallelOp(LibUtilities::Field<TData, FieldState::Phys> &in,
-               LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
-               LibUtilities::Field<TData, FieldState::Phys> &flux)
+    NEK_FORCE_INLINE void ParallelOp(
+        LibUtilities::Field<TData, FieldState::Phys> &in,
+        LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
+        LibUtilities::Field<TData, FieldState::Phys> &flux)
     {
         if (this->m_parT0.empty())
         {
             return;
         }
 
-        auto numflux = flux.GetNumComponents();
-        const unsigned dim = TRACEDIM + 1;
+        auto numflux             = flux.GetNumComponents();
+        const unsigned dim       = TRACEDIM + 1;
         const bool avgNormalFlux = UseAvgNormalFlux();
         // Components of the second input: the gradient, or under the
         // average-of-normal-fluxes form the normal viscous flux.
@@ -881,7 +899,7 @@ class FluxTraceAdvDiffOpImpl
                 this->m_opStreamID);
 
             const auto data = DiffusionData();
-            auto &aux = m_parAux[b];
+            auto &aux       = m_parAux[b];
             const auto *bTrace =
                 aux.b0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
             FluxKernelLauncher<RiemannKernel, ExecSpace>(
@@ -893,6 +911,7 @@ class FluxTraceAdvDiffOpImpl
                 this->m_gloT0, this->m_gloT1, this->m_flux, m_advectionScale,
                 this->m_opStreamID);
 
+            AddExtraFlux(aux, npTBlock, false);
             if (avgNormalFlux)
             {
                 // The second input holds each side's outward normal viscous
@@ -941,10 +960,10 @@ class FluxTraceAdvDiffOpImpl
      * @param  flux     Trace-space output.
      */
     template <unsigned TRACEDIM>
-    NEK_FORCE_INLINE void
-    BoundaryOp(LibUtilities::Field<TData, FieldState::Phys> &in,
-               LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
-               LibUtilities::Field<TData, FieldState::Phys> &flux)
+    NEK_FORCE_INLINE void BoundaryOp(
+        LibUtilities::Field<TData, FieldState::Phys> &in,
+        LibUtilities::Field<TData, FieldState::Phys> &inDeriv,
+        LibUtilities::Field<TData, FieldState::Phys> &flux)
     {
         // Nothing to read or write without a boundary block; the gradient
         // trace in particular may never have been formed on this rank.
@@ -953,7 +972,7 @@ class FluxTraceAdvDiffOpImpl
             return;
         }
 
-        auto numflux = flux.GetNumComponents();
+        auto numflux       = flux.GetNumComponents();
         const unsigned dim = TRACEDIM + 1;
 
         // The gather scratch is sliced per (trace, component), so it is
@@ -1122,21 +1141,13 @@ class FluxTraceAdvDiffOpImpl
                 b, numflux, m_nDim, inDerivPtr, this->m_norms, m_gloDerivT0,
                 m_gloDerivT1, Width(inDeriv));
 
-            // Step 2: Solve Riemann proble on  close packed variables
+            // Step 2: Solve Riemann problem on close packed variables
             // left and right  traces (m_gloT0, m_gloT1),
-            const auto data = DiffusionData();
-            auto &aux = m_bndAux[b];
             const auto *bTrace =
-                aux.b0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
-            FluxKernelLauncher<RiemannKernel, ExecSpace>(
-                npTBlock, m_nDim, m_nComp, data.nSpecies, data.electronEnergyId,
-                data.nIds, data.vIds, data.eIds, data.masses, data.charges,
-                this->m_norms, bTrace,
-                aux.j0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-                aux.j1.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-                this->m_gloT0, this->m_gloT1, this->m_flux, m_advectionScale,
-                this->m_opStreamID);
-
+                m_bndAux[b].b0.template GetPtr<MemSpace, ReadOnly>(
+                    this->m_opStreamID);
+            BoundaryFluxKernelLauncher(b, npTBlock, bTrace);
+            AddExtraFlux(m_bndAux[b], npTBlock, true);
             DiffuseTraceFluxKernel<ExecSpace, ClosureType, false>(
                 DiffusionData(), npTBlock, m_nDim, m_nComp, this->m_norms,
                 m_penFactor, m_bndFluxWeight, bTrace, this->m_gloT0,
@@ -1158,16 +1169,16 @@ class FluxTraceAdvDiffOpImpl
         }
     }
 
-  public:
-    void
-    SetMagneticTrace(LibUtilities::Field<TData, FieldState::Phys> &b) override
+public:
+    void SetMagneticTrace(
+        LibUtilities::Field<TData, FieldState::Phys> &b) override
     {
         ASSERTL0(!m_exchangeActive[0] && !m_exchangeActive[1],
                  "Cannot replace magnetic traces during an exchange.");
         ASSERTL0(b.GetNumComponents() == 3,
                  "The magnetic unit-vector trace needs three components.");
         m_magneticTrace = &b;
-        m_auxReady = false;
+        m_auxReady      = false;
     }
     void SetParallelCurrentTrace(
         LibUtilities::Field<TData, FieldState::Phys> &current) override
@@ -1177,7 +1188,7 @@ class FluxTraceAdvDiffOpImpl
         ASSERTL0(current.GetNumComponents() == 1,
                  "The parallel number-current trace needs one component.");
         m_currentTrace = &current;
-        m_auxReady = false;
+        m_auxReady     = false;
     }
     void SetAdvectionScale(TData scale) override
     {
@@ -1185,15 +1196,52 @@ class FluxTraceAdvDiffOpImpl
         m_advectionScale = scale;
     }
 
-  protected:
+    void SetExtraAdvectionTrace(
+        LibUtilities::Field<TData, FieldState::Phys> &velocity,
+        LibUtilities::Field<TData, FieldState::Phys> &omegaFlux,
+        unsigned omega) override
+    {
+        ASSERTL0(velocity.GetNumComponents() == m_nComp * m_nDim &&
+                     omegaFlux.GetNumComponents() == m_nDim && omega < m_nComp,
+                 "Invalid electrostatic advection trace fields.");
+        m_extraVelocityTrace = &velocity;
+        m_omegaFluxTrace     = &omegaFlux;
+        m_omegaId            = omega;
+        auto allocate        = [&](const auto &blocks, auto &aux)
+        {
+            for (unsigned b = 0; b < blocks.size(); ++b)
+            {
+                const size_t stride = blocks[b].m_nTraceXnPtsPad;
+                aux[b].v0 = LibUtilities::MemoryRegion<TData>(stride * m_nComp *
+                                                              m_nDim);
+                aux[b].v1 = LibUtilities::MemoryRegion<TData>(stride * m_nComp *
+                                                              m_nDim);
+                aux[b].w0 = LibUtilities::MemoryRegion<TData>(stride * m_nDim);
+                aux[b].w1 = LibUtilities::MemoryRegion<TData>(stride * m_nDim);
+                for (auto *region :
+                     {&aux[b].v0, &aux[b].v1, &aux[b].w0, &aux[b].w1})
+                    region->template Initialize<MemSpace>(0);
+            }
+        };
+        allocate(this->m_intT0, m_intAux);
+        allocate(this->m_parT0, m_parAux);
+        allocate(this->m_bndT0, m_bndAux);
+        m_auxReady = false;
+    }
+
+protected:
     struct AuxiliaryBlock
     {
-        LibUtilities::MemoryRegion<TData> b0, b1, j0, j1;
+        LibUtilities::MemoryRegion<TData> b0, b1, j0, j1, v0, v1, w0, w1;
     };
     std::vector<AuxiliaryBlock> m_intAux, m_parAux, m_bndAux;
     LibUtilities::Field<TData, FieldState::Phys> *m_magneticTrace = nullptr;
-    LibUtilities::Field<TData, FieldState::Phys> *m_currentTrace = nullptr;
-    bool m_auxReady = false;
+    LibUtilities::Field<TData, FieldState::Phys> *m_currentTrace  = nullptr;
+    LibUtilities::Field<TData, FieldState::Phys> *m_extraVelocityTrace =
+        nullptr;
+    LibUtilities::Field<TData, FieldState::Phys> *m_omegaFluxTrace = nullptr;
+    unsigned m_omegaId       = std::numeric_limits<unsigned>::max();
+    bool m_auxReady          = false;
     bool m_exchangeActive[2] = {false, false};
     bool m_indicesConfigured = false;
     std::vector<bool> m_speciesComponents;
@@ -1207,10 +1255,10 @@ class FluxTraceAdvDiffOpImpl
         for (size_t b = 0; b < blocks.size(); ++b)
         {
             const size_t npts = blocks[b].m_nTraceXnPtsPad;
-            aux[b].b0 = LibUtilities::MemoryRegion<TData>(3 * npts);
-            aux[b].b1 = LibUtilities::MemoryRegion<TData>(3 * npts);
-            aux[b].j0 = LibUtilities::MemoryRegion<TData>(npts);
-            aux[b].j1 = LibUtilities::MemoryRegion<TData>(npts);
+            aux[b].b0         = LibUtilities::MemoryRegion<TData>(3 * npts);
+            aux[b].b1         = LibUtilities::MemoryRegion<TData>(3 * npts);
+            aux[b].j0         = LibUtilities::MemoryRegion<TData>(npts);
+            aux[b].j1         = LibUtilities::MemoryRegion<TData>(npts);
             for (auto *region :
                  {&aux[b].b0, &aux[b].b1, &aux[b].j0, &aux[b].j1})
                 region->template Initialize<MemSpace>(0);
@@ -1224,7 +1272,8 @@ class FluxTraceAdvDiffOpImpl
         ASSERTL0(
             m_indicesConfigured && m_magneticTrace && m_currentTrace &&
                 m_electronEnergyId < m_nComp &&
-                !m_speciesComponents[m_electronEnergyId],
+                (!ClosureType::RequiresEnergy ||
+                 !m_speciesComponents[m_electronEnergyId]),
             "Configure species, electron energy, magnetic and current traces.");
         const unsigned numSecond =
             UseAvgNormalFlux() ? m_nComp : m_nComp * m_nDim;
@@ -1247,7 +1296,7 @@ class FluxTraceAdvDiffOpImpl
             for (size_t b = 0; b < in.GetBlocks().size(); ++b)
             {
                 const auto &reference = in.GetBlocks()[b];
-                const auto &block = field->GetBlocks()[b];
+                const auto &block     = field->GetBlocks()[b];
                 ASSERTL0(block.CompSize() == reference.CompSize() &&
                              block.GetNumElements() ==
                                  reference.GetNumElements(),
@@ -1260,7 +1309,7 @@ class FluxTraceAdvDiffOpImpl
 
     template <unsigned TRACEDIM>
     void GatherAuxiliary(LibUtilities::Field<TData, FieldState::Phys> &field,
-                         const bool magnetic)
+                         const unsigned kind)
     {
         const unsigned numComp = field.GetNumComponents();
         this->SetWorkSpace(numComp);
@@ -1269,12 +1318,18 @@ class FluxTraceAdvDiffOpImpl
             this->m_opStreamID);
         this->template SyncTrailingBlocks<ReadOnly>(field);
         const unsigned width = Width(field);
-        const auto pointers = [&](AuxiliaryBlock &aux)
+        const auto pointers  = [&](AuxiliaryBlock &aux)
         {
             return std::make_pair(
-                (magnetic ? aux.b0 : aux.j0)
+                (kind == 0   ? aux.b0
+                 : kind == 1 ? aux.j0
+                 : kind == 2 ? aux.v0
+                             : aux.w0)
                     .template GetPtr<MemSpace, ReadWrite>(this->m_opStreamID),
-                (magnetic ? aux.b1 : aux.j1)
+                (kind == 0   ? aux.b1
+                 : kind == 1 ? aux.j1
+                 : kind == 2 ? aux.v1
+                             : aux.w1)
                     .template GetPtr<MemSpace, ReadWrite>(this->m_opStreamID));
         };
         for (unsigned b = 0; b < m_intAux.size(); ++b)
@@ -1313,6 +1368,59 @@ class FluxTraceAdvDiffOpImpl
         }
     }
 
+    void AddExtraFlux(AuxiliaryBlock &aux, size_t stride, bool boundary)
+    {
+        if (!m_extraVelocityTrace)
+            return;
+        const auto *v0 =
+            aux.v0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
+        const auto *v1 =
+            aux.v1.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
+        const auto *w0 =
+            aux.w0.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
+        const auto *w1 =
+            aux.w1.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID);
+        const auto *left = this->m_gloT0, *right = this->m_gloT1;
+        const auto *normal  = this->m_norms;
+        const auto *weights = m_bndFluxWeight;
+        auto *flux          = this->m_flux;
+        const unsigned dim = m_nDim, comps = m_nComp, omega = m_omegaId;
+        const TData scale = m_advectionScale;
+        LoopExecutionSetStreamID(this->m_opStreamID);
+        parallel_for<ExecSpace>(
+            0u, stride, NEKTAR_LAMBDA(const size_t p) {
+                using std::abs;
+                using std::max;
+                for (unsigned f = 0; f < comps; ++f)
+                {
+                    if (boundary && weights[f * stride + p] == 0)
+                        continue;
+                    TData a = 0, b = 0, omegaNormal = 0;
+                    for (unsigned d = 0; d < dim; ++d)
+                    {
+                        a += normal[d * stride + p] *
+                             v0[(f * dim + d) * stride + p];
+                        b += normal[d * stride + p] *
+                             v1[(f * dim + d) * stride + p];
+                        if (f == omega)
+                            omegaNormal +=
+                                normal[d * stride + p] *
+                                (w0[d * stride + p] + w1[d * stride + p]);
+                    }
+                    const TData physical = f == omega
+                                               ? omegaNormal
+                                               : left[f * stride + p] * a +
+                                                     right[f * stride + p] * b;
+                    flux[f * stride + p] +=
+                        scale * TData(0.5) *
+                        (physical -
+                         max(abs(a), abs(b)) *
+                             (right[f * stride + p] - left[f * stride + p]));
+                }
+            });
+        LoopExecutionSetStreamID(0);
+    }
+
     void PrepareAuxiliary()
     {
         if (m_auxReady)
@@ -1323,27 +1431,180 @@ class FluxTraceAdvDiffOpImpl
                  "exchanges.");
         switch (this->m_traceDim)
         {
-        case 0:
-            GatherAuxiliary<0>(*m_magneticTrace, true);
-            GatherAuxiliary<0>(*m_currentTrace, false);
-            break;
-        case 1:
-            GatherAuxiliary<1>(*m_magneticTrace, true);
-            GatherAuxiliary<1>(*m_currentTrace, false);
-            break;
-        case 2:
-            GatherAuxiliary<2>(*m_magneticTrace, true);
-            GatherAuxiliary<2>(*m_currentTrace, false);
-            break;
-        default:
-            NEKERROR(ErrorUtil::efatal, "Unsupported trace dimension.");
+            case 0:
+                GatherAuxiliary<0>(*m_magneticTrace, 0);
+                GatherAuxiliary<0>(*m_currentTrace, 1);
+                if (m_extraVelocityTrace)
+                {
+                    GatherAuxiliary<0>(*m_extraVelocityTrace, 2);
+                    GatherAuxiliary<0>(*m_omegaFluxTrace, 3);
+                }
+                break;
+            case 1:
+                GatherAuxiliary<1>(*m_magneticTrace, 0);
+                GatherAuxiliary<1>(*m_currentTrace, 1);
+                if (m_extraVelocityTrace)
+                {
+                    GatherAuxiliary<1>(*m_extraVelocityTrace, 2);
+                    GatherAuxiliary<1>(*m_omegaFluxTrace, 3);
+                }
+                break;
+            case 2:
+                GatherAuxiliary<2>(*m_magneticTrace, 0);
+                GatherAuxiliary<2>(*m_currentTrace, 1);
+                if (m_extraVelocityTrace)
+                {
+                    GatherAuxiliary<2>(*m_extraVelocityTrace, 2);
+                    GatherAuxiliary<2>(*m_omegaFluxTrace, 3);
+                }
+                break;
+            default:
+                NEKERROR(ErrorUtil::efatal, "Unsupported trace dimension.");
         }
         m_auxReady = true;
     }
 
-    void
-    v_BeginParallelExchange(LibUtilities::Field<TData, FieldState::Phys> &trace,
-                            const unsigned chan) override
+    // The boundary counterpart of the ordinary advection launch. Apply()
+    // supplies complete Bohm fluxes; other conditions supply Riemann states.
+    void BoundaryFluxKernelLauncher(unsigned b, size_t stride,
+                                    const TData *magnetic)
+    {
+        const auto data = DiffusionData();
+        const auto *j0  = m_bndAux[b].j0.template GetPtr<MemSpace, ReadOnly>(
+            this->m_opStreamID);
+        const auto *j1 = m_bndAux[b].j1.template GetPtr<MemSpace, ReadOnly>(
+            this->m_opStreamID);
+        const size_t count = this->m_npTot;
+        if (m_bohmTraces[b].empty())
+        {
+            // Preserve the existing SIMD launch for ordinary boundary blocks.
+            FluxKernelLauncher<RiemannKernel, ExecSpace>(
+                stride, m_nDim, m_nComp, data.nSpecies, data.electronEnergyId,
+                data.nIds, data.vIds, data.eIds, data.masses, data.charges,
+                this->m_norms, magnetic, j0, j1, this->m_gloT0, this->m_gloT1,
+                this->m_flux, m_advectionScale, this->m_opStreamID);
+            return;
+        }
+        const auto *normal = this->m_norms, *fwd = this->m_gloT0,
+                   *bwd    = this->m_gloT1;
+        auto *flux         = this->m_flux;
+        const unsigned dim = m_nDim, comps = m_nComp;
+        const TData scale = m_advectionScale;
+        Nektar::Math::zeroKernel<ExecSpace>(comps * stride, flux,
+                                            this->m_opStreamID);
+        LoopExecutionSetStreamID(this->m_opStreamID);
+        auto &location = this->m_bndCondLoc[b];
+        const auto *blocks =
+            location.blk.template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        const auto *offsets =
+            location.offset
+                .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        const auto *strides =
+            location.compOffset
+                .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+        for (size_t trace : m_bohmTraces[b])
+        {
+            const auto *values = this->m_BndCondOp->GetBlockPtr(
+                blocks[trace], this->m_opStreamID);
+            const size_t first = trace * count, offset = offsets[trace],
+                         compStride = strides[trace];
+            parallel_for<ExecSpace>(
+                0u, count, NEKTAR_LAMBDA(size_t i) {
+                    const size_t point = first + i;
+                    flux[data.electronEnergyId * stride + point] =
+                        values[data.electronEnergyId * compStride + offset + i];
+                    for (unsigned s = 0; s < data.nSpecies; ++s)
+                    {
+                        const unsigned fields[] = {data.nIds[s], data.vIds[s],
+                                                   data.eIds[s]};
+                        for (unsigned f : fields)
+                            if (f != std::numeric_limits<unsigned>::max())
+                                flux[f * stride + point] =
+                                    values[f * compStride + offset + i];
+                    }
+                });
+        }
+        for (size_t trace : m_riemannTraces[b])
+        {
+            const size_t first = trace * count;
+            // Scalar windows cover traces beginning or ending inside SIMD
+            // groups.
+            parallel_for<ExecSpace>(
+                0u, count, NEKTAR_LAMBDA(size_t i) {
+                    const size_t point = first + i;
+                    RiemannKernel<NektarSpaces::Serial>()(
+                        stride, dim, comps, data.nSpecies,
+                        data.electronEnergyId, data.nIds, data.vIds, data.eIds,
+                        data.masses, data.charges, normal + point,
+                        magnetic + point, j0 + point, j1 + point, fwd + point,
+                        bwd + point, flux + point, scale);
+                });
+        }
+        LoopExecutionSetStreamID(0);
+    }
+
+    // Reuse the standard oriented boundary gather for B/current as well as
+    // the state. The final state gather seeds the storage for Apply(), as in
+    // CFS.
+    void v_GatherBndInteriorState(
+        LibUtilities::Field<TData, FieldState::Phys> &state,
+        const std::vector<bool> &ownedBlocks) override
+    {
+        std::vector<BndCondBohmOp<TData> *> conditions;
+        std::vector<bool> owned(
+            this->m_BndCondOp ? this->m_BndCondOp->GetNumBlocks() : 0, false);
+        for (const auto &condition : this->m_bndCondUpdateOps)
+            if (auto *bohm =
+                    dynamic_cast<BndCondBohmOp<TData> *>(condition.get()))
+            {
+                conditions.push_back(bohm);
+                const auto data = DiffusionData();
+                bohm->SetSpecies({data.nSpecies, data.electronEnergyId,
+                                  data.nIds, data.vIds, data.eIds, data.masses,
+                                  data.charges, m_advectionScale});
+                const auto blocks = bohm->GetOwnedBlocks();
+                for (unsigned blk = 0; blk < owned.size(); ++blk)
+                    owned[blk] = owned[blk] || blocks[blk];
+            }
+        if (!conditions.empty())
+        {
+            ASSERTL0(m_magneticTrace && m_currentTrace &&
+                         !m_exchangeActive[0] && !m_exchangeActive[1],
+                     "Set B/current and update Bohm before starting trace "
+                     "exchanges.");
+            LibUtilities::Field<TData, FieldState::Phys> *fields[] = {
+                m_magneticTrace, m_currentTrace};
+            for (unsigned input = 0; input < 2; ++input)
+            {
+                Base::v_GatherBndInteriorState(*fields[input], owned);
+                for (auto *condition : conditions)
+                {
+                    const auto blocks = condition->GetOwnedBlocks();
+                    for (unsigned blk = 0; blk < blocks.size(); ++blk)
+                        if (blocks[blk])
+                        {
+                            const size_t stride =
+                                this->m_BndCondOp->GetBlockCompStride(blk);
+                            auto *out =
+                                condition->MagneticCurrent(blk)
+                                    .template GetPtr<MemSpace, ReadWrite>(
+                                        this->m_opStreamID);
+                            Nektar::Math::copyKernel<ExecSpace>(
+                                (input == 0 ? 3 : 1) * stride,
+                                this->m_BndCondOp->GetBlockPtr(
+                                    blk, this->m_opStreamID),
+                                out + (input == 0 ? 0 : 3 * stride),
+                                this->m_opStreamID);
+                        }
+                }
+            }
+        }
+        Base::v_GatherBndInteriorState(state, ownedBlocks);
+    }
+
+    void v_BeginParallelExchange(
+        LibUtilities::Field<TData, FieldState::Phys> &trace,
+        const unsigned chan) override
     {
         ASSERTL0(chan < 2 && !m_exchangeActive[chan],
                  "State and gradient use exchange channels 0 and 1.");

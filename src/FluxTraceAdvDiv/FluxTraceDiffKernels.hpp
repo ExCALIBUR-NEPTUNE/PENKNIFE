@@ -113,6 +113,22 @@ NEK_FORCE_INLINE static void DiffusionTraceKernel(
     LoopExecutionSetStreamID(streamID);
     parallel_for<ExecSpace>(
         0u, stride, NEKTAR_LAMBDA(const size_t i) {
+            if constexpr (!IsInterior)
+            {
+                // Conditions prescribing the complete physical flux need no
+                // diffusive state, gradients, transport coefficients or closure.
+                bool zeroWeight = true;
+                for (unsigned f = 0; f < nvarComps; ++f)
+                    for (unsigned lane = 0; lane < width; ++lane)
+                        zeroWeight = zeroWeight && boundaryFluxWeightBase[
+                            f * npts + i * width + lane] == 0;
+                if (zeroWeight)
+                {
+                    for (unsigned f = 0; f < nvarComps; ++f)
+                        flux[f * stride + i] = -flux[f * stride + i];
+                    return;
+                }
+            }
             const vec_t tau = data.penaltyCoeff * penalty[i];
             for (unsigned f = 0; f < nvarComps; ++f)
             {

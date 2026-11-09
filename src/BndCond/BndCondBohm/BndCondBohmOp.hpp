@@ -1,69 +1,53 @@
 #pragma once
 
-#include <boost/algorithm/string/case_conv.hpp>
-
 #include <SolverCore/BndCond/BndCondUpdateOp.hpp>
 
-namespace Nektar
+namespace PENKNIFE
 {
+using namespace Nektar;
 
-template <typename TData>
-class BndCondBohmOp : public SolverCore::BndCondUpdateOp<TData>
+template <typename T> struct BohmSpecies
 {
-public:
-    static std::shared_ptr<BndCondBohmOp<TData>> Create(
-        const MultiRegions::ExpListSharedPtr &expansionList,
-        const std::vector<std::string> &components,
-        const std::string &execStr = "")
-    {
-        std::string EoSName;
-
-        if (expansionList->GetSession()->DefinesEquationOfState())
-        {
-            EoSName = boost::to_upper_copy(
-                expansionList->GetSession()->GetEquationOfState().type);
-        }
-        else
-        {
-            NEKERROR(ErrorUtil::efatal,
-                     "No EquationOfState section defined in session file");
-        }
-
-        // The key carries the equation of state, as the volume flux operators
-        // do, so the lookup cannot go through Operator::Create<TOperator>(),
-        // which builds the key from the class name alone.
-        const std::string execStr0 =
-            (execStr == "") ? MultiRegions::Operator<TData>::GetOpExecSpace(
-                                  expansionList->GetSession())
-                            : execStr;
-
-        const std::string requestedKey = name + EoSName + execStr0;
-
-        MultiRegions::OperatorFactory<TData> &factory =
-            MultiRegions::GetOperatorFactory<TData>();
-
-        if (!factory.ModuleExists(requestedKey))
-        {
-            std::stringstream msg;
-            msg << "No such operator: " << requestedKey << std::endl;
-            factory.PrintAvailableClasses(msg);
-            NEKERROR(ErrorUtil::efatal, msg.str());
-        }
-
-        return std::static_pointer_cast<BndCondBohmOp<TData>>(
-            factory.CreateInstance(requestedKey, expansionList, components));
-    }
-
-    static inline const std::string name = "BndCondBohm";
-
-protected:
-    BndCondBohmOp(const MultiRegions::ExpListSharedPtr &expansionList,
-                  const std::vector<std::string> &components)
-        : SolverCore::BndCondUpdateOp<TData>(expansionList, components)
-    {
-    }
-
-    ~BndCondBohmOp() override = default;
+    unsigned count, electronEnergy;
+    const unsigned *density, *momentum, *energy;
+    const T *mass, *charge;
+    T scale;
 };
 
-} // namespace Nektar
+// Apply transforms the seeded interior state into the prescribed physical
+// normal flux. These Bohm Neumann entries hold fluxes, not derivatives.
+// The plasma trace operator consumes them directly.
+template <typename T>
+class BndCondBohmOp : public SolverCore::BndCondUpdateOp<T>
+{
+public:
+    static inline const std::string name = "BndCondBohm";
+    static std::shared_ptr<BndCondBohmOp> Create(
+        const MultiRegions::ExpListSharedPtr &expansion,
+        const std::vector<std::string> &components,
+        const std::string &exec = "")
+    {
+        return MultiRegions::Operator<T>::template Create<BndCondBohmOp>(
+            expansion, components, exec);
+    }
+    void SetSpecies(BohmSpecies<T> species)
+    {
+        m_species = species;
+    }
+    // Three B components followed by parallel current, each at the boundary
+    // storage's component stride. Gathered before the standard Apply call.
+    LibUtilities::MemoryRegion<T> &MagneticCurrent(unsigned blk)
+    {
+        return m_magneticCurrent.at(blk);
+    }
+
+protected:
+    BohmSpecies<T> m_species{};
+    std::vector<LibUtilities::MemoryRegion<T>> m_magneticCurrent;
+    BndCondBohmOp(const MultiRegions::ExpListSharedPtr &expansion,
+                  const std::vector<std::string> &components)
+        : SolverCore::BndCondUpdateOp<T>(expansion, components)
+    {
+    }
+};
+} // namespace PENKNIFE

@@ -1,28 +1,24 @@
-#ifndef SINGLEDIFFUSIVEFIELD_HPP
-#define SINGLEDIFFUSIVEFIELD_HPP
-
+#pragma once
+#include "../FluxTraceAdvDiv/FluxTraceAdvDiffOp.hpp"
+#include "../FluxVolDiff/FluxVolDiffOp.hpp"
 #include "PlasmaSystem.hpp"
-
+#include <MultiRegions/BndCondOps/NeuBndCond/NeuBndCondOp.hpp>
+#include <MultiRegions/ElmtOps/IProductWRTDerivBase/IProductWRTDerivBaseOp.hpp>
+#include <MultiRegions/ElmtOps/PhysDeriv/PhysDerivOp.hpp>
+#include <SolverCore/Diffusion/DiffusionIP/DiffusionIPOp.hpp>
 namespace PENKNIFE
 {
 class SingleDiffusiveField : public PlasmaSystem
 {
 public:
     friend class MemoryManager<SingleDiffusiveField>;
-
-    /// Name of class
     static std::string class_name;
-
-    /**
-     * @brief Create an instance of this class and initialise it.
-     */
     static SC::EquationSystemSharedPtr create(
         const LU::SessionReaderSharedPtr &session,
         const SD::MeshGraphSharedPtr &graph)
     {
-        SC::EquationSystemSharedPtr p =
-            MemoryManager<SingleDiffusiveField>::AllocateSharedPtr(session,
-                                                                   graph);
+        auto p = MemoryManager<SingleDiffusiveField>::AllocateSharedPtr(session,
+                                                                        graph);
         p->InitObject();
         return p;
     }
@@ -30,49 +26,31 @@ public:
 
 protected:
     SingleDiffusiveField(const LU::SessionReaderSharedPtr &session,
-                         const SD::MeshGraphSharedPtr &graph);
-    void v_InitObject(bool DeclareFields = true) override;
-    bool v_PostIntegrate(int step) override;
-    void ImplicitTimeIntCG(
-        const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-        Array<OneD, Array<OneD, NekDouble>> &outarray, const NekDouble time,
-        const NekDouble lambda);
+                         const SD::MeshGraphSharedPtr &graph,
+                         bool densityOnly = true);
+    void v_InitObject(bool declareFields = true) override;
+    void v_InitialiseFields() override;
+    void v_InitialiseOperators() override;
+    virtual std::string DiffusionModel() const
+    {
+        return "SingleDiffusive";
+    }
+    void DoOdeRhs(PhysField &in, PhysField &out, const double &time,
+                  const double &factor);
 
-    void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-                  Array<OneD, Array<OneD, NekDouble>> &out_arr,
-                  const NekDouble time);
-    void CalcKPar(int f);
-    void CalcKPerp(int f);
-    void CalcKPerpAnomalous(int f);
-    void CalcDiffTensor(int f);
-
-    // Diffusive Flux vector
-    void GetFluxVectorDiff(
-        const Array<OneD, Array<OneD, NekDouble>> &in_arr,
-        const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &q_field,
-        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
-
-    void load_params() override;
-
-    void v_ExtraFldOutput(std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-                          std::vector<std::string> &variables) override;
-
-    // For Diffusion
-
-    NekDouble m_epsilon;
-    bool m_useSpecVanVisc;
-    NekDouble
-        m_sVVCutoffRatio; // Cut-off ratio from which to start decaying modes
-    NekDouble m_sVVDiffCoeff; // Diffusion coefficient of SVV modes
-
-    NekDouble k_par;
-    NekDouble k_perp;
-    Array<OneD, NekDouble> m_kperp;
-    Array<OneD, NekDouble> m_kpar;
-    Array<OneD, NekDouble> m_D[3][3];
-
-    std::shared_ptr<DisContField> diag_field;
+    PhysField m_magneticTrace, m_currentTrace, m_gradient, m_flux;
+    CoeffField m_rhs, m_massSolution, m_stateCoeffs;
+    std::shared_ptr<MR::RobBndCondOp<double>> m_robin;
+    std::shared_ptr<MR::IProductWRTBaseOp<double>> m_localInnerProduct;
+    std::shared_ptr<MR::MultiplyByElmtInvMassOp<double>> m_localInverseMass;
+    std::shared_ptr<SC::DiffusionIPOp<double>> m_diffusionOp;
+    std::shared_ptr<FluxVolDiffOp<double>> m_volumeFlux;
+    std::shared_ptr<FluxTraceAdvDiffOp<double>> m_traceFlux;
+    std::shared_ptr<MR::PhysTraceExtractOp<double>> m_traceExtract;
+    std::shared_ptr<MR::PhysDerivOp<double>> m_derivative;
+    std::shared_ptr<MR::IProductWRTDerivBaseOp<FieldState::Coeff, double>>
+        m_weakDerivative;
+    std::shared_ptr<MR::NeuBndCondOp<double>> m_neumann;
+    std::shared_ptr<SC::LinearSolverOp<double>> m_massSolver;
 };
-
 } // namespace PENKNIFE
-#endif

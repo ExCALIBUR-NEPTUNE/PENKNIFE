@@ -34,8 +34,16 @@ public:
         ParticleSystem::evaluate_fields();
         if (this->marker_group)
         {
-            this->field_evaluate->evaluate(this->marker_group, this->eval_syms,
-                                           this->eval_comps, this->eval_srcs);
+            if (!marker_evaluate)
+            {
+                marker_evaluate = FieldEvaluateOp<double>::Create(
+                    proto_field, eval_fields->GetComponentNames());
+                marker_evaluate->SetParticles(marker_group,
+                                              marker_cell_id_translation);
+            }
+            for (unsigned c = 0; c < eval_syms.size(); ++c)
+                marker_evaluate->Apply(*eval_fields, eval_syms[c], c,
+                                       eval_comps[c]);
             set_marker_weights();
         }
     }
@@ -82,7 +90,8 @@ public:
         this->boundary->execute(sg, cg, dt);
     };
 
-    void finish_setup(std::vector<std::shared_ptr<DisContField>> &src_fields,
+    void finish_setup(const std::shared_ptr<ExpList> &expansion,
+                      PhysField &src_fields, CoeffField &src_coeffs,
                       std::vector<Sym<REAL>> &syms,
                       std::vector<int> &components) override;
 
@@ -92,21 +101,15 @@ public:
     void diag_setup() override;
     void diag_project() override;
 
-    inline void print_diagnostics(
-        std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-        std::vector<std::string> &variables) override
+    void append_diagnostics(
+        Nektar::SolverCore::CoefficientFieldViews &views) override
     {
-        ParticleSystem::print_diagnostics(fieldcoeffs, variables);
-        int nCoeffs = fieldcoeffs[0].size();
-
-        for (auto &[k, v] : this->marker_map)
-        {
-            variables.emplace_back(k + "_MARKER_DENSITY");
-            Array<OneD, NekDouble> DiagFwd(nCoeffs);
-            this->proto_field->FwdTransLocalElmt(
-                this->marker_diag_fields[v.id][0]->GetPhys(), DiagFwd);
-            fieldcoeffs.push_back(DiagFwd);
-        }
+        ParticleSystem::append_diagnostics(views);
+        for (auto &[name, species] : marker_map)
+            views.push_back({marker_diag_coeffs.at(species.id),
+                             proto_field,
+                             unsigned(ndim),
+                             {{name + "_MARKER_DENSITY", 0}}});
     }
 
     void create_markers(std::string k);
@@ -193,31 +196,36 @@ protected:
     {
 
     public:
-        ProjectTransformation(
-            std::vector<std::shared_ptr<DisContField>> &src_fields,
-            std::vector<Sym<REAL>> &src_syms, std::vector<int> &src_components,
-            ParticleGroupSharedPtr particle_group,
-            std::shared_ptr<CellIDTranslation> cell_id_translation)
-            : particle_group(particle_group), syms(src_syms),
-              components(src_components)
+        ProjectTransformation(const std::shared_ptr<ExpList> &expansion,
+                              PhysField &fields, CoeffField &coeffs,
+                              const std::vector<Sym<REAL>> &syms,
+                              const std::vector<int> &components,
+                              ParticleGroupSharedPtr group,
+                              CellIDTranslationSharedPtr translation)
+            : fields(fields), coeffs(coeffs), syms(syms), components(components)
         {
-            this->field_project =
-                std::make_shared<FieldProject<DisContField, true>>(
-                    src_fields, particle_group, cell_id_translation);
+            field_project = FieldProjectOp<double>::Create(
+                expansion, fields.GetComponentNames());
+            field_project->SetParticles(group, translation);
+            field_project->SetAppend(true);
         }
 
-        void transform(ParticleSubGroupSharedPtr sub_group) override
+        void transform(ParticleSubGroupSharedPtr group) override
         {
-            this->field_project->project(sub_group, syms, components);
+            field_project->Apply(group, syms, components, coeffs, fields);
         }
 
     private:
+        PhysField &fields;
+        CoeffField &coeffs;
         std::vector<Sym<REAL>> syms;
         std::vector<int> components;
-        std::shared_ptr<ParticleGroup> particle_group;
-
-        std::shared_ptr<FieldProject<DisContField, true>> field_project;
+        std::shared_ptr<FieldProjectOp<double>> field_project;
     };
+    PhysField *projection_fields  = nullptr;
+    CoeffField *projection_coeffs = nullptr;
+    std::shared_ptr<TransformationWrapper> marker_project_wrapper;
+    std::shared_ptr<FieldEvaluateOp<double>> marker_evaluate;
 
     std::shared_ptr<TransformationStrategy> project_transform;
     std::shared_ptr<TransformationStrategy> remove_transform;
@@ -240,9 +248,9 @@ protected:
 
     std::vector<Sym<REAL>> marker_diag_syms;
     std::vector<int> marker_diag_components;
-    std::map<int, std::shared_ptr<FieldProject<DisContField>>>
-        marker_diagnostic_project;
-    std::map<int, std::vector<DisContFieldSharedPtr>> marker_diag_fields;
+    std::shared_ptr<FieldProjectOp<double>> marker_diagnostic_project;
+    std::map<int, PhysField> marker_diag_fields;
+    std::map<int, CoeffField> marker_diag_coeffs;
     std::shared_ptr<H5Part> h5part_marker;
 
     std::shared_ptr<ReactionsBoundary> boundary;

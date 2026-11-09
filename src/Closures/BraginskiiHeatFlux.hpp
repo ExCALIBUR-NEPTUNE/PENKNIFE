@@ -12,6 +12,8 @@ template <typename TData> struct Braginskii
 {
     static inline const std::string name = "Braginskii";
 
+    static constexpr bool RequiresEnergy = true;
+
     struct Parameters
     {
         TData Nnorm, Tnorm, omega_c, mesh_length;

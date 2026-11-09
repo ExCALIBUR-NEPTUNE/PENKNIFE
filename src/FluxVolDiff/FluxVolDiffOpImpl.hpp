@@ -31,6 +31,11 @@ public:
         session->LoadParameter("Anomalous_D", m_anomD, 0.);
         session->LoadParameter("Anomalous_nu", m_anomNu, 0.);
         session->LoadParameter("Anomalous_chi", m_anomChi, 0.);
+        if constexpr (!std::is_same_v<ClosureType, closures::Braginskii<TData>>)
+        {
+            ClosureType::Load(session, m_parameters);
+            m_anomD = m_anomNu = m_anomChi = 0;
+        }
     }
     static std::string className;
     static std::unique_ptr<MultiRegions::Operator<TData>> Instantiate(

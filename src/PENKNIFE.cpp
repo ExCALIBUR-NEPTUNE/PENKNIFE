@@ -9,7 +9,9 @@
 #include <iostream>
 #include <mpi.h>
 
-#include "solvers/solver_runner.hpp"
+#include <LibUtilities/BasicUtils/SessionReader.h>
+#include <SolverCore/Driver/Driver.h>
+#include <SpatialDomains/MeshGraphIO.h>
 
 int main(int argc, char *argv[])
 {
@@ -23,10 +25,23 @@ int main(int argc, char *argv[])
         std::cout << "ERROR: MPI_Init != MPI_SUCCESS" << std::endl;
         return -1;
     }
+    int result = 0;
+    try
     {
-        SolverRunner solver_runner(argc, argv);
-        solver_runner.execute();
-        solver_runner.finalise();
+        auto session =
+            Nektar::LibUtilities::SessionReader::CreateInstance(argc, argv);
+        auto graph = Nektar::SpatialDomains::MeshGraphIO::Read(session);
+        std::string module;
+        session->LoadSolverInfo("Driver", module, "Standard");
+        auto driver = Nektar::SolverCore::GetDriverFactory().CreateInstance(
+            module, session, graph);
+        driver->Execute();
+        session->Finalise();
+    }
+    catch (const std::exception &error)
+    {
+        std::cerr << error.what() << std::endl;
+        result = 1;
     }
     if (MPI_Finalize() != MPI_SUCCESS)
     {
@@ -34,5 +49,5 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    return 0;
+    return result;
 }

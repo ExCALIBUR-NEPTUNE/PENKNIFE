@@ -1,151 +1,97 @@
 #pragma once
 
-#include <MultiRegions/DisContField.h>
-
-#include <LibUtilities/BasicUtils/Field/MemoryRegion.hpp>
-
 #include "BndCondBohmKernels.hpp"
-#include "BndCondBohmOp.hpp"
 
-using namespace Nektar;
-
-namespace Nektar::detail
+namespace PENKNIFE::detail
 {
-
-/// Tag this operator claims.
-inline bool IsPressureOutflowTag(const std::string &tag)
-{
-    return tag == "PressureOutflow";
-}
-
-template <typename ExecSpace, typename EoSParamType, typename TData>
-class BndCondBohmOpImpl : public BndCondBohmOp<TData>
+template <typename ExecSpace, typename T>
+class BndCondBohmOpImpl : public BndCondBohmOp<T>
 {
     using MemSpace = typename ExecSpace::memory_space;
 
 public:
-    BndCondBohmOpImpl(const MultiRegions::ExpListSharedPtr &expansionList,
+    BndCondBohmOpImpl(const MultiRegions::ExpListSharedPtr &expansion,
                       const std::vector<std::string> &components)
-        : BndCondBohmOp<TData>(expansionList, components)
+        : BndCondBohmOp<T>(expansion, components), m_comps(components.size()),
+          m_dim(expansion->GetCoordim(0))
     {
-        m_numComp  = components.size();
-        m_coordDim = MultiRegions::GetCollection(expansionList, 0)
-                         .GetExpVector()[0]
-                         ->GetCoordim();
-
-        ASSERTL0(m_numComp == m_coordDim + 2,
-                 "A compressible pressure outflow needs density, one momentum "
-                 "component per direction and energy.");
-
-        SetUpEquationOfState(expansionList->GetSession(), m_EoS);
+        const auto session = expansion->GetSession();
+        session->LoadParameter("BohmAcousticGamma", m_parameters.acousticGamma,
+                               3.);
+        session->LoadParameter("SheathIonTransmission",
+                               m_parameters.ionTransmission, 2.5);
+        session->LoadParameter("SheathElectronTransmission",
+                               m_parameters.electronTransmission, 4.5);
+        for (T value :
+             {m_parameters.acousticGamma, m_parameters.ionTransmission,
+              m_parameters.electronTransmission})
+            ASSERTL0(std::isfinite(value) && value > 0,
+                     "Bohm coefficients must be finite and positive.");
     }
-
-    // className - for OperatorFactory
     static std::string className;
-
-    // instantiation function for CreatorFunction in OperatorFactory
-    static std::unique_ptr<MultiRegions::Operator<TData>> Instantiate(
-        const MultiRegions::ExpListSharedPtr &expansionList,
+    static std::unique_ptr<MultiRegions::Operator<T>> Instantiate(
+        const MultiRegions::ExpListSharedPtr &expansion,
         const std::vector<std::string> &components)
     {
-        return std::make_unique<
-            BndCondBohmOpImpl<ExecSpace, EoSParamType, TData>>(
-            expansionList, components);
+        return std::make_unique<BndCondBohmOpImpl>(expansion, components);
     }
 
 protected:
-    unsigned int m_numComp  = 0;
-    unsigned int m_coordDim = 0;
-    EoSParamType m_EoS;
-
-    /// Prescribed static pressure per owned block, taken from the session
-    /// before the storage is overwritten. Empty for unowned blocks. Held in
-    /// the execution space's memory: the boundary storage lives there, so
-    /// both the copy at setup and the reads in the apply kernel stay
-    /// on-space.
-    std::vector<LibUtilities::MemoryRegion<TData>> m_pressure;
-
+    unsigned m_comps, m_dim;
+    BohmParameters<T> m_parameters;
     std::vector<bool> v_GetOwnedBlocks() const override
     {
-        ASSERTL1(this->m_bndCondPhysOp,
-                 "No boundary storage attached: call SetBndCondPhysOp().");
-
-        const auto numBlocks = this->m_bndCondPhysOp->GetNumBlocks();
-        std::vector<bool> owned(numBlocks, false);
-
-        for (unsigned blk = 0; blk < numBlocks; ++blk)
-        {
-            owned[blk] = IsPressureOutflowTag(
-                this->m_bndCondPhysOp->GetBndUserDefined(blk, 0));
-        }
-
+        const auto blocks = this->m_bndCondPhysOp->GetNumBlocks();
+        std::vector<bool> owned(blocks, false);
+        for (unsigned blk = 0; blk < blocks; ++blk)
+            owned[blk] =
+                this->m_bndCondPhysOp->GetBndUserDefined(blk, 0) == "Bohm";
         return owned;
     }
-
-    /// Copy the prescribed pressure out of the session-evaluated storage,
-    /// while it is still there.
     void v_SetBndCondPhysOp() override
     {
         const auto owned = v_GetOwnedBlocks();
-        m_pressure.clear();
-        m_pressure.resize(owned.size());
-
+        this->m_magneticCurrent.resize(owned.size());
         for (unsigned blk = 0; blk < owned.size(); ++blk)
         {
             if (!owned[blk])
-            {
                 continue;
-            }
-
-            const auto stride  = this->m_bndCondPhysOp->GetBlockCompStride(blk);
-            const auto *bndPtr = this->m_bndCondPhysOp->GetBlockPtr(blk);
-
-            // The boundary storage lives in the execution space's memory, so
-            // the copy runs there as a kernel - a host-side assign from this
-            // pointer is a host dereference of device memory on a real
-            // device.
-            m_pressure[blk] = LibUtilities::MemoryRegion<TData>(stride);
-            m_pressure[blk].template Initialize<MemSpace>(0);
-            TData *pOut =
-                m_pressure[blk].template GetPtr<MemSpace, ReadWrite>();
-
-            CopyPrescribedPressureBlock<ExecSpace>(stride, m_numComp - 1,
-                                                   bndPtr, pOut);
+            for (unsigned c = 0; c < m_comps; ++c)
+                ASSERTL0(this->m_bndCondPhysOp->GetBndUserDefined(blk, c) ==
+                                 "Bohm" &&
+                             this->m_bndCondPhysOp->GetBndCondType(blk, c) ==
+                                 SpatialDomains::eNeumann,
+                         "Tag every component of a Bohm region as Neumann with "
+                         "USERDEFINEDTYPE=Bohm.");
+            const auto stride = this->m_bndCondPhysOp->GetBlockCompStride(blk);
+            this->m_magneticCurrent[blk] =
+                LibUtilities::MemoryRegion<T>(4 * stride);
+            this->m_magneticCurrent[blk].template Initialize<MemSpace>(0);
         }
     }
-
+    T v_BndFluxWeight(unsigned, unsigned) const override
+    {
+        return 0;
+    }
     void v_Apply() override
     {
-        ASSERTL1(this->m_bndCondPhysOp,
-                 "No boundary storage attached: call SetBndCondPhysOp().");
-
+        ASSERTL0(this->m_species.count &&
+                     this->m_species.electronEnergy < m_comps,
+                 "Set Bohm species metadata before Apply.");
         const auto owned = v_GetOwnedBlocks();
-
         for (unsigned blk = 0; blk < owned.size(); ++blk)
         {
             if (!owned[blk])
-            {
                 continue;
-            }
-
-            // Stream 0, as the trace flux work around this runs there.
-            const unsigned int streamID = 0;
-
             const auto stride = this->m_bndCondPhysOp->GetBlockCompStride(blk);
-            auto bndPtr = this->m_bndCondPhysOp->UpdateBlockPtr(blk, streamID);
-            const TData *pOut =
-                m_pressure[blk].template GetPtr<MemSpace, ReadOnly>(streamID);
-            const TData *norms = this->m_bndCondPhysOp->GetBlockNormals(blk);
-
-            ASSERTL1(m_pressure[blk].size() == stride,
-                     "Prescribed outflow pressure was taken for a different "
-                     "block size than the storage now reports.");
-
-            ApplyPressureOutflowBlock<ExecSpace>(stride, m_coordDim,
-                                                 m_numComp - 1, m_EoS, pOut,
-                                                 norms, bndPtr, streamID);
+            ApplyBohmBoundary<ExecSpace>(
+                this->m_species, m_parameters, stride, m_dim,
+                this->m_bndCondPhysOp->GetBlockNormals(blk),
+                this->m_magneticCurrent[blk]
+                    .template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
+                this->m_bndCondPhysOp->UpdateBlockPtr(blk, this->m_opStreamID),
+                this->m_opStreamID);
         }
     }
 };
-
-} // namespace Nektar::detail
+} // namespace PENKNIFE::detail
