@@ -24,7 +24,7 @@ foreach(MODEL IN ITEMS SingleDiffusiveField DoubleDiffusiveField ReducedBraginsk
     add_test(NAME "equations_${name}" COMMAND check_equation_systems "${CMAKE_CURRENT_BINARY_DIR}/${name}.xml")
     set_tests_properties("equations_${name}" PROPERTIES TIMEOUT 90
       ENVIRONMENT "OMP_NUM_THREADS=2;ACPP_VISIBILITY_MASK=omp")
-    if(PROJECTION STREQUAL "Continuous")
+    if(PROJECTION STREQUAL "Continuous" OR MODEL STREQUAL "ReducedBraginskii" OR MODEL STREQUAL "ElectrostaticTurbulence")
       set(SECOND_ION "<I NAME=\"zeta\" FIELDS=\"${FIELDS}\"><P>Mass = 4</P><P>Charge = 2</P></I>")
       configure_file(conditions.xml.in "${name}_multispecies.xml" @ONLY)
       add_test(NAME "equations_${name}_multispecies" COMMAND check_equation_systems "${CMAKE_CURRENT_BINARY_DIR}/${name}_multispecies.xml")

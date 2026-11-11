@@ -7,7 +7,7 @@
 #include "../MagneticField/MagneticFieldOp.hpp"
 #include "../Misc/Constants.hpp"
 #include "../ParticleSystems/ParticleSystem.hpp"
-#include "../Quasineutrality/QuasineutralityOp.hpp"
+#include "../Pointwise/PlasmaPointwiseOp.hpp"
 
 #include <limits>
 #include <vector>
@@ -175,8 +175,6 @@ protected:
     LU::Field<double, FieldState::Phys> j_par;
     /// Parallel electron momentum density: M_e = m_e n_e u_e_parallel.
     LU::Field<double, FieldState::Phys> Me;
-    std::shared_ptr<QuasineutralityOp<double>> m_quasineutralityOp;
-
     unsigned int n_species = 0;
     std::vector<std::string> m_names;
     std::vector<double> m_masses;
@@ -200,6 +198,8 @@ protected:
     unsigned m_sourceElectron = InvalidId;
     std::vector<std::string> m_fieldTemplates, m_particleSourceNames;
     double m_backgroundTemperature = 0;
+
+    std::shared_ptr<PlasmaPointwiseOp<double>> m_pointwise;
 
     void SetupParticles();
     void UpdateParticleFields();

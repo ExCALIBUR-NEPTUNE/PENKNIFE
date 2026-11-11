@@ -30,6 +30,22 @@ int main(int argc, char *argv[])
     {
         auto session =
             Nektar::LibUtilities::SessionReader::CreateInstance(argc, argv);
+        if (session->GetComm()->GetRank() == 0)
+        {
+            std::cout << R"(
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║  ██████╗  ███████╗ ███╗   ██╗ ██╗  ██╗ ███╗   ██╗ ██╗ ███████╗ ███████╗   ║
+║  ██╔══██╗ ██╔════╝ ████╗  ██║ ██║ ██╔╝ ████╗  ██║ ██║ ██╔════╝ ██╔════╝   ║
+║  ██████╔╝ █████╗   ██╔██╗ ██║ █████╔╝  ██╔██╗ ██║ ██║ █████╗   █████╗     ║
+║  ██╔═══╝  ██╔══╝   ██║╚██╗██║ ██╔═██╗  ██║╚██╗██║ ██║ ██╔══╝   ██╔══╝     ║
+║  ██║      ███████╗ ██║ ╚████║ ██║  ██╗ ██║ ╚████║ ██║ ██║      ███████╗   ║
+║  ╚═╝      ╚══════╝ ╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝ ╚═╝ ╚═╝      ╚══════╝   ║
+║ Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+)";
+            std::cout << "\n";
+        }
         auto graph = Nektar::SpatialDomains::MeshGraphIO::Read(session);
         std::string module;
         session->LoadSolverInfo("Driver", module, "Standard");

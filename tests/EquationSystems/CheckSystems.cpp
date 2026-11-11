@@ -56,10 +56,302 @@ public:
         : Model(session, graph)
     {
     }
+    void CheckPointwiseParticles()
+    {
+        auto attrs = MultiRegions::GetBlockAttributes<double, FieldState::Phys>(
+            this->m_expansionLists[0]);
+        const unsigned count = this->GetNumSpecies();
+        auto op = PlasmaPointwiseOp<double>::Create(this->m_expansionLists[0],
+                                                    this->m_variables);
+        op->SetSpecies(this->n_ids, this->v_ids, this->e_ids, this->m_masses,
+                       this->m_charges, this->GetIons(), this->ee_idx, this->me,
+                       .25);
+        std::vector<unsigned> density(count), momentum(count), energy(count);
+        for (unsigned species = 0; species < count; ++species)
+        {
+            density[species]  = 5 * species;
+            momentum[species] = 5 * species + 1;
+            energy[species]   = 5 * species + 4;
+        }
+        op->SetSources(density, momentum, energy,
+                       this->ee_idx == this->InvalidId ? this->InvalidId
+                                                       : 5 * count);
+        Field source("Synthetic particle sources", attrs, 5 * count + 1, 1);
+        Field parallelCurrent("Test parallel current", attrs, 1, 1);
+        Field quasineutralDensity("Test quasineutral density", attrs, 1, 1);
+        Field quasineutralMomentum("Test quasineutral momentum", attrs, 1, 1);
+        Field rhs("Particle RHS", attrs, this->m_variables, 1);
+        Field electronDensity("Test electron density", attrs, 1, 1);
+        Field electronMomentum("Test electron momentum", attrs, 1, 1);
+        Field evaluated("Particle fields", attrs, 11 + 5 * count, 1);
+        source.template Initialize<NektarSpaces::HostSpace>(3.);
+        parallelCurrent.template Initialize<NektarSpaces::HostSpace>(3.);
+        rhs.template Initialize<NektarSpaces::HostSpace>(.5);
+        electronDensity.template Initialize<NektarSpaces::HostSpace>(2.);
+        electronMomentum.template Initialize<NektarSpaces::HostSpace>(4. *
+                                                                      this->me);
+        op->AddSources(rhs, source, this->b_unit, .37, 1.25);
+        op->ParticleFields(this->m_fields, electronDensity, electronMomentum,
+                           this->b_unit, this->B, this->E, evaluated);
+        op->Quasineutrality(this->m_fields, parallelCurrent,
+                            quasineutralDensity, quasineutralMomentum);
+        this->m_fields.SetInterleaveWidth(rhs);
+        this->b_unit.SetInterleaveWidth(rhs);
+        this->B.SetInterleaveWidth(rhs);
+        this->E.SetInterleaveWidth(rhs);
+        for (unsigned b = 0; b < rhs.GetBlocks().size(); ++b)
+        {
+            auto &block         = rhs.GetBlocks()[b];
+            const size_t stride = block.CompSize(),
+                         width  = block.GetInterleaveWidth(),
+                         np     = block.GetNumData();
+            auto actual =
+                block.template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto values =
+                evaluated.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto u = this->m_fields.GetBlocks()[b]
+                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto unit =
+                this->b_unit.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto magnetic =
+                this->B.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto electric =
+                this->E.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto current =
+                parallelCurrent.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto quasineutralDensityValue =
+                quasineutralDensity.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto quasineutralMomentumValue =
+                quasineutralMomentum.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            for (size_t e = 0; e < block.GetNumElements(); ++e)
+                for (size_t q = 0; q < np; ++q)
+                {
+                    const size_t p =
+                        (e / width) * np * width + q * width + e % width;
+                    auto check = [](double actual, double expected)
+                    {
+                        if (!std::isfinite(actual) ||
+                            std::abs(actual - expected) >
+                                1e-10 * (1 + std::abs(expected)))
+                            throw std::runtime_error(
+                                "Pointwise particle fields/source scaling is "
+                                "incorrect.");
+                    };
+                    const double delta = .37 * 3. / 1.25;
+                    for (unsigned c = 0; c < this->m_variables.size(); ++c)
+                    {
+                        double expected = .5;
+                        if (c == this->ee_idx)
+                            expected += delta;
+                        for (unsigned species = 0; species < count; ++species)
+                        {
+                            if (c == this->n_ids[species] ||
+                                c == this->e_ids[species])
+                                expected += delta;
+                            if (c == this->v_ids[species])
+                                for (unsigned d = 0; d < 3; ++d)
+                                    expected += delta * unit[d * stride + p];
+                        }
+                        check(actual[c * stride + p], expected);
+                    }
+                    check(values[p], 2.);
+                    check(values[stride + p],
+                          this->ee_idx == this->InvalidId
+                              ? .25
+                              : u[this->ee_idx * stride + p] / 3.);
+                    for (unsigned d = 0; d < 3; ++d)
+                    {
+                        check(values[(2 + d) * stride + p],
+                              2 * unit[d * stride + p]);
+                        check(values[(5 + d) * stride + p],
+                              electric[d * stride + p]);
+                        check(values[(8 + d) * stride + p],
+                              magnetic[d * stride + p]);
+                    }
+                    for (unsigned species = 0; species < count; ++species)
+                    {
+                        const unsigned c = 11 + 5 * species;
+                        const double n =
+                            this->HasDensity(species)
+                                ? u[this->n_ids[species] * stride + p]
+                                : 0.;
+                        check(values[c * stride + p], n);
+                        check(values[(c + 1) * stride + p],
+                              n > 0 && this->HasEnergy(species)
+                                  ? (2. / 3.) *
+                                        u[this->e_ids[species] * stride + p] / n
+                                  : .25);
+                        for (unsigned d = 0; d < 3; ++d)
+                            check(values[(c + 2 + d) * stride + p],
+                                  n > 0 && this->HasMomentum(species)
+                                      ? u[this->v_ids[species] * stride + p] *
+                                            unit[d * stride + p] /
+                                            (this->m_masses[species] * n)
+                                      : 0.);
+                    }
+                    double expectedDensity  = 0.;
+                    double expectedMomentum = -this->me * current[p];
+                    for (const unsigned species : this->GetIons())
+                    {
+                        expectedDensity += this->m_charges[species] *
+                                           u[this->n_ids[species] * stride + p];
+                        if (this->HasMomentum(species))
+                            expectedMomentum +=
+                                (this->me / this->m_masses[species]) *
+                                this->m_charges[species] *
+                                u[this->v_ids[species] * stride + p];
+                    }
+                    check(quasineutralDensityValue[p], expectedDensity);
+                    check(quasineutralMomentumValue[p], expectedMomentum);
+                }
+        }
+    }
+    void CheckPolarization(Field &coords)
+    {
+        auto &velocity = this->m_velocity;
+        coords.SetInterleaveWidth(velocity);
+        this->m_fields.SetInterleaveWidth(velocity);
+        this->B.SetInterleaveWidth(velocity);
+        this->mag_B.SetInterleaveWidth(velocity);
+        for (unsigned b = 0; b < velocity.GetBlocks().size(); ++b)
+        {
+            auto &block = velocity.GetBlocks()[b];
+            auto v =
+                block.template GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+            auto x = coords.GetBlocks()[b]
+                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            const size_t stride = block.CompSize();
+            for (unsigned species : this->GetIons())
+                for (unsigned d = 0; d < this->m_coordim; ++d)
+                    for (size_t p = 0; p < stride; ++p)
+                        v[(species * this->m_coordim + d) * stride + p] =
+                            (species + 1.) * (d + 1.) *
+                            (1. + .2 * std::sin(M_PI * x[d * stride + p]));
+        }
+        this->m_pointwise->PolarizationTensor(this->m_fields, velocity, this->B,
+                                              this->mag_B, this->m_tensor,
+                                              this->omega_c);
+        this->m_tensorDerivative->Apply(this->m_tensor, this->m_tensorGradient);
+        this->m_pointwise->PolarizationFlux(
+            this->m_fields, this->m_tensorGradient, this->m_omegaFlux);
+        Field reference(
+            "Reference polarization flux",
+            MultiRegions::GetBlockAttributes<double, FieldState::Phys>(
+                this->m_expansionLists[0]),
+            this->m_coordim, 1);
+        reference.SetInterleaveWidth(this->m_omegaFlux);
+        this->m_math.zero(reference);
+        for (unsigned species : this->GetIons())
+        {
+            this->m_math.zero(this->m_tensor);
+            this->m_tensor.SetInterleaveWidth(velocity);
+            for (unsigned b = 0; b < velocity.GetBlocks().size(); ++b)
+            {
+                auto &block         = velocity.GetBlocks()[b];
+                const size_t stride = block.CompSize();
+                auto v =
+                    block.template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                auto u =
+                    this->m_fields.GetBlocks()[b]
+                        .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                auto B =
+                    this->B.GetBlocks()[b]
+                        .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                auto B2 =
+                    this->mag_B.GetBlocks()[b]
+                        .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                auto tensor =
+                    this->m_tensor.GetBlocks()[b]
+                        .template GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+                for (size_t p = 0; p < stride; ++p)
+                {
+                    if (B2[p] <= 0)
+                        continue;
+                    double pointVelocity[3] = {};
+                    for (unsigned d = 0; d < this->m_coordim; ++d)
+                        pointVelocity[d] =
+                            v[(species * this->m_coordim + d) * stride + p];
+                    for (unsigned d = 0; d < this->m_coordim; ++d)
+                    {
+                        const unsigned j = (d + 1) % 3, k = (d + 2) % 3;
+                        const double w =
+                            u[this->n_ids[species] * stride + p] *
+                            (pointVelocity[j] * B[k * stride + p] -
+                             pointVelocity[k] * B[j * stride + p]) /
+                            B2[p];
+                        for (unsigned t = 0; t < this->m_coordim; ++t)
+                            tensor[(t * this->m_coordim + d) * stride + p] =
+                                w * pointVelocity[t];
+                    }
+                }
+            }
+            this->m_tensorDerivative->Apply(this->m_tensor,
+                                            this->m_tensorGradient);
+            this->m_tensorGradient.SetInterleaveWidth(reference);
+            for (unsigned b = 0; b < reference.GetBlocks().size(); ++b)
+            {
+                auto &block         = reference.GetBlocks()[b];
+                const size_t stride = block.CompSize();
+                auto expected =
+                    block.template GetPtr<NektarSpaces::HostSpace, ReadWrite>();
+                auto derivative =
+                    this->m_tensorGradient.GetBlocks()[b]
+                        .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+                for (size_t p = 0; p < stride; ++p)
+                    for (unsigned d = 0; d < this->m_coordim; ++d)
+                        for (unsigned j = 0; j < this->m_coordim; ++j)
+                            expected[d * stride + p] +=
+                                this->m_masses[species] / this->omega_c *
+                                derivative[((d * this->m_coordim + j) *
+                                                this->m_coordim +
+                                            j) *
+                                               stride +
+                                           p];
+            }
+        }
+        this->m_omegaFlux.SetInterleaveWidth(reference);
+        double maximum = 0;
+        for (unsigned b = 0; b < reference.GetBlocks().size(); ++b)
+        {
+            auto &block         = reference.GetBlocks()[b];
+            const size_t stride = block.CompSize(),
+                         width  = block.GetInterleaveWidth(),
+                         np     = block.GetNumData();
+            auto expected =
+                block.template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            auto actual =
+                this->m_omegaFlux.GetBlocks()[b]
+                    .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
+            for (size_t e = 0; e < block.GetNumElements(); ++e)
+                for (size_t q = 0; q < np; ++q)
+                    for (unsigned d = 0; d < this->m_coordim; ++d)
+                    {
+                        const size_t p = d * stride + (e / width) * np * width +
+                                         q * width + e % width;
+                        maximum = std::max(maximum, std::abs(expected[p]));
+                        if (std::abs(actual[p] - expected[p]) >
+                            1e-9 * (1 + std::abs(expected[p])))
+                            throw std::runtime_error(
+                                "Batched polarization differs from per-species "
+                                "derivatives.");
+                    }
+        }
+        if (maximum < 1e-8)
+            throw std::runtime_error(
+                "Polarization regression has a zero reference flux.");
+    }
     void Check(bool manufactured)
     {
         this->InitObject();
         this->SetInitialConditions();
+        CheckPointwiseParticles();
         auto attrs = MultiRegions::GetBlockAttributes<double, FieldState::Phys>(
             this->m_expansionLists[0]);
         Field rhs("test rhs", attrs, this->m_variables, 1);
@@ -182,9 +474,13 @@ public:
                 auto xyz =
                     coords.GetBlocks()[b]
                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-                const unsigned energy = this->GetEnergyId(0);
-                for (size_t p = 0; p < block.CompSize(); ++p)
-                    u[energy * block.CompSize() + p] += .1 * xyz[p];
+                for (unsigned species : this->GetIons())
+                {
+                    const unsigned energy = this->GetEnergyId(species);
+                    for (size_t p = 0; p < block.CompSize(); ++p)
+                        u[energy * block.CompSize() + p] +=
+                            .1 * this->m_charges[species] * xyz[p];
+                }
             }
             this->PrepareAdvection(this->m_fields, 0.);
             this->m_extraVelocity.SetInterleaveWidth(this->m_fields);
@@ -208,6 +504,7 @@ public:
                                 "in a pressure equilibrium.");
                     }
             }
+            CheckPolarization(coords);
             this->m_math.copy(saved, this->m_fields);
             this->PrepareAdvection(this->m_fields, 0.);
         }

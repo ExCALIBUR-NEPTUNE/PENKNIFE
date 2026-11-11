@@ -68,7 +68,7 @@ void ReducedBraginskii::PrepareAdvection(PhysField &in, double time)
     if (transient_field)
         UpdateMagneticField(time);
     j_par.SetInterleaveWidth(in);
-    m_quasineutralityOp->Apply(in, j_par, ne, Me);
+    m_pointwise->Quasineutrality(in, j_par, ne, Me);
     m_traceExtract->Apply(j_par, m_currentTrace);
 }
 void ReducedBraginskii::DoOdeRhs(PhysField &in, PhysField &out,
@@ -84,84 +84,9 @@ void ReducedBraginskii::DoOdeRhs(PhysField &in, PhysField &out,
 void ReducedBraginskii::AddPressureWork(PhysField &in, PhysField &out,
                                         double factor)
 {
-    for (auto *f : {&b_unit, &ne, &Me, &m_velocity})
-        f->SetInterleaveWidth(in);
-    m_math.zero(m_velocity);
-    for (unsigned blk = 0; blk < in.GetBlocks().size(); ++blk)
-    {
-        const size_t stride = in.GetBlocks()[blk].CompSize();
-        auto u =
-            in.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto b =
-            b_unit.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto n =
-            ne.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto M =
-            Me.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto v = m_velocity.GetBlocks()[blk]
-                     .GetPtr<NektarSpaces::HostSpace, ReadWrite>();
-        for (size_t p = 0; p < stride; ++p)
-            for (unsigned s = 0; s <= n_species; ++s)
-            {
-                double velocity = 0;
-                if (s == n_species)
-                    velocity = n[p] > 0 ? M[p] / (me * n[p]) : 0;
-                else if (HasDensity(s) && HasMomentum(s) &&
-                         u[n_ids[s] * stride + p] > 0)
-                    velocity = u[v_ids[s] * stride + p] /
-                               (m_masses[s] * u[n_ids[s] * stride + p]);
-                for (unsigned d = 0; d < m_coordim; ++d)
-                    v[(s * m_coordim + d) * stride + p] =
-                        velocity * b[d * stride + p];
-            }
-    }
+    m_pointwise->ParallelVelocities(in, b_unit, ne, Me, m_velocity);
     CompleteVelocities(in);
     m_velocityDerivative->Apply(m_velocity, m_velocityGradient);
-    out.SetInterleaveWidth(in);
-    m_velocityGradient.SetInterleaveWidth(in);
-    E.SetInterleaveWidth(in);
-    for (unsigned blk = 0; blk < in.GetBlocks().size(); ++blk)
-    {
-        const size_t stride = in.GetBlocks()[blk].CompSize();
-        auto u =
-            in.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto gradient = m_velocityGradient.GetBlocks()[blk]
-                            .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto rhs =
-            out.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadWrite>();
-        auto electric =
-            E.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto unit =
-            b_unit.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        // The pressure gradient is in the conservative momentum flux.
-        // The remaining parallel Lorentz force is +Z n E_parallel.
-        for (size_t p = 0; p < stride; ++p)
-        {
-            double parallelElectric = 0;
-            for (unsigned d = 0; d < 3; ++d)
-                parallelElectric +=
-                    unit[d * stride + p] * electric[d * stride + p];
-            for (unsigned s = 0; s < n_species; ++s)
-                if (HasDensity(s) && HasMomentum(s))
-                    rhs[v_ids[s] * stride + p] += factor * m_charges[s] *
-                                                  u[n_ids[s] * stride + p] *
-                                                  parallelElectric;
-        }
-        for (size_t p = 0; p < stride; ++p)
-            for (unsigned s = 0; s <= n_species; ++s)
-            {
-                if (s < n_species && !HasEnergy(s))
-                    continue;
-                const unsigned energy = s == n_species ? ee_idx : e_ids[s];
-                double divergence     = 0;
-                for (unsigned d = 0; d < m_coordim; ++d)
-                    divergence +=
-                        gradient[((s * m_coordim + d) * m_coordim + d) *
-                                     stride +
-                                 p];
-                rhs[energy * stride + p] -=
-                    factor * (2. / 3.) * u[energy * stride + p] * divergence;
-            }
-    }
+    m_pointwise->PressureWork(in, out, m_velocityGradient, E, b_unit, factor);
 }
 } // namespace PENKNIFE

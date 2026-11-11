@@ -115,7 +115,7 @@ endforeach()
 list(APPEND PENKNIFE_OPERATORS_SOURCES
      src/BndCond/BndCondBohm/BndCondBohmFactory.cpp
      src/MagneticField/MagneticFieldFactory.cpp
-     src/Quasineutrality/QuasineutralityFactory.cpp
+     src/Pointwise/PlasmaPointwiseFactory.cpp
      src/FluxVolDiff/FluxVolDiffFactory.cpp
      src/FluxVolAdvDiff/FluxVolAdvDiffFactory.cpp
      src/FluxTraceAdvDiv/FluxTraceAdvDiffFactory.cpp)

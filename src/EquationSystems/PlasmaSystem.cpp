@@ -5,7 +5,7 @@
 #include <nektar_interface/solver_base/neso_session_function.hpp>
 #include <set>
 
-#include <LibUtilities/BasicUtils/Vmath.hpp>
+#include <LibUtilities/LoopExecution/LoopExecution.hpp>
 #include <LibUtilities/TimeIntegration/TimeIntegrationScheme.h>
 
 #include "PlasmaSystem.hpp"
@@ -126,20 +126,6 @@ PlasmaSystem::PlasmaSystem(const LU::SessionReaderSharedPtr &session,
 
 void PlasmaSystem::v_GenerateSummary(SC::SummaryList &s)
 {
-    std::stringstream ss;
-    ss << R"(
-╔═══════════════════════════════════════════════════════════════════════════╗
-║                                                                           ║
-║  ██████╗  ███████╗ ███╗   ██╗ ██╗  ██╗ ███╗   ██╗ ██╗ ███████╗ ███████╗   ║
-║  ██╔══██╗ ██╔════╝ ████╗  ██║ ██║ ██╔╝ ████╗  ██║ ██║ ██╔════╝ ██╔════╝   ║
-║  ██████╔╝ █████╗   ██╔██╗ ██║ █████╔╝  ██╔██╗ ██║ ██║ █████╗   █████╗     ║
-║  ██╔═══╝  ██╔══╝   ██║╚██╗██║ ██╔═██╗  ██║╚██╗██║ ██║ ██╔══╝   ██╔══╝     ║
-║  ██║      ███████╗ ██║ ╚████║ ██║  ██╗ ██║ ╚████║ ██║ ██║      ███████╗   ║
-║  ╚═╝      ╚══════╝ ╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝ ╚═╝ ╚═╝      ╚══════╝   ║
-║ Plasma Edge Numerics using Kinetic Neutrals Integrated in Finite Elements ║
-╚═══════════════════════════════════════════════════════════════════════════╝
-)";
-    SC::AddSummaryItem(s, "", ss.str());
     SC::UnsteadySystem::v_GenerateSummary(s);
 
     SC::AddSummaryItem(s, "Mesh length scale", this->mesh_length);
@@ -222,25 +208,10 @@ void PlasmaSystem::v_InitialiseOperators()
     std::string execName =
         MultiRegions::Operator<double>::GetOpExecSpace(m_session);
 
-    m_quasineutralityOp = QuasineutralityOp<double>::Create(
-        m_expansionLists[0], m_variables, execName);
-    std::vector<unsigned int> ionDensityIds;
-    std::vector<unsigned int> ionMomentumIds;
-    std::vector<double> ionCharges, ionMasses;
-    ionDensityIds.reserve(m_ions.size());
-    ionMomentumIds.reserve(m_ions.size());
-    ionCharges.reserve(m_ions.size());
-    ionMasses.reserve(m_ions.size());
-    for (const auto s : m_ions)
-    {
-        ionDensityIds.push_back(GetDensityId(s));
-        ionMomentumIds.push_back(v_ids[s]);
-        ionCharges.push_back(m_charges[s]);
-        ionMasses.push_back(m_masses[s]);
-    }
-    m_quasineutralityOp->SetSpecies(ionDensityIds, ionMomentumIds, ionCharges,
-                                    ionMasses, me);
-
+    m_pointwise = PlasmaPointwiseOp<double>::Create(m_expansionLists[0],
+                                                    m_variables, execName);
+    m_pointwise->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges, m_ions,
+                            ee_idx, me, m_backgroundTemperature);
     m_BTraceExtractOp = PhysTraceExtractOp<double>::Create(
         m_expansionLists[0], this->b_unit.GetComponentNames());
     this->mag_field = MagneticFieldOp<double>::Create(
@@ -345,7 +316,7 @@ bool PlasmaSystem::v_PreIntegrate()
     if (transient_field)
         UpdateMagneticField(m_time);
     j_par.SetInterleaveWidth(m_fields);
-    m_quasineutralityOp->Apply(m_fields, j_par, ne, Me);
+    m_pointwise->Quasineutrality(m_fields, j_par, ne, Me);
     UpdateElectricField(m_fields, m_time);
 
     if (this->particles_enabled)
@@ -460,65 +431,17 @@ void PlasmaSystem::SetupParticles()
                                         evalSyms, evalComps);
     particle_sys->finish_setup(m_expansionLists[0], m_particleSources,
                                m_particleSourceCoeffs, sourceSyms, sourceComps);
+    m_pointwise->SetSources(m_sourceDensity, m_sourceMomentum, m_sourceEnergy,
+                            m_sourceElectron);
     particle_sys->diag_setup();
     particle_sys->output_setup(outputSyms);
 }
 
 void PlasmaSystem::UpdateParticleFields()
 {
-    m_particleFields.SetInterleaveWidth(m_fields);
-    for (auto *field : {&B, &E, &b_unit, &ne, &Me})
-        field->SetInterleaveWidth(m_fields);
     m_math.zero(m_particleFields);
-    for (unsigned blk = 0; blk < m_fields.GetBlocks().size(); ++blk)
-    {
-        auto &block         = m_fields.GetBlocks()[blk];
-        const size_t stride = block.CompSize();
-        auto u              = block.GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto n =
-            ne.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto momentum =
-            Me.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto b =
-            b_unit.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto magnetic =
-            B.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto electric =
-            E.GetBlocks()[blk].GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-        auto values = m_particleFields.GetBlocks()[blk]
-                          .GetPtr<NektarSpaces::HostSpace, ReadWrite>();
-        for (size_t p = 0; p < stride; ++p)
-        {
-            values[p]          = n[p];
-            values[stride + p] = n[p] > 0 && ee_idx != InvalidId
-                                     ? (2. / 3.) * u[ee_idx * stride + p] / n[p]
-                                     : m_backgroundTemperature;
-            for (unsigned d = 0; d < 3; ++d)
-            {
-                values[(2 + d) * stride + p] =
-                    n[p] > 0 ? momentum[p] * b[d * stride + p] / (me * n[p])
-                             : 0;
-                values[(5 + d) * stride + p] = electric[d * stride + p];
-                values[(8 + d) * stride + p] = magnetic[d * stride + p];
-            }
-            for (unsigned s = 0; s < n_species; ++s)
-            {
-                const size_t c  = 11 + 5 * s;
-                const double ns = HasDensity(s) ? u[n_ids[s] * stride + p] : 0;
-                values[c * stride + p] = ns;
-                values[(c + 1) * stride + p] =
-                    ns > 0 && HasEnergy(s)
-                        ? (2. / 3.) * u[e_ids[s] * stride + p] / ns
-                        : m_backgroundTemperature;
-                for (unsigned d = 0; d < 3; ++d)
-                    values[(c + 2 + d) * stride + p] =
-                        ns > 0 && HasMomentum(s)
-                            ? u[v_ids[s] * stride + p] * b[d * stride + p] /
-                                  (m_masses[s] * ns)
-                            : 0;
-            }
-        }
-    }
+    m_pointwise->ParticleFields(m_fields, ne, Me, b_unit, B, E,
+                                m_particleFields);
 }
 
 void PlasmaSystem::AddSources(PhysField &in, PhysField &out, double time,
@@ -526,43 +449,10 @@ void PlasmaSystem::AddSources(PhysField &in, PhysField &out, double time,
 {
     if (particles_enabled)
     {
-        m_particleSources.SetInterleaveWidth(out);
-        b_unit.SetInterleaveWidth(out);
-        for (unsigned blk = 0; blk < out.GetBlocks().size(); ++blk)
-        {
-            const auto stride = out.GetBlocks()[blk].CompSize();
-            auto source       = m_particleSources.GetBlocks()[blk]
-                              .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto b = b_unit.GetBlocks()[blk]
-                         .GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto rhs = out.GetBlocks()[blk]
-                           .GetPtr<NektarSpaces::HostSpace, ReadWrite>();
-            for (size_t p = 0; p < stride; ++p)
-            {
-                for (unsigned s = 0; s < n_species; ++s)
-                {
-                    if (HasDensity(s))
-                        rhs[n_ids[s] * stride + p] +=
-                            factor * source[m_sourceDensity[s] * stride + p] /
-                            m_timestep;
-                    if (HasEnergy(s))
-                        rhs[e_ids[s] * stride + p] +=
-                            factor * source[m_sourceEnergy[s] * stride + p] /
-                            m_timestep;
-                    if (HasMomentum(s))
-                        for (unsigned d = 0; d < 3; ++d)
-                            rhs[v_ids[s] * stride + p] +=
-                                factor * b[d * stride + p] *
-                                source[(m_sourceMomentum[s] + d) * stride + p] /
-                                m_timestep;
-                }
-                if (m_sourceElectron != InvalidId)
-                    rhs[ee_idx * stride + p] +=
-                        factor * source[m_sourceElectron * stride + p] /
-                        m_timestep;
-            }
-        }
+        m_pointwise->AddSources(out, m_particleSources, b_unit, factor,
+                                m_timestep);
     }
+
     for (auto &forcing : m_forcing)
     {
         forcing->SetAppend(true);
@@ -670,9 +560,13 @@ void PlasmaSystem::v_SetInitialConditions(double time)
                         const auto local = expansion->GetElmtToExpId().at(
                             elements[e]->GetGeom()->GetGlobalID());
                         const size_t offset = expansion->GetPhys_Offset(local);
-                        for (size_t p = 0; p < np; ++p)
-                            dst[(e / width) * np * width + p * width +
-                                e % width] = imported[offset + p];
+                        Nektar::parallel_for<NektarSpaces::Serial>(
+                            0, np,
+                            [&](const size_t p)
+                            {
+                                dst[(e / width) * np * width + p * width +
+                                    e % width] = imported[offset + p];
+                            });
                     }
                 }
             }
@@ -688,18 +582,20 @@ void PlasmaSystem::v_SetInitialConditions(double time)
                 const auto &elements = collections[blk].GetExpVector();
                 for (unsigned e = 0; e < elements.size(); ++e)
                     if (geometries.count(elements[e]->GetGeom()->GetGlobalID()))
-                        for (size_t p = 0; p < np; ++p)
-                        {
-                            const size_t point = (e / width) * np * width +
-                                                 p * width + e % width;
-                            dst[f * block.CompSize() + point] = src[point];
-                        }
+                        Nektar::parallel_for<NektarSpaces::Serial>(
+                            0, np,
+                            [&](const size_t p)
+                            {
+                                const size_t point = (e / width) * np * width +
+                                                     p * width + e % width;
+                                dst[f * block.CompSize() + point] = src[point];
+                            });
             }
         }
     }
     // Use the redesigned projection for CG continuity and stage boundary data.
     DoProjection(m_fields, m_fields, time);
-    m_quasineutralityOp->Apply(m_fields, j_par, ne, Me);
+    m_pointwise->Quasineutrality(m_fields, j_par, ne, Me);
     UpdateElectricField(m_fields, time);
     if (particles_enabled)
         UpdateParticleFields();
