@@ -5,7 +5,7 @@
 spack:
   # add package specs to the `specs` list
   specs:
-  - pk.penknife ^vantage.vantagereactions~enable_tests  ^neso-particles~build_tests ^neso.adaptivecpp compilationflow=ompaccelerated ^neso+libonly
+  - pk.penknife ^vantage.vantagereactions~enable_tests  ^neso-particles~build_tests ^neso.adaptivecpp compilationflow=omplibraryonly ^neso+libonly
   view: true
   concretizer:
     unify: when_possible
@@ -20,10 +20,12 @@ spack:
     cxx:
       require:
         - gcc
+    mpi:
+      require:
+        - openmpi
     all:
       providers:
         sycl: [adaptivecpp]
-        mpi: [mpich, openmpi]
   develop:
     nektar:
       path: ./NESO/nektar

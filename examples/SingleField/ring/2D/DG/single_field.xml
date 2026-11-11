@@ -9,7 +9,8 @@
 
     <CONDITIONS>
         <SOLVERINFO>
-            <I PROPERTY="EQTYPE"                       VALUE="SingleDiffusiveField"/>
+            <I PROPERTY="EQTYPE"                       VALUE="AnisotropicDiffusion"/>
+            <I PROPERTY="Closure"                      VALUE="SingleDiffusive"/>
             <I PROPERTY="Projection"                   VALUE="DisContinuous" />
             <I PROPERTY="LinSysIterSolverTypeInNonlin" VALUE="GMRES"         />
             <I PROPERTY="DiffusionAdvancement"         VALUE="Implicit"/>

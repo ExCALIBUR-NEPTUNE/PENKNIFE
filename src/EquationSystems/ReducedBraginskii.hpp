@@ -1,28 +1,22 @@
-#ifndef REDUCEDBRAGINSKII_HPP
-#define REDUCEDBRAGINSKII_HPP
-
-#include "../Misc/VariableConverter.hpp"
+#pragma once
+#include "../FluxTraceAdvDiv/FluxTraceAdvDiffOp.hpp"
+#include "../FluxVolAdv/FluxVolAdvOp.hpp"
+#include "../FluxVolDiff/FluxVolDiffOp.hpp"
 #include "PlasmaSystem.hpp"
-
+#include <MultiRegions/ElmtOps/PhysDeriv/PhysDerivOp.hpp>
+#include <SolverCore/AdvDiffusion/AdvWeakDGDiffusionIP/AdvWeakDGDiffusionIPOp.hpp>
 namespace PENKNIFE
 {
-// [{n, mnv, 1.5p}_i,..., 1.5p_e]
 class ReducedBraginskii : public PlasmaSystem
 {
 public:
     friend class MemoryManager<ReducedBraginskii>;
-
-    /// Name of class
     static std::string class_name;
-
-    /**
-     * @brief Create an instance of this class and initialise it.
-     */
-    static SU::EquationSystemSharedPtr create(
+    static SC::EquationSystemSharedPtr create(
         const LU::SessionReaderSharedPtr &session,
         const SD::MeshGraphSharedPtr &graph)
     {
-        SU::EquationSystemSharedPtr p =
+        auto p =
             MemoryManager<ReducedBraginskii>::AllocateSharedPtr(session, graph);
         p->InitObject();
         return p;
@@ -31,159 +25,26 @@ public:
 
 protected:
     ReducedBraginskii(const LU::SessionReaderSharedPtr &session,
-                      const SD::MeshGraphSharedPtr &graph);
-    void v_InitObject(bool DeclareFields = true) override;
-    void v_SetInitialConditions(NekDouble init_time, bool dump_ICs,
-                                const int domain) override;
-    bool v_PreIntegrate(int step) override;
-    bool v_PostIntegrate(int step) override;
-    void DoOdeRhs(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-                  Array<OneD, Array<OneD, NekDouble>> &outarray,
-                  const NekDouble time);
+                      const SD::MeshGraphSharedPtr &graph)
+        : PlasmaSystem(session, graph)
+    {
+    }
+    void v_InitObject(bool declareFields = true) override;
+    void v_InitialiseFields() override;
+    void v_InitialiseOperators() override;
+    virtual void DoOdeRhs(PhysField &in, PhysField &out, const double &time,
+                          const double &factor);
+    virtual void PrepareAdvection(PhysField &in, double time);
+    virtual void CompleteVelocities(PhysField &)
+    {
+    }
+    void AddPressureWork(PhysField &in, PhysField &out, double factor);
 
-    /// Advection functions
-    void InitAdvection();
-    void DoAdvection(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                     Array<OneD, Array<OneD, NekDouble>> &outarray,
-                     const NekDouble time,
-                     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-                     const Array<OneD, Array<OneD, NekDouble>> &pBwd);
-
-    void DoParticles(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                     Array<OneD, Array<OneD, NekDouble>> &outarray);
-
-    void ComputeE();
-
-    void CalcVelocities(const Array<OneD, Array<OneD, NekDouble>> &inarray);
-
-    Array<OneD, Array<OneD, NekDouble>> &GetAdvVelNorm();
-
-    // Advective Flux vector
-    void GetFluxVector(
-        const Array<OneD, Array<OneD, NekDouble>> &field_vals,
-        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
-
-    /// Diffusion functions
-    void DoDiffusion(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                     Array<OneD, Array<OneD, NekDouble>> &outarray,
-                     const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-                     const Array<OneD, Array<OneD, NekDouble>> &pBwd);
-
-    void InitBraginskii();
-
-    void CalcCollisionFrequencies(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
-    void CalcK(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
-    void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr, int f);
-    void CalcKappa(const Array<OneD, Array<OneD, NekDouble>> &in_arr);
-    void CalcDiffTensor();
-    // Diffusive Flux vector
-    void GetFluxVectorDiff(
-        const Array<OneD, Array<OneD, NekDouble>> &in_arr,
-        const Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &q_field,
-        Array<OneD, Array<OneD, Array<OneD, NekDouble>>> &fluxes);
-
-    void CalcNeutralSources_nvp(
-        const double m, int ee_idx, int ni_idx, int vi_idx, int pi_idx,
-        int nn_idx, int vn_idx, int pn_idx,
-        const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        Array<OneD, NekDouble> &Spe);
-    void CalcNeutralSources_nv(
-        const double m, int ee_idx, int ni_idx, int vi_idx, int nn_idx,
-        int vn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        Array<OneD, NekDouble> &Spe);
-    void CalcNeutralSources_nv(
-        const double m, int ee_idx, int ni_idx, int vi_idx, int pi_idx,
-        int nn_idx, int vn_idx,
-        const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        Array<OneD, NekDouble> &Spe);
-    void CalcNeutralSources_np(
-        const double m, int ee_idx, int ni_idx, int pi_idx, int nn_idx,
-        int pn_idx, const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        Array<OneD, NekDouble> &Spe);
-    void CalcNeutralSources_n(
-        const double m, int ee_idx, int ni_idx, int nn_idx,
-        const Array<OneD, Array<OneD, NekDouble>> &inarray,
-        const Array<OneD, NekDouble> &ne,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        Array<OneD, NekDouble> &Spe);
-
-    void AddNeutralSources(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                           Array<OneD, Array<OneD, NekDouble>> &outarray);
-
-    // Functions for the Implicit Solve
-    void DoOdeImplicitRhs(
-        const Array<OneD, const Array<OneD, NekDouble>> &in_arr,
-        Array<OneD, Array<OneD, NekDouble>> &out_arr, const NekDouble time);
-
-    void DoOdeRhsCoeff(const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-                       Array<OneD, Array<OneD, NekDouble>> &outarray,
-                       const NekDouble time);
-    void DoAdvectionCoeff(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                          Array<OneD, Array<OneD, NekDouble>> &outarray,
-                          const NekDouble time,
-                          const Array<OneD, Array<OneD, NekDouble>> &pFwd,
-                          const Array<OneD, Array<OneD, NekDouble>> &pBwd);
-    void DoParticlesCoeff(const Array<OneD, Array<OneD, NekDouble>> &inarray,
-                          Array<OneD, Array<OneD, NekDouble>> &out_arr);
-    void DoDiffusionCoeff(
-        const Array<OneD, const Array<OneD, NekDouble>> &inarray,
-        Array<OneD, Array<OneD, NekDouble>> &outarray,
-        const Array<OneD, const Array<OneD, NekDouble>> &pFwd,
-        const Array<OneD, const Array<OneD, NekDouble>> &pBwd);
-
-    void v_ExtraFldOutput(std::vector<Array<OneD, NekDouble>> &fieldcoeffs,
-                          std::vector<std::string> &variables) override;
-
-private:
-    int ee_idx;
-
-    std::vector<int> ni_src_idx;
-    std::vector<int> vi_src_idx;
-    std::vector<int> ei_src_idx;
-
-    /// Velocities
-
-    // Per field advection velocities
-    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel;
-    Array<OneD, Array<OneD, Array<OneD, NekDouble>>> adv_vel_trace;
-    // Per field advection velocities normal to trace elements
-    Array<OneD, Array<OneD, NekDouble>> trace_vel_norm;
-
-    Array<OneD, NekDouble> trace_b_norm;
-    /// Riemann solver type (used for all advection terms)
-    std::string riemann_solver_type;
-    /// Riemann solver object used in electron advection
-    SU::RiemannSolverSharedPtr riemann_solver;
-    /// Advection object used in the electron density equation
-    SU::AdvectionSharedPtr m_advection;
-    /// Advection type
-    std::string adv_type;
-
-    // For Advection
-    std::vector<int> advected_fields;
-    Array<OneD, MR::ExpListSharedPtr> m_advfields;
-
-    // For Diffusion
-    Array<OneD, MR::ExpListSharedPtr> m_difffields;
-    //
-    StdRegions::ConstFactorMap m_factors;
-
-    ClosureSharedPtr m_closure;
-
-    Array<OneD, Array<OneD, NekDouble>> friction;
-
-    Array<OneD, NekDouble> kIZ;
-    Array<OneD, NekDouble> kCX;
-    Array<OneD, NekDouble> krec;
+    std::shared_ptr<SC::AdvWeakDGDiffusionIPOp<double>> m_advDiffusionOp;
+    std::shared_ptr<FluxTraceAdvDiffOp<double>> m_traceFlux;
+    std::shared_ptr<FluxVolAdvOp<double>> m_advectionFlux;
+    std::shared_ptr<MR::PhysTraceExtractOp<double>> m_traceExtract;
+    std::shared_ptr<MR::PhysDerivOp<double>> m_velocityDerivative;
+    PhysField m_currentTrace, m_velocity, m_velocityGradient;
 };
-
 } // namespace PENKNIFE
-#endif

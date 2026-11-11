@@ -1,4 +1,5 @@
 #include "ParticleSystem.hpp"
+#include <set>
 
 namespace PENKNIFE
 {
@@ -67,7 +68,12 @@ void ParticleSystem::init_spec()
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_MOMENTUM"), this->vdim),
         ParticleProp(Sym<REAL>("ELECTRON_SOURCE_DENSITY"), 1)};
 
-    for (auto &[k, v] : this->config->get_particle_species())
+    std::set<std::string> coupled_names;
+    for (const auto &[name, info] : config->get_species())
+        coupled_names.insert(name);
+    for (const auto &[name, info] : config->get_particle_species())
+        coupled_names.insert(name);
+    for (const auto &k : coupled_names)
     {
         this->particle_spec.push(ParticleProp(Sym<REAL>(k + "_DENSITY"), 1));
         this->particle_spec.push(
@@ -322,26 +328,27 @@ void ParticleSystem::set_up_species()
  * @brief Setup NESO evaluations
  */
 void ParticleSystem::setup_evaluate_fields(
-    std::shared_ptr<DisContField> ne, std::vector<Sym<REAL>> &eval_syms,
-    std::vector<int> &eval_comps,
-    std::vector<Array<OneD, NekDouble> *> &eval_srcs)
+    const std::shared_ptr<ExpList> &expansion, PhysField &fields,
+    const std::vector<Sym<REAL>> &syms, const std::vector<int> &components)
 {
-    this->eval_syms   = eval_syms;
-    this->eval_comps  = eval_comps;
-    this->eval_srcs   = eval_srcs;
-    this->proto_field = ne;
-
-    this->field_evaluate = std::make_shared<BaryEvaluateBase<DisContField>>(
-        ne, this->particle_mesh_interface, this->cell_id_translation);
+    proto_field = expansion;
+    eval_fields = &fields;
+    eval_syms   = syms;
+    eval_comps  = components;
+    field_evaluate =
+        FieldEvaluateOp<double>::Create(expansion, fields.GetComponentNames());
+    field_evaluate->SetParticles(particle_group, cell_id_translation);
 }
 
 /**
  * @brief Finish setup of the class, including projection of source fields
  */
-void ParticleSystem::finish_setup(
-    std::vector<std::shared_ptr<DisContField>> &src_fields,
-    std::vector<Sym<REAL>> &syms, std::vector<int> &components)
+void ParticleSystem::finish_setup(const std::shared_ptr<ExpList> &expansion,
+                                  PhysField &src_fields, CoeffField &src_coeffs,
+                                  std::vector<Sym<REAL>> &syms,
+                                  std::vector<int> &components)
 {
+    projection_variable  = src_fields.GetComponentNames().front();
     this->src_syms       = syms;
     this->src_components = components;
 
@@ -358,19 +365,26 @@ void ParticleSystem::finish_setup(
 
 void ParticleSystem::diag_setup()
 {
-    this->diag_components = {0};
-    this->diag_syms       = {Sym<REAL>("WEIGHT")};
-    for (auto &[k, v] : this->species_map)
+    diag_components = {0};
+    diag_syms       = {Sym<REAL>("WEIGHT")};
+    diagnostic_project =
+        FieldProjectOp<double>::Create(proto_field, {projection_variable});
+    diagnostic_project->SetParticles(particle_group, cell_id_translation);
+    for (const auto &[name, species] : species_map)
     {
-
-        this->diag_fields[v.id].emplace_back(
-            MemoryManager<DisContField>::AllocateSharedPtr(
-                *std::dynamic_pointer_cast<DisContField>(this->proto_field)));
-
-        this->diagnostic_project[v.id] =
-            std::make_shared<FieldProject<DisContField>>(
-                this->diag_fields[v.id], this->particle_group,
-                this->cell_id_translation);
+        diag_fields.emplace(
+            species.id,
+            PhysField(name + " density",
+                      MR::GetBlockAttributes<double, Nektar::FieldState::Phys>(
+                          proto_field),
+                      1, 1));
+        diag_coeffs.emplace(
+            species.id,
+            CoeffField(
+                name + " density coefficients",
+                MR::GetBlockAttributes<double, Nektar::FieldState::Coeff>(
+                    proto_field),
+                1, 1));
     }
 }
 
