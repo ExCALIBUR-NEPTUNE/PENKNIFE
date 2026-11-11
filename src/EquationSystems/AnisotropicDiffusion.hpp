@@ -8,33 +8,29 @@
 #include <SolverCore/Diffusion/DiffusionIP/DiffusionIPOp.hpp>
 namespace PENKNIFE
 {
-class SingleDiffusiveField : public PlasmaSystem
+class AnisotropicDiffusion : public PlasmaSystem
 {
 public:
-    friend class MemoryManager<SingleDiffusiveField>;
+    friend class MemoryManager<AnisotropicDiffusion>;
     static std::string class_name;
     static SC::EquationSystemSharedPtr create(
         const LU::SessionReaderSharedPtr &session,
         const SD::MeshGraphSharedPtr &graph)
     {
-        auto p = MemoryManager<SingleDiffusiveField>::AllocateSharedPtr(session,
+        auto p = MemoryManager<AnisotropicDiffusion>::AllocateSharedPtr(session,
                                                                         graph);
         p->InitObject();
         return p;
     }
-    ~SingleDiffusiveField() override = default;
+    ~AnisotropicDiffusion() override = default;
 
 protected:
-    SingleDiffusiveField(const LU::SessionReaderSharedPtr &session,
-                         const SD::MeshGraphSharedPtr &graph,
-                         bool densityOnly = true);
+    AnisotropicDiffusion(const LU::SessionReaderSharedPtr &session,
+                         const SD::MeshGraphSharedPtr &graph);
     void v_InitObject(bool declareFields = true) override;
     void v_InitialiseFields() override;
     void v_InitialiseOperators() override;
-    virtual std::string DiffusionModel() const
-    {
-        return "SingleDiffusive";
-    }
+    std::string DiffusionModel() const;
     void DoOdeRhs(PhysField &in, PhysField &out, const double &time,
                   const double &factor);
 
@@ -52,5 +48,6 @@ protected:
         m_weakDerivative;
     std::shared_ptr<MR::NeuBndCondOp<double>> m_neumann;
     std::shared_ptr<SC::LinearSolverOp<double>> m_massSolver;
+    std::string m_diffusionModel;
 };
 } // namespace PENKNIFE

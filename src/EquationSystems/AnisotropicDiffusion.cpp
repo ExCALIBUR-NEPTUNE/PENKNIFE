@@ -1,20 +1,25 @@
-#include "SingleDiffusiveField.hpp"
+#include "AnisotropicDiffusion.hpp"
 #include <MultiRegions/ElmtOps/Mass/MassOp.hpp>
 #include <SolverCore/GlobalLinSysOps/LinearSystems/LHSOp.hpp>
 
 namespace PENKNIFE
 {
-std::string SingleDiffusiveField::class_name =
+std::string AnisotropicDiffusion::class_name =
     SC::GetEquationSystemFactory().RegisterCreatorFunction(
-        "SingleDiffusiveField", SingleDiffusiveField::create,
-        "Anisotropic density diffusion");
+        "AnisotropicDiffusion", AnisotropicDiffusion::create,
+        "Anisotropic density and heat diffusion");
 
-SingleDiffusiveField::SingleDiffusiveField(
+AnisotropicDiffusion::AnisotropicDiffusion(
     const LU::SessionReaderSharedPtr &session,
-    const SD::MeshGraphSharedPtr &graph, bool densityOnly)
+    const SD::MeshGraphSharedPtr &graph)
     : PlasmaSystem(session, graph)
 {
-    if (densityOnly)
+    m_session->LoadSolverInfo("Closure", m_diffusionModel);
+    ASSERTL0(m_diffusionModel == "SingleDiffusive" ||
+                 m_diffusionModel == "DoubleDiffusive",
+             "AnisotropicDiffusion requires Closure=SingleDiffusive or "
+             "Closure=DoubleDiffusive.");
+    if (m_diffusionModel == "SingleDiffusive")
     {
         m_variables.pop_back();
         m_fieldTemplates.pop_back();
@@ -22,12 +27,16 @@ SingleDiffusiveField::SingleDiffusiveField(
         m_nVariables = m_variables.size();
     }
 }
-void SingleDiffusiveField::v_InitObject(bool declareFields)
+std::string AnisotropicDiffusion::DiffusionModel() const
+{
+    return m_diffusionModel;
+}
+void AnisotropicDiffusion::v_InitObject(bool declareFields)
 {
     PlasmaSystem::v_InitObject(declareFields);
-    m_timeOp->DefineExplicitRhs(&SingleDiffusiveField::DoOdeRhs, this);
+    m_timeOp->DefineExplicitRhs(&AnisotropicDiffusion::DoOdeRhs, this);
 }
-void SingleDiffusiveField::v_InitialiseFields()
+void AnisotropicDiffusion::v_InitialiseFields()
 {
     PlasmaSystem::v_InitialiseFields();
     auto volume =
@@ -52,7 +61,7 @@ void SingleDiffusiveField::v_InitialiseFields()
             CoeffField("Explicit mass solution", coeff, m_variables, 1);
     }
 }
-void SingleDiffusiveField::v_InitialiseOperators()
+void AnisotropicDiffusion::v_InitialiseOperators()
 {
     PlasmaSystem::v_InitialiseOperators();
     m_volumeFlux = FluxVolDiffOp<double>::Create(
@@ -142,7 +151,7 @@ void SingleDiffusiveField::v_InitialiseOperators()
         m_massSolver->UpdatePrecon();
     }
 }
-void SingleDiffusiveField::DoOdeRhs(PhysField &in, PhysField &out,
+void AnisotropicDiffusion::DoOdeRhs(PhysField &in, PhysField &out,
                                     const double &time, const double &factor)
 {
     if (transient_field)

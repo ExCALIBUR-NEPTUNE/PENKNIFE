@@ -1,9 +1,8 @@
 #include "Closures/DiffusiveFields.hpp"
-#include "EquationSystems/DoubleDiffusiveField.hpp"
+#include "EquationSystems/AnisotropicDiffusion.hpp"
 #include "EquationSystems/ElectrostaticTurbulence.hpp"
 #include "EquationSystems/NullSystem.hpp"
 #include "EquationSystems/ReducedBraginskii.hpp"
-#include "EquationSystems/SingleDiffusiveField.hpp"
 
 #include <SpatialDomains/MeshGraphIO.h>
 #include <iostream>
@@ -424,8 +423,8 @@ public:
         if (!manufactured && maximum > 1e-7)
             throw std::runtime_error("Uniform state generated a nonzero RHS: " +
                                      std::to_string(maximum));
-        if constexpr (std::is_same_v<Model, SingleDiffusiveField>)
-            if (!manufactured)
+        if constexpr (std::is_same_v<Model, AnisotropicDiffusion>)
+            if (!manufactured && this->DiffusionModel() == "SingleDiffusive")
                 CheckParticleCoupling(this->m_session, this->m_graph,
                                       this->m_expansionLists[0]);
         if constexpr (std::is_same_v<Model, ReducedBraginskii>)
@@ -541,10 +540,8 @@ int main(int argc, char **argv)
         auto graph   = SpatialDomains::MeshGraphIO::Read(session);
         const auto model        = session->GetSolverInfo("EQTYPE");
         const bool manufactured = session->GetParameter("Manufactured") != 0;
-        if (model == "SingleDiffusiveField")
-            Run<SingleDiffusiveField>(session, graph, manufactured);
-        else if (model == "DoubleDiffusiveField")
-            Run<DoubleDiffusiveField>(session, graph, false);
+        if (model == "AnisotropicDiffusion")
+            Run<AnisotropicDiffusion>(session, graph, manufactured);
         else if (model == "ReducedBraginskii")
             Run<ReducedBraginskii>(session, graph, false);
         else if (model == "ElectrostaticTurbulence")

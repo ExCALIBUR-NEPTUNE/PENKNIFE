@@ -123,8 +123,7 @@ list(APPEND PENKNIFE_OPERATORS_SOURCES
 set(SRC_FILES
     src/EquationSystems/PlasmaSystem.cpp
     src/EquationSystems/NullSystem.cpp
-    src/EquationSystems/SingleDiffusiveField.cpp
-    src/EquationSystems/DoubleDiffusiveField.cpp
+    src/EquationSystems/AnisotropicDiffusion.cpp
     src/EquationSystems/ReducedBraginskii.cpp
     src/EquationSystems/ElectrostaticTurbulence.cpp
     src/ParticleSystems/ParticleSystem.cpp

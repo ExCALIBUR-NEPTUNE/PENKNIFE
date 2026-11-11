@@ -1,13 +1,20 @@
-====================================
-Single diffusive field with neutrals
-====================================
+==================================
+Anisotropic diffusion with neutrals
+==================================
 
-Solves a system of :math:`1+S` fields representing :math:`S` ion species.
-This equation system is used by specifying
+The ``AnisotropicDiffusion`` equation system provides density-only and
+density-plus-energy transport. Select the transport model with ``Closure``.
+
+Density diffusion
+-----------------
+
+This mode solves a system of :math:`1+S` fields representing :math:`S` ion
+species. It is selected with
 
 .. code-block:: xml
 
-    <I PROPERTY="EQTYPE" VALUE="SingleDiffusiveField"/>
+    <I PROPERTY="EQTYPE" VALUE="AnisotropicDiffusion"/>
+    <I PROPERTY="Closure" VALUE="SingleDiffusive"/>
 
 in the :code:`<SOLVERINFO>` field
 
@@ -63,3 +70,31 @@ Species Bohm
 Dirichlet
 
 Neumann
+
+Density and heat diffusion
+--------------------------
+
+Select density-plus-energy transport with:
+
+.. code-block:: xml
+
+    <I PROPERTY="EQTYPE" VALUE="AnisotropicDiffusion"/>
+    <I PROPERTY="Closure" VALUE="DoubleDiffusive"/>
+
+This mode solves :math:`2+2S` fields for :math:`S` ion species:
+
+.. math:: \left[n_e, \frac{3}{2}p_e, n_i, \frac{3}{2}p_i, ...\right]
+
+Alongside density diffusion, it evolves
+
+.. math:: \frac{3}{2} \frac{\partial p}{\partial t} + \nabla \cdot \vec{q} = S_E + Q,
+
+where :math:`p=nk_BT` and :math:`\vec{q} = \kappa \cdot \nabla T` with
+
+.. math:: \kappa = \kappa_\parallel(T) \vec{b}\vec{b} + \kappa_\perp(T) (I-\vec{b}\vec{b}).
+
+At a sheath, energy outflow is
+
+.. math:: \vec{q}\cdot\vec{b} = \gamma nkTc_s,
+
+while density outflow remains as in the density-only mode.

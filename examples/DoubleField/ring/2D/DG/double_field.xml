@@ -12,7 +12,8 @@
 
     <CONDITIONS>
         <SOLVERINFO>
-            <I PROPERTY="EQTYPE"                       VALUE="DoubleDiffusiveField"/>
+            <I PROPERTY="EQTYPE"                       VALUE="AnisotropicDiffusion"/>
+            <I PROPERTY="Closure"                      VALUE="DoubleDiffusive"/>
             <I PROPERTY="Projection"                   VALUE="DisContinuous" />
             <I PROPERTY="DiffusionAdvancement"          VALUE="Implicit"/>
         </SOLVERINFO>

@@ -7,7 +7,8 @@
 
     <CONDITIONS>
         <SOLVERINFO>      
-            <I PROPERTY="EQTYPE"                        VALUE="SingleDiffusiveField" />
+            <I PROPERTY="EQTYPE"                        VALUE="AnisotropicDiffusion" />
+            <I PROPERTY="Closure"                      VALUE="SingleDiffusive"/>
             <I PROPERTY="AdvectionType"                 VALUE="WeakDG"/>
             <I PROPERTY="Projection"                    VALUE="Continuous" />
             <I PROPERTY="TimeIntegrationMethod"         VALUE="DIRKOrder2" />
