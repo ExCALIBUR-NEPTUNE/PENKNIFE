@@ -1,5 +1,6 @@
 #pragma once
 #include "PlasmaPointwiseOp.hpp"
+#include "SpeciesOperator.hpp"
 #include <LibUtilities/BasicUtils/Utils/UtilsKernels.hpp>
 #include <LibUtilities/LoopExecution/LoopExecution.hpp>
 #include <cmath>
@@ -10,11 +11,13 @@ namespace LU = Nektar::LibUtilities;
 // Kernels index scalar DoFs directly for every interleave width, including
 // AVX storage. No temporary flattening or vector-width conversion is needed.
 template <typename ExecSpace, typename TData>
-class PlasmaPointwiseOpImpl : public PlasmaPointwiseOp<TData>
+class PlasmaPointwiseOpImpl
+    : public PlasmaPointwiseOp<TData>,
+      public SpeciesOperator<TData, typename ExecSpace::memory_space>
 {
     using MemSpace = typename ExecSpace::memory_space;
-    using Field    = typename PlasmaPointwiseOp<TData>::Field;
-    static constexpr unsigned InvalidId = PlasmaPointwiseOp<TData>::InvalidId;
+    using Field    = LibUtilities::Field<TData, FieldState::Phys>;
+    using SpeciesOperator<TData, MemSpace>::InvalidId;
 
 public:
     PlasmaPointwiseOpImpl(const MultiRegions::ExpListSharedPtr &expansion,
@@ -30,72 +33,14 @@ public:
     {
         return std::make_unique<PlasmaPointwiseOpImpl>(expansion, components);
     }
-    void SetSpecies(const std::vector<unsigned> &density,
-                    const std::vector<unsigned> &momentum,
-                    const std::vector<unsigned> &energy,
-                    const std::vector<TData> &masses,
-                    const std::vector<TData> &charges,
-                    const std::vector<unsigned> &ionIds,
-                    unsigned electronEnergy, TData electronMass,
-                    TData backgroundTemperature) override
-    {
-        ASSERTL0(density.size() == momentum.size() &&
-                     density.size() == energy.size() &&
-                     density.size() == masses.size() &&
-                     density.size() == charges.size(),
-                 "Pointwise species metadata must be aligned.");
-        ASSERTL0(std::isfinite(electronMass) && electronMass > 0,
-                 "Pointwise electron mass must be finite and positive.");
-        for (const auto ion : ionIds)
-        {
-            ASSERTL0(ion < density.size() && density[ion] != InvalidId &&
-                         density[ion] < this->m_components.size(),
-                     "Quasineutrality ion density index is outside the input "
-                     "state.");
-            ASSERTL0(momentum[ion] == InvalidId ||
-                         momentum[ion] < this->m_components.size(),
-                     "Quasineutrality ion momentum index is outside the input "
-                     "state.");
-            ASSERTL0(std::isfinite(masses[ion]) && masses[ion] > 0,
-                     "Quasineutrality ion masses must be finite and positive.");
-            ASSERTL0(std::isfinite(charges[ion]),
-                     "Quasineutrality ion charges must be finite.");
-        }
-        n_species               = density.size();
-        n_ions                  = ionIds.size();
-        ee_idx                  = electronEnergy;
-        me                      = electronMass;
-        m_backgroundTemperature = backgroundTemperature;
-        if (n_species)
-        {
-            n_ids = LU::MemoryRegion<unsigned>::template FromVector<MemSpace,
-                                                                    unsigned>(
-                density);
-            v_ids = LU::MemoryRegion<unsigned>::template FromVector<MemSpace,
-                                                                    unsigned>(
-                momentum);
-            e_ids = LU::MemoryRegion<unsigned>::template FromVector<MemSpace,
-                                                                    unsigned>(
-                energy);
-            m_masses =
-                LU::MemoryRegion<TData>::template FromVector<MemSpace, TData>(
-                    masses);
-            m_charges =
-                LU::MemoryRegion<TData>::template FromVector<MemSpace, TData>(
-                    charges);
-        }
-        if (n_ions)
-            ions = LU::MemoryRegion<unsigned>::template FromVector<MemSpace,
-                                                                   unsigned>(
-                ionIds);
-    }
+
     void SetSources(const std::vector<unsigned> &density,
                     const std::vector<unsigned> &momentum,
                     const std::vector<unsigned> &energy,
                     unsigned electronEnergy) override
     {
         m_sourceElectron = electronEnergy;
-        if (n_species)
+        if (this->n_species)
         {
             m_sourceDensity = LU::MemoryRegion<unsigned>::template FromVector<
                 MemSpace, unsigned>(density);
@@ -125,11 +70,6 @@ public:
                      ? nullptr
                      : this->v_ids.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto *ions =
-                (this->n_ions == 0
-                     ? nullptr
-                     : this->ions.template GetPtr<MemSpace, ReadOnly>(
-                           streamID));
             const auto *masses =
                 (this->n_species == 0
                      ? nullptr
@@ -140,8 +80,9 @@ public:
                      ? nullptr
                      : this->m_charges.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto n_ions = this->n_ions;
-            const auto me     = this->me;
+
+            const auto me        = this->m_electron_mass;
+            const auto n_species = this->n_species;
 
             const size_t stride =
                 in.GetBlocks()[blk].CompSize() * in.GetNumHomoModes();
@@ -159,9 +100,8 @@ public:
                 0, stride, NEKTAR_LAMBDA(const size_t p) {
                     TData electronDensity  = 0;
                     TData electronMomentum = -me * current[p];
-                    for (unsigned ion = 0; ion < n_ions; ++ion)
+                    for (unsigned s = 0; s < n_species; ++s)
                     {
-                        const unsigned s = ions[ion];
                         electronDensity +=
                             charges[s] * u[n_ids[s] * stride + p];
                         if (v_ids[s] != InvalidId)
@@ -208,8 +148,8 @@ public:
                      : this->m_masses.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
             const auto n_species               = this->n_species;
-            const auto ee_idx                  = this->ee_idx;
-            const auto me                      = this->me;
+            const auto me                      = this->m_electron_mass;
+            const auto ee_id                   = this->ee_id;
             const auto m_backgroundTemperature = this->m_backgroundTemperature;
 
             auto &block         = in.GetBlocks()[blk];
@@ -235,8 +175,8 @@ public:
                 0, stride, NEKTAR_LAMBDA(const size_t p) {
                     values[p] = n[p];
                     values[stride + p] =
-                        n[p] > 0 && ee_idx != InvalidId
-                            ? (2. / 3.) * u[ee_idx * stride + p] / n[p]
+                        n[p] > 0 && ee_id != InvalidId
+                            ? (2. / 3.) * u[ee_id * stride + p] / n[p]
                             : m_backgroundTemperature;
                     for (unsigned d = 0; d < 3; ++d)
                     {
@@ -309,7 +249,7 @@ public:
                      : this->m_sourceEnergy.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
             const auto n_species        = this->n_species;
-            const auto ee_idx           = this->ee_idx;
+            const auto ee_id            = this->ee_id;
             const auto m_sourceElectron = this->m_sourceElectron;
 
             const auto stride =
@@ -345,7 +285,7 @@ public:
                                     timestep;
                     }
                     if (m_sourceElectron != InvalidId)
-                        rhs[ee_idx * stride + p] +=
+                        rhs[ee_id * stride + p] +=
                             factor * source[m_sourceElectron * stride + p] /
                             timestep;
                 });
@@ -379,7 +319,7 @@ public:
                      : this->m_masses.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
             const auto n_species = this->n_species;
-            const auto me        = this->me;
+            const auto me        = this->m_electron_mass;
             const auto m_coordim = this->m_coordim;
 
             const size_t stride =
@@ -447,7 +387,7 @@ public:
                      : this->m_charges.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
             const auto n_species = this->n_species;
-            const auto ee_idx    = this->ee_idx;
+            const auto ee_id     = this->ee_id;
             const auto m_coordim = this->m_coordim;
 
             const size_t stride =
@@ -483,7 +423,7 @@ public:
                         if (s < n_species && (e_ids[s] == InvalidId))
                             continue;
                         const unsigned energy =
-                            s == n_species ? ee_idx : e_ids[s];
+                            s == n_species ? ee_id : e_ids[s];
                         TData divergence = 0;
                         for (unsigned d = 0; d < m_coordim; ++d)
                             divergence +=
@@ -520,13 +460,14 @@ public:
                      ? nullptr
                      : this->m_masses.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto *ions =
-                (this->n_ions == 0
+            const auto *m_charges =
+                (this->n_species == 0
                      ? nullptr
-                     : this->ions.template GetPtr<MemSpace, ReadOnly>(
+                     : this->m_charges.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto n_ions    = this->n_ions;
+
             const auto m_coordim = this->m_coordim;
+            const auto n_species = this->n_species;
 
             const size_t stride =
                 in.GetBlocks()[blk].CompSize() * in.GetNumHomoModes();
@@ -546,10 +487,9 @@ public:
             Nektar::parallel_for<ExecSpace>(
                 0, stride, NEKTAR_LAMBDA(const size_t p) {
                     TData rho = 0;
-                    for (unsigned ion = 0; ion < n_ions; ++ion)
+                    for (unsigned s = 0; s < n_species; ++s)
                     {
-                        const unsigned s = ions[ion];
-                        if (n_ids[s] != InvalidId)
+                        if (n_ids[s] != InvalidId && m_charges[s] != 0)
                             rho += m_masses[s] * u[n_ids[s] * stride + p];
                     }
                     rhs[p] =
@@ -587,12 +527,7 @@ public:
                      ? nullptr
                      : this->m_charges.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto *ions =
-                (this->n_ions == 0
-                     ? nullptr
-                     : this->ions.template GetPtr<MemSpace, ReadOnly>(
-                           streamID));
-            const auto n_ions = this->n_ions;
+            const auto n_species = this->n_species;
 
             const size_t stride =
                 in.GetBlocks()[blk].CompSize() * in.GetNumHomoModes();
@@ -604,14 +539,14 @@ public:
             // Retain the existing ion-temperature potential correction.
             Nektar::parallel_for<ExecSpace>(
                 0, stride, NEKTAR_LAMBDA(const size_t p) {
-                    if (n_ions == 0)
-                        return;
-                    const unsigned s = ions[n_ions - 1];
-                    if (n_ids[s] != InvalidId && e_ids[s] != InvalidId &&
-                        u[n_ids[s] * stride + p] > 0 && m_charges[s] != 0)
-                        potential[p] -=
-                            (2. / 3.) * u[e_ids[s] * stride + p] /
-                            (m_charges[s] * u[n_ids[s] * stride + p]);
+                    for (unsigned s = 0; s < n_species; ++s)
+                    {
+                        if (n_ids[s] != InvalidId && e_ids[s] != InvalidId &&
+                            u[n_ids[s] * stride + p] > 0 && m_charges[s] != 0)
+                            potential[p] -=
+                                (2. / 3.) * u[e_ids[s] * stride + p] /
+                                (m_charges[s] * u[n_ids[s] * stride + p]);
+                    }
                 });
         }
         Nektar::LoopExecutionSetStreamID(0);
@@ -682,15 +617,10 @@ public:
                      ? nullptr
                      : this->m_charges.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto *ions =
-                (this->n_ions == 0
-                     ? nullptr
-                     : this->ions.template GetPtr<MemSpace, ReadOnly>(
-                           streamID));
+
             const unsigned n_fields = in.GetNumComponents();
             const auto n_species    = this->n_species;
-            const auto n_ions       = this->n_ions;
-            const auto ee_idx       = this->ee_idx;
+            const auto ee_id        = this->ee_id;
             const auto m_coordim    = this->m_coordim;
 
             const size_t stride =
@@ -712,8 +642,8 @@ public:
             auto unit =
                 b_unit.GetBlocks()[blk].template GetPtr<MemSpace, ReadOnly>(
                     streamID);
-            auto extra = m_extraVelocity.GetBlocks()[blk]
-                             .template GetPtr<MemSpace, WriteOnly>(streamID);
+            auto extra    = m_extraVelocity.GetBlocks()[blk]
+                                .template GetPtr<MemSpace, WriteOnly>(streamID);
             auto velocity = m_velocity.GetBlocks()[blk]
                                 .template GetPtr<MemSpace, WriteOnly>(streamID);
             Nektar::parallel_for<ExecSpace>(
@@ -743,21 +673,20 @@ public:
                         if (!electron &&
                             ((n_ids[s] == InvalidId) || m_charges[s] == 0))
                             continue;
-                        const unsigned energy = electron ? ee_idx : e_ids[s];
+                        const unsigned energy = electron ? ee_id : e_ids[s];
                         TData density = 0, parallel = 0;
                         if (electron)
                         {
-                            for (unsigned ion = 0; ion < n_ions; ++ion)
+                            for (unsigned s = 0; s < n_species; ++s)
                             {
-                                const unsigned t = ions[ion];
-                                if (n_ids[t] != InvalidId)
+                                if (n_ids[s] != InvalidId)
                                 {
                                     density +=
-                                        m_charges[t] * u[n_ids[t] * stride + p];
-                                    if ((v_ids[t] != InvalidId))
-                                        parallel += m_charges[t] *
-                                                    u[v_ids[t] * stride + p] /
-                                                    m_masses[t];
+                                        m_charges[s] * u[n_ids[s] * stride + p];
+                                    if ((v_ids[s] != InvalidId))
+                                        parallel += m_charges[s] *
+                                                    u[v_ids[s] * stride + p] /
+                                                    m_masses[s];
                                 }
                             }
                             parallel = density > 0 ? parallel / density : 0;
@@ -830,13 +759,9 @@ public:
                      ? nullptr
                      : this->m_masses.template GetPtr<MemSpace, ReadOnly>(
                            streamID));
-            const auto *ions =
-                (this->n_ions == 0
-                     ? nullptr
-                     : this->ions.template GetPtr<MemSpace, ReadOnly>(
-                           streamID));
-            const auto n_ions    = this->n_ions;
+
             const auto m_coordim = this->m_coordim;
+            const auto n_species = this->n_species;
 
             const size_t stride =
                 in.GetBlocks()[blk].CompSize() * in.GetNumHomoModes();
@@ -860,10 +785,9 @@ public:
                         tensor[c * stride + p] = 0;
                     if (B2[p] <= 0)
                         return;
-                    for (unsigned ion = 0; ion < n_ions; ++ion)
+                    for (unsigned s = 0; s < n_species; ++s)
                     {
-                        const unsigned s = ions[ion];
-                        TData v[3]       = {0, 0, 0};
+                        TData v[3] = {0, 0, 0};
                         for (unsigned d = 0; d < m_coordim; ++d)
                             v[d] = velocity[(s * m_coordim + d) * stride + p];
                         for (unsigned d = 0; d < m_coordim; ++d)
@@ -969,13 +893,26 @@ public:
         Nektar::LoopExecutionSetStreamID(0);
     }
 
+protected:
+    void v_SetSpecies(const std::vector<unsigned> &density,
+                      const std::vector<unsigned> &momentum,
+                      const std::vector<unsigned> &energy,
+                      const std::vector<TData> &masses,
+                      const std::vector<TData> &charges) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetSpecies(density, momentum, energy,
+                                                     masses, charges);
+    }
+
+    void v_SetElectronEnergyId(unsigned id) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetElectronEnergyId(id);
+    }
+
 private:
-    unsigned n_species = 0, n_ions = 0, ee_idx = InvalidId,
-             m_sourceElectron = InvalidId;
+    unsigned m_sourceElectron = InvalidId;
     unsigned m_coordim;
-    TData me = 0, m_backgroundTemperature = 0;
-    LU::MemoryRegion<unsigned> n_ids, v_ids, e_ids, ions;
-    LU::MemoryRegion<TData> m_masses, m_charges;
+    TData m_backgroundTemperature = 0;
     LU::MemoryRegion<unsigned> m_sourceDensity, m_sourceMomentum,
         m_sourceEnergy;
 };

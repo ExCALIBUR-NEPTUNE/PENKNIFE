@@ -1,4 +1,9 @@
 #include "ReducedBraginskii.hpp"
+#include "../FluxTraceAdvDiv/FluxTraceAdvDiffOp.hpp"
+#include "../FluxVolAdv/FluxVolAdvOp.hpp"
+#include "../FluxVolAdvDiff/FluxVolAdvDiffOp.hpp"
+#include "../FluxVolDiff/FluxVolDiffOp.hpp"
+
 namespace PENKNIFE
 {
 std::string ReducedBraginskii::class_name =
@@ -31,38 +36,67 @@ void ReducedBraginskii::v_InitialiseOperators()
              "Reduced Braginskii requires DG projection.");
     m_advDiffusionOp = SC::AdvWeakDGDiffusionIPOp<double>::Create(
         m_expansionLists[0], m_fieldTemplates);
+
     m_traceFlux = FluxTraceAdvDiffOp<double>::Create(m_expansionLists[0],
                                                      m_fieldTemplates);
-    m_traceFlux->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
-    m_traceFlux->SetElectronEnergyIndex(ee_idx);
+    m_traceFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_traceFlux->SetElectronEnergyId(ee_idx);
     m_traceFlux->SetMagneticTrace(b_unit_trace);
     m_traceFlux->SetParallelCurrentTrace(m_currentTrace);
-    std::string form;
-    m_session->LoadSolverInfo("ViscousTraceFlux", form, "FluxOfAverages");
-    ASSERTL0(form == "FluxOfAverages" || form == "AverageOfNormalFluxes",
-             "Unknown ViscousTraceFlux.");
-    if (form == "AverageOfNormalFluxes")
-        m_traceFlux->SetViscousTraceForm(
-            SC::TraceFluxOp<double>::ViscousTraceForm::AverageOfNormalFluxes);
+    m_traceFlux->SetViscousTraceForm(ReadViscousTraceForm());
     m_advDiffusionOp->SetAdvDiffTraceFlux(m_traceFlux);
+
     m_advectionFlux =
         FluxVolAdvOp<double>::Create(m_expansionLists[0], m_fieldTemplates);
     m_advectionFlux->SetMagneticField(b_unit);
-    m_advectionFlux->SetElectronFields(ne, Me, me, ee_idx);
-    m_advectionFlux->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_advectionFlux->SetElectronFields(ne, Me);
+    m_advectionFlux->SetElectronEnergyId(ee_idx);
+    m_advectionFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
     m_advDiffusionOp->SetAdvVolFlux(m_advectionFlux);
-    auto diffusion =
+
+    auto diffusionFlux =
         FluxVolDiffOp<double>::Create(m_expansionLists[0], m_fieldTemplates);
-    diffusion->SetMagneticField(b_unit);
-    diffusion->SetElectronEnergyId(ee_idx);
-    diffusion->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
-    m_advDiffusionOp->SetDiffVolFlux(diffusion);
+    diffusionFlux->SetMagneticField(b_unit);
+    diffusionFlux->SetElectronEnergyId(ee_idx);
+    diffusionFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_advDiffusionOp->SetDiffVolFlux(diffusionFlux);
+
+    if (m_traceFlux->GetViscousTraceForm() ==
+        SolverCore::TraceFluxOp<
+            double>::ViscousTraceForm::AverageOfNormalFluxes)
+    {
+        auto advDiffFlux =
+            FluxVolAdvDiffOp<double>::Create(m_expansionLists[0], m_variables);
+        advDiffFlux->SetMagneticField(b_unit);
+        advDiffFlux->SetElectronFields(ne, Me);
+        advDiffFlux->SetElectronEnergyId(ee_idx);
+        advDiffFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
+        m_advDiffusionOp->SetAdvDiffVolFlux(advDiffFlux);
+    }
+
     m_traceExtract = MR::PhysTraceExtractOp<double>::Create(m_expansionLists[0],
                                                             m_fieldTemplates);
 
     m_velocityDerivative = MR::PhysDerivOp<double>::Create(
         m_expansionLists[0], m_velocity.GetComponentNames());
 }
+
+SolverCore::TraceFluxOp<double>::ViscousTraceForm ReducedBraginskii::
+    ReadViscousTraceForm()
+{
+    using Form = SolverCore::TraceFluxOp<double>::ViscousTraceForm;
+    std::string form;
+    m_session->LoadSolverInfo("ViscousTraceFlux", form, "FluxOfAverages");
+    if (StringUtils::IEquals(form, "AverageOfNormalFluxes"))
+    {
+        return Form::AverageOfNormalFluxes;
+    }
+    ASSERTL0(StringUtils::IEquals(form, "FluxOfAverages"),
+             "Unknown ViscousTraceFlux '" + form +
+                 "'; expected FluxOfAverages or AverageOfNormalFluxes.");
+    return Form::FluxOfAverages;
+}
+
 void ReducedBraginskii::PrepareAdvection(PhysField &in, double time)
 {
     if (transient_field)
@@ -75,7 +109,7 @@ void ReducedBraginskii::DoOdeRhs(PhysField &in, PhysField &out,
                                  const double &time, const double &factor)
 {
     PrepareAdvection(in, time);
-    m_traceFlux->UpdateBndPhys(time);
+    m_advDiffusionOp->UpdateBndPhys(time);
     m_advDiffusionOp->SetScale(factor);
     m_advDiffusionOp->Apply(in, out);
     AddPressureWork(in, out, factor);

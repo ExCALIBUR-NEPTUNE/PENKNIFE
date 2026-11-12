@@ -210,8 +210,8 @@ void PlasmaSystem::v_InitialiseOperators()
 
     m_pointwise = PlasmaPointwiseOp<double>::Create(m_expansionLists[0],
                                                     m_variables, execName);
-    m_pointwise->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges, m_ions,
-                            ee_idx, me, m_backgroundTemperature);
+    m_pointwise->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_pointwise->SetElectronEnergyId(ee_idx);
     m_BTraceExtractOp = PhysTraceExtractOp<double>::Create(
         m_expansionLists[0], this->b_unit.GetComponentNames());
     this->mag_field = MagneticFieldOp<double>::Create(

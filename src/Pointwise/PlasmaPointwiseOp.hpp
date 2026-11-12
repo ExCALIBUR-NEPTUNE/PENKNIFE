@@ -1,35 +1,31 @@
 #pragma once
+
 #include <MultiRegions/Common/Operator.hpp>
-#include <limits>
+
 namespace PENKNIFE
 {
+using namespace Nektar;
+
 // Pointwise equation-system calculations in the session's execution space.
 // Fields retain their padded/interleaved blocks. Species stay inside the DoF
 // loop.
 template <typename TData>
-class PlasmaPointwiseOp : public Nektar::MultiRegions::Operator<TData>
+class PlasmaPointwiseOp : public MultiRegions::Operator<TData>
 {
 public:
-    using Field = Nektar::LibUtilities::Field<TData, Nektar::FieldState::Phys>;
-    using Base  = Nektar::MultiRegions::Operator<TData>;
+    using Field = LibUtilities::Field<TData, FieldState::Phys>;
+    using Base  = MultiRegions::Operator<TData>;
     static inline const std::string name = "PlasmaPointwise";
-    static constexpr unsigned InvalidId  = std::numeric_limits<unsigned>::max();
+
     static std::shared_ptr<PlasmaPointwiseOp> Create(
-        const Nektar::MultiRegions::ExpListSharedPtr &expansion,
+        const MultiRegions::ExpListSharedPtr &expansion,
         const std::vector<std::string> &components,
         const std::string &exec = "")
     {
         return Base::template Create<PlasmaPointwiseOp>(expansion, components,
                                                         exec);
     }
-    virtual void SetSpecies(const std::vector<unsigned> &density,
-                            const std::vector<unsigned> &momentum,
-                            const std::vector<unsigned> &energy,
-                            const std::vector<TData> &masses,
-                            const std::vector<TData> &charges,
-                            const std::vector<unsigned> &ions,
-                            unsigned electronEnergy, TData electronMass,
-                            TData backgroundTemperature)             = 0;
+
     virtual void SetSources(const std::vector<unsigned> &density,
                             const std::vector<unsigned> &momentum,
                             const std::vector<unsigned> &energy,
@@ -62,11 +58,35 @@ public:
     virtual void CompleteVelocities(Field &in, Field &E, Field &B, Field &mag_B,
                                     Field &m_velocity)               = 0;
 
+    void SetMagneticField(LibUtilities::Field<TData, FieldState::Phys> &b_unit)
+    {
+        m_b_unit = &b_unit;
+    }
+    void SetSpecies(const std::vector<unsigned> &density,
+                    const std::vector<unsigned> &momentum,
+                    const std::vector<unsigned> &energy,
+                    const std::vector<TData> &masses,
+                    const std::vector<TData> &charges)
+    {
+        v_SetSpecies(density, momentum, energy, masses, charges);
+    }
+    void SetElectronEnergyId(unsigned id)
+    {
+        v_SetElectronEnergyId(id);
+    }
+
 protected:
+    virtual void v_SetSpecies(const std::vector<unsigned> &density,
+                              const std::vector<unsigned> &momentum,
+                              const std::vector<unsigned> &energy,
+                              const std::vector<TData> &masses,
+                              const std::vector<TData> &charges) = 0;
+    virtual void v_SetElectronEnergyId(unsigned id)              = 0;
     PlasmaPointwiseOp(const Nektar::MultiRegions::ExpListSharedPtr &expansion,
                       const std::vector<std::string> &components)
         : Base(expansion, components)
     {
     }
+    LibUtilities::Field<TData, FieldState::Phys> *m_b_unit = nullptr;
 };
 } // namespace PENKNIFE

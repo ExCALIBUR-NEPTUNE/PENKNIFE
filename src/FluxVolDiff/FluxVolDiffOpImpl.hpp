@@ -2,11 +2,14 @@
 
 #include "FluxVolDiffKernels.hpp"
 #include "FluxVolDiffOp.hpp"
+#include "SpeciesOperator.hpp"
 
 namespace PENKNIFE::detail
 {
 template <typename ExecSpace, typename ClosureType, typename TData>
-class FluxVolDiffOpImpl : public FluxVolDiffOp<TData>
+class FluxVolDiffOpImpl
+    : public FluxVolDiffOp<TData>,
+      protected SpeciesOperator<TData, typename ExecSpace::memory_space>
 {
     using MemSpace = typename ExecSpace::memory_space;
 
@@ -46,32 +49,12 @@ public:
     }
 
 protected:
-    void v_SetIndices(const std::vector<unsigned> &n_ids,
-                      const std::vector<unsigned> &v_ids,
-                      const std::vector<unsigned> &e_ids,
-                      const std::vector<TData> &masses,
-                      const std::vector<TData> &charges) override
-    {
-        m_nSpecies = n_ids.size();
-        if (m_nSpecies == 0)
-            return;
-        m_nIds = LibUtilities::MemoryRegion<unsigned>::template FromVector<
-            MemSpace, unsigned>(n_ids);
-        m_vIds = LibUtilities::MemoryRegion<unsigned>::template FromVector<
-            MemSpace, unsigned>(v_ids);
-        m_eIds = LibUtilities::MemoryRegion<unsigned>::template FromVector<
-            MemSpace, unsigned>(e_ids);
-        m_masses = LibUtilities::MemoryRegion<TData>::template FromVector<
-            MemSpace, TData>(masses);
-        m_charges = LibUtilities::MemoryRegion<TData>::template FromVector<
-            MemSpace, TData>(charges);
-    }
     void v_Apply(LibUtilities::Field<TData, FieldState::Phys> &in,
                  LibUtilities::Field<TData, FieldState::Phys> &deriv,
                  LibUtilities::Field<TData, FieldState::Phys> &out) override
     {
-        ASSERTL0(this->m_indicesConfigured && this->m_b_unit &&
-                     this->m_electronEnergyId != this->InvalidId,
+        ASSERTL0(this->m_species_configured && this->m_b_unit &&
+                     this->ee_id != this->InvalidId,
                  "Configure diffusion species, electron energy and unit "
                  "magnetic field before Apply.");
         auto &b = *this->m_b_unit;
@@ -121,14 +104,18 @@ protected:
             auto &bb                = b.GetBlocks()[blk];
             const unsigned *nIds = nullptr, *vIds = nullptr, *eIds = nullptr;
             const TData *masses = nullptr, *charges = nullptr;
-            if (m_nSpecies != 0)
+            if (this->n_species != 0)
             {
-                nIds   = m_nIds.template GetPtr<MemSpace, ReadOnly>(streamID);
-                vIds   = m_vIds.template GetPtr<MemSpace, ReadOnly>(streamID);
-                eIds   = m_eIds.template GetPtr<MemSpace, ReadOnly>(streamID);
-                masses = m_masses.template GetPtr<MemSpace, ReadOnly>(streamID);
-                charges =
-                    m_charges.template GetPtr<MemSpace, ReadOnly>(streamID);
+                nIds =
+                    this->n_ids.template GetPtr<MemSpace, ReadOnly>(streamID);
+                vIds =
+                    this->v_ids.template GetPtr<MemSpace, ReadOnly>(streamID);
+                eIds =
+                    this->e_ids.template GetPtr<MemSpace, ReadOnly>(streamID);
+                masses = this->m_masses.template GetPtr<MemSpace, ReadOnly>(
+                    streamID);
+                charges = this->m_charges.template GetPtr<MemSpace, ReadOnly>(
+                    streamID);
             }
             // Treat all homogeneous planes of a component as a single span.
             const size_t stride = ib.CompSize() * in.GetNumHomoModes();
@@ -139,9 +126,9 @@ protected:
             if (this->m_append)
                 FluxVolDiffKernel<true, ExecSpace, ClosureType>(
                     m_parameters, stride, m_dimension, in.GetNumComponents(),
-                    m_nSpecies, this->m_electronEnergyId, nIds, vIds, eIds,
-                    masses, charges, m_anomD, m_anomNu, m_anomChi, stride,
-                    stride, stride, stride,
+                    this->n_species, this->ee_id, nIds, vIds, eIds, masses,
+                    charges, m_anomD, m_anomNu, m_anomChi, stride, stride,
+                    stride, stride,
                     ib.template GetPtr<MemSpace, ReadOnly>(streamID),
                     db.template GetPtr<MemSpace, ReadOnly>(streamID), outPtr,
                     bb.template GetPtr<MemSpace, ReadOnly>(streamID),
@@ -149,9 +136,9 @@ protected:
             else
                 FluxVolDiffKernel<false, ExecSpace, ClosureType>(
                     m_parameters, stride, m_dimension, in.GetNumComponents(),
-                    m_nSpecies, this->m_electronEnergyId, nIds, vIds, eIds,
-                    masses, charges, m_anomD, m_anomNu, m_anomChi, stride,
-                    stride, stride, stride,
+                    this->n_species, this->ee_id, nIds, vIds, eIds, masses,
+                    charges, m_anomD, m_anomNu, m_anomChi, stride, stride,
+                    stride, stride,
                     ib.template GetPtr<MemSpace, ReadOnly>(streamID),
                     db.template GetPtr<MemSpace, ReadOnly>(streamID), outPtr,
                     bb.template GetPtr<MemSpace, ReadOnly>(streamID),
@@ -159,11 +146,24 @@ protected:
         }
     }
 
+    void v_SetSpecies(const std::vector<unsigned> &density,
+                      const std::vector<unsigned> &momentum,
+                      const std::vector<unsigned> &energy,
+                      const std::vector<TData> &masses,
+                      const std::vector<TData> &charges) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetSpecies(density, momentum, energy,
+                                                     masses, charges);
+    }
+
+    void v_SetElectronEnergyId(unsigned id) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetElectronEnergyId(id);
+    }
+
 private:
-    unsigned m_dimension, m_nSpecies = 0;
+    unsigned m_dimension;
     typename ClosureType::Parameters m_parameters;
     TData m_anomD, m_anomNu, m_anomChi;
-    LibUtilities::MemoryRegion<unsigned> m_nIds, m_vIds, m_eIds;
-    LibUtilities::MemoryRegion<TData> m_masses, m_charges;
 };
 } // namespace PENKNIFE::detail

@@ -26,12 +26,12 @@ VANTAGE reactions. The application uses C++17, CMake, MPI, and SYCL.
 
 - `src/PENKNIFE.cpp`: executable entry point.
 - `src/EquationSystems/`: plasma systems, including ReducedBraginskii,
-  ElectrostaticTurbulence, and single/double diffusive fields.
+  ElectrostaticTurbulence, and anisotropic diffusive fields.
 - `src/ParticleSystems/`: particles, reactions, and fluid coupling.
 - `src/Closures/`: transport closures and heat flux calculations.
-- `src/FluxVolDiff/`, `src/FluxVolAdvDiff/`, `src/FluxTraceAdvDiv/`:
+- `src/FluxAdvDiff/`, `src/FluxVolDiff/`, `src/FluxVolAdvDiff/`, `src/FluxTraceAdvDiv/`:
   volume and trace operators, kernels, and explicit factory registrations.
-- `src/BndCond/`, `src/MagneticField/`, `src/Quasineutrality/`: supporting
+- `src/BndCond/`, `src/MagneticField/`, `src/Pointwise/`: supporting
   boundary and field operators.
 - `tests/EquationSystems/`, `tests/TraceFlux/`, `tests/Bohm/`: targeted checks.
 - `examples/`: input cases; `runs/`: working copies and simulation output.
@@ -117,9 +117,6 @@ ctest --test-dir <bohm-build-dir> --output-on-failure
   component strides, interleave widths, and execution-space accessibility;
   do not flatten blocks into legacy layouts. Use direct non-owning coefficient
   pointers where the existing kernels support them.
-- Preserve the density-based anomalous momentum coefficient
-  `Anomalous_nu * nbar` at traces and the corresponding local-density factor in
-  volume fluxes, unless the requested physics change explicitly revises it.
 - Keep coupled anisotropic penalties through `FluxVolDiffPoint` using the
   penalty gradient `tau * n * [U]`. An independent scalar penalty per conserved
   component changes the transport law.

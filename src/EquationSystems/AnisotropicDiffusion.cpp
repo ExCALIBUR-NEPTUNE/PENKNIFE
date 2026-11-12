@@ -68,7 +68,7 @@ void AnisotropicDiffusion::v_InitialiseOperators()
         m_expansionLists[0], m_fieldTemplates, "", DiffusionModel());
     m_volumeFlux->SetMagneticField(B);
     m_volumeFlux->SetElectronEnergyId(ee_idx == InvalidId ? 0 : ee_idx);
-    m_volumeFlux->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
+    m_volumeFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
     m_traceExtract = MR::PhysTraceExtractOp<double>::Create(m_expansionLists[0],
                                                             m_fieldTemplates);
     if (m_projectionType == MR::eDiscontinuous)
@@ -77,8 +77,8 @@ void AnisotropicDiffusion::v_InitialiseOperators()
                                                           m_fieldTemplates);
         m_traceFlux   = FluxTraceAdvDiffOp<double>::Create(
             m_expansionLists[0], m_fieldTemplates, "", DiffusionModel());
-        m_traceFlux->SetIndices(n_ids, v_ids, e_ids, m_masses, m_charges);
-        m_traceFlux->SetElectronEnergyIndex(ee_idx == InvalidId ? 0 : ee_idx);
+        m_traceFlux->SetSpecies(n_ids, v_ids, e_ids, m_masses, m_charges);
+        m_traceFlux->SetElectronEnergyId(ee_idx == InvalidId ? 0 : ee_idx);
         m_traceFlux->SetMagneticTrace(m_magneticTrace);
         m_traceFlux->SetParallelCurrentTrace(m_currentTrace);
         m_traceFlux->SetAdvectionScale(0);

@@ -1,4 +1,6 @@
 #pragma once
+#include "SpeciesOperator.hpp"
+
 #include "BndCond/BndCondBohm/BndCondBohmOp.hpp"
 #include "FluxTraceAdvDiffOp.hpp"
 
@@ -22,11 +24,14 @@ template <template <typename> typename RiemannKernel, typename ClosureType,
           typename ExecSpace, typename TData>
 class FluxTraceAdvDiffOpImpl
     : public SolverCore::detail::TraceFluxOpImpl<ExecSpace, TData,
-                                                 FluxTraceAdvDiffOp<TData>>
+                                                 FluxTraceAdvDiffOp<TData>>,
+      public SpeciesOperator<TData, typename ExecSpace::memory_space>
 {
     using MemSpace = typename ExecSpace::memory_space;
-    using Base     = SolverCore::detail::TraceFluxOpImpl<ExecSpace, TData,
-                                                         FluxTraceAdvDiffOp<TData>>;
+    using Base = SolverCore::detail::TraceFluxOpImpl<ExecSpace, TData,
+                                                     FluxTraceAdvDiffOp<TData>>;
+
+    using SpeciesBase = SpeciesOperator<TData, MemSpace>;
 
 public:
     /**
@@ -442,24 +447,24 @@ protected:
 
     typename ClosureType::Parameters m_parameters;
     TData m_anomD, m_anomNu, m_anomChi, m_penaltyCoeff;
-    TData m_diffusionScale      = 1;
-    unsigned m_electronEnergyId = std::numeric_limits<unsigned>::max();
+    TData m_diffusionScale = 1;
+
     LibUtilities::MemoryRegion<TData> m_wspDiffusion;
     TraceDiffusionWorkspace<TData> m_diffusionWorkspace;
 
     TraceDiffusionData<ClosureType, TData> DiffusionData()
     {
-        ASSERTL0(m_electronEnergyId < m_nComp,
-                 "Set the electron-energy component before trace diffusion.");
         return {
             m_parameters,
-            m_n_species,
-            m_electronEnergyId,
-            m_n_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-            m_v_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-            m_e_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-            m_masses.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
-            m_charges.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
+            this->n_species,
+            this->ee_id,
+            this->n_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
+            this->v_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
+            this->e_ids.template GetPtr<MemSpace, ReadOnly>(this->m_opStreamID),
+            this->m_masses.template GetPtr<MemSpace, ReadOnly>(
+                this->m_opStreamID),
+            this->m_charges.template GetPtr<MemSpace, ReadOnly>(
+                this->m_opStreamID),
             m_anomD,
             m_anomNu,
             m_anomChi,
@@ -467,68 +472,12 @@ protected:
             m_diffusionScale};
     }
 
-    unsigned int m_n_species = 0;
-    LibUtilities::MemoryRegion<unsigned int> m_n_ids;
-    LibUtilities::MemoryRegion<unsigned int> m_v_ids;
-    LibUtilities::MemoryRegion<unsigned int> m_e_ids;
-    LibUtilities::MemoryRegion<TData> m_masses;
-    LibUtilities::MemoryRegion<TData> m_charges;
-
 public:
-    void SetElectronEnergyIndex(unsigned id) override
-    {
-        ASSERTL0(id < m_nComp, "Electron-energy index is outside the state.");
-        m_electronEnergyId = id;
-    }
     // Must match the scale used to form the input volume normal fluxes.
     void SetDiffusionScale(TData scale) override
     {
         ASSERTL0(std::isfinite(scale), "Diffusion scale must be finite.");
         m_diffusionScale = scale;
-    }
-
-    void SetIndices(const std::vector<unsigned int> &n_ids,
-                    const std::vector<unsigned int> &v_ids,
-                    const std::vector<unsigned int> &e_ids,
-                    const std::vector<TData> &masses,
-                    const std::vector<TData> &charges) override
-    {
-        constexpr unsigned invalid = std::numeric_limits<unsigned>::max();
-        ASSERTL0(n_ids.size() == v_ids.size() && n_ids.size() == e_ids.size() &&
-                     n_ids.size() == masses.size() &&
-                     n_ids.size() == charges.size(),
-                 "Species metadata vectors must have equal lengths.");
-        std::vector<bool> used(m_nComp, false);
-        for (size_t spec = 0; spec < n_ids.size(); ++spec)
-        {
-            ASSERTL0(std::isfinite(masses[spec]) && masses[spec] > 0 &&
-                         std::isfinite(charges[spec]) && charges[spec] >= 0,
-                     "Invalid species mass or charge.");
-            for (unsigned id : {n_ids[spec], v_ids[spec], e_ids[spec]})
-                if (id != invalid)
-                {
-                    ASSERTL0(
-                        id < m_nComp && !used[id],
-                        "Species component indices must be valid and unique.");
-                    used[id] = true;
-                }
-            ASSERTL0(!ClosureType::RequiresEnergy || charges[spec] == 0 ||
-                         (n_ids[spec] != invalid && e_ids[spec] != invalid),
-                     "Charged species require density and internal energy.");
-        }
-        m_speciesComponents = std::move(used);
-        m_indicesConfigured = true;
-        m_n_species         = n_ids.size();
-        m_n_ids = LibUtilities::MemoryRegion<unsigned int>::template FromVector<
-            MemSpace, unsigned int>(n_ids);
-        m_v_ids = LibUtilities::MemoryRegion<unsigned int>::template FromVector<
-            MemSpace, unsigned int>(v_ids);
-        m_e_ids = LibUtilities::MemoryRegion<unsigned int>::template FromVector<
-            MemSpace, unsigned int>(e_ids);
-        m_masses = LibUtilities::MemoryRegion<TData>::template FromVector<
-            MemSpace, TData>(masses);
-        m_charges = LibUtilities::MemoryRegion<TData>::template FromVector<
-            MemSpace, TData>(charges);
     }
 
 protected:
@@ -1230,6 +1179,21 @@ public:
     }
 
 protected:
+    void v_SetSpecies(const std::vector<unsigned> &density,
+                      const std::vector<unsigned> &momentum,
+                      const std::vector<unsigned> &energy,
+                      const std::vector<TData> &masses,
+                      const std::vector<TData> &charges) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetSpecies(density, momentum, energy,
+                                                     masses, charges);
+    }
+
+    void v_SetElectronEnergyId(unsigned id) override
+    {
+        SpeciesOperator<TData, MemSpace>::SetElectronEnergyId(id);
+    }
+
     struct AuxiliaryBlock
     {
         LibUtilities::MemoryRegion<TData> b0, b1, j0, j1, v0, v1, w0, w1;
@@ -1243,9 +1207,7 @@ protected:
     unsigned m_omegaId       = std::numeric_limits<unsigned>::max();
     bool m_auxReady          = false;
     bool m_exchangeActive[2] = {false, false};
-    bool m_indicesConfigured = false;
-    std::vector<bool> m_speciesComponents;
-    TData m_advectionScale = 1;
+    TData m_advectionScale   = 1;
 
     template <typename Blocks>
     void AllocateAuxiliary(const Blocks &blocks,
@@ -1270,10 +1232,9 @@ protected:
                         LibUtilities::Field<TData, FieldState::Phys> &flux)
     {
         ASSERTL0(
-            m_indicesConfigured && m_magneticTrace && m_currentTrace &&
-                m_electronEnergyId < m_nComp &&
-                (!ClosureType::RequiresEnergy ||
-                 !m_speciesComponents[m_electronEnergyId]),
+            this->m_species_configured && m_magneticTrace && m_currentTrace &&
+                this->ee_id < m_nComp &&
+                (!ClosureType::RequiresEnergy),
             "Configure species, electron energy, magnetic and current traces.");
         const unsigned numSecond =
             UseAvgNormalFlux() ? m_nComp : m_nComp * m_nDim;

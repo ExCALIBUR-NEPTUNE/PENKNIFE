@@ -35,20 +35,33 @@ public:
     // MagneticTrace has 3 components; CurrentTrace has one in number-current
     // units, matching QuasineutralKernel. Keep them fixed through an exchange /
     // Apply / ApplyParallel cycle. Current contents are sampled every cycle.
-    virtual void SetMagneticTrace(Field &b)                    = 0;
-    virtual void SetParallelCurrentTrace(Field &current)       = 0;
-    virtual void SetIndices(const std::vector<unsigned> &nIds,
-                            const std::vector<unsigned> &vIds,
-                            const std::vector<unsigned> &eIds,
-                            const std::vector<TData> &masses,
-                            const std::vector<TData> &charges) = 0;
-    virtual void SetElectronEnergyIndex(unsigned id)           = 0;
-    virtual void SetDiffusionScale(TData scale)                = 0;
-    virtual void SetAdvectionScale(TData scale)                = 0;
+    virtual void SetMagneticTrace(Field &b)              = 0;
+    virtual void SetParallelCurrentTrace(Field &current) = 0;
+    virtual void SetDiffusionScale(TData scale)          = 0;
+    virtual void SetAdvectionScale(TData scale)          = 0;
     virtual void SetExtraAdvectionTrace(Field &velocities, Field &omegaFlux,
-                                        unsigned omega)        = 0;
+                                        unsigned omega)  = 0;
+    void SetSpecies(const std::vector<unsigned> &density,
+                    const std::vector<unsigned> &momentum,
+                    const std::vector<unsigned> &energy,
+                    const std::vector<TData> &masses,
+                    const std::vector<TData> &charges)
+    {
+        this->v_SetSpecies(density, momentum, energy, masses, charges);
+    }
+    void SetElectronEnergyId(unsigned id)
+    {
+        this->v_SetElectronEnergyId(id);
+    }
 
 protected:
+    virtual void v_SetSpecies(const std::vector<unsigned> &density,
+                              const std::vector<unsigned> &momentum,
+                              const std::vector<unsigned> &energy,
+                              const std::vector<TData> &masses,
+                              const std::vector<TData> &charges) = 0;
+    virtual void v_SetElectronEnergyId(unsigned id)              = 0;
+
     FluxTraceAdvDiffOp(const MultiRegions::ExpListSharedPtr &expansionList,
                        const std::vector<std::string> &components)
         : SolverCore::TraceFluxOp<TData>(expansionList, components)

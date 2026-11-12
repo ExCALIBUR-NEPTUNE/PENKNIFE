@@ -1,145 +1,80 @@
 #pragma once
 #include <SolverCore/Advection/AdvectionVolumeFluxOp.hpp>
-#include <limits>
 
 namespace PENKNIFE
 {
 using namespace Nektar;
-template <typename T>
-class FluxVolAdvOp : public SolverCore::AdvectionVolumeFluxOp<T>
+template <typename TData>
+class FluxVolAdvOp : public SolverCore::AdvectionVolumeFluxOp<TData>
 {
 public:
-    using Field = LibUtilities::Field<T, FieldState::Phys>;
-    static std::shared_ptr<FluxVolAdvOp> Create(
-        const MultiRegions::ExpListSharedPtr &exp,
-        const std::vector<std::string> &names, const std::string & = "")
+    static std::shared_ptr<FluxVolAdvOp<TData>> Create(
+        const MultiRegions::ExpListSharedPtr &expansionList,
+        const std::vector<std::string> &components,
+        const std::string &execStr = "")
     {
-        return std::make_shared<FluxVolAdvOp>(exp, names);
+        return std::dynamic_pointer_cast<FluxVolAdvOp<TData>>(
+            SolverCore::AdvectionVolumeFluxOp<TData>::Create(
+                expansionList, components, execStr));
     }
-    FluxVolAdvOp(const MultiRegions::ExpListSharedPtr &exp,
-                 const std::vector<std::string> &names)
-        : SolverCore::AdvectionVolumeFluxOp<T>(exp, names),
-          dim(exp->GetCoordim(0))
+    static inline const std::string name = "FluxVolAdv";
+
+    // Non-owning: fields must outlive the operator.
+    void SetMagneticField(LibUtilities::Field<TData, FieldState::Phys> &b_unit)
     {
+        m_b_unit = &b_unit;
     }
-    void SetMagneticField(Field &field)
-    {
-        magnetic = &field;
-    }
-    void SetElectronFields(Field &density, Field &momentum, T mass,
-                           unsigned energy)
-    {
-        ne = &density;
-        Me = &momentum;
-        me = mass;
-        ee = energy;
-    }
-    void SetIndices(const std::vector<unsigned> &n,
-                    const std::vector<unsigned> &v,
-                    const std::vector<unsigned> &e, const std::vector<T> &m,
-                    const std::vector<T> &)
-    {
-        nIds   = n;
-        vIds   = v;
-        eIds   = e;
-        masses = m;
-    }
-    void SetExtraFlux(Field &velocity, Field &flux, unsigned omega)
+
+    void SetExtraFlux(LibUtilities::Field<TData, FieldState::Phys> &velocity,
+                      LibUtilities::Field<TData, FieldState::Phys> &flux,
+                      unsigned omega)
     {
         extraVelocity = &velocity;
         omegaFlux     = &flux;
         omegaId       = omega;
     }
-
-protected:
-    void v_Apply(Field &in, Field &out) override
+    void SetElectronFields(LibUtilities::Field<TData, FieldState::Phys> &ne,
+                           LibUtilities::Field<TData, FieldState::Phys> &Me)
     {
-        out.SetInterleaveWidth(in);
-        for (auto *f : {magnetic, ne, Me, extraVelocity, omegaFlux})
-            if (f)
-                f->SetInterleaveWidth(in);
-        for (unsigned blk = 0; blk < in.GetBlocks().size(); ++blk)
-        {
-            const size_t stride = in.GetBlocks()[blk].CompSize();
-            auto u              = in.GetBlocks()[blk]
-                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto b = magnetic->GetBlocks()[blk]
-                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto n = ne->GetBlocks()[blk]
-                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto M = Me->GetBlocks()[blk]
-                         .template GetPtr<NektarSpaces::HostSpace, ReadOnly>();
-            auto dst =
-                this->m_append
-                    ? out.GetBlocks()[blk]
-                          .template GetPtr<NektarSpaces::HostSpace, ReadWrite>()
-                    : out.GetBlocks()[blk]
-                          .template GetPtr<NektarSpaces::HostSpace,
-                                           WriteOnly>();
-            const T *extra =
-                extraVelocity
-                    ? extraVelocity->GetBlocks()[blk]
-                          .template GetPtr<NektarSpaces::HostSpace, ReadOnly>()
-                    : nullptr;
-            const T *omega =
-                omegaFlux
-                    ? omegaFlux->GetBlocks()[blk]
-                          .template GetPtr<NektarSpaces::HostSpace, ReadOnly>()
-                    : nullptr;
-            if (!this->m_append)
-                std::fill(dst, dst + stride * out.GetNumComponents(), T(0));
-            for (size_t p = 0; p < stride; ++p)
-            {
-                for (unsigned s = 0; s < nIds.size(); ++s)
-                {
-                    if (nIds[s] == invalid)
-                        continue;
-                    T density = u[nIds[s] * stride + p];
-                    T momentum =
-                        vIds[s] == invalid ? 0 : u[vIds[s] * stride + p];
-                    T energy = eIds[s] == invalid ? 0 : u[eIds[s] * stride + p];
-                    T velocity =
-                        density > 0 ? momentum / (masses[s] * density) : 0;
-                    for (unsigned d = 0; d < dim; ++d)
-                    {
-                        T ud = velocity * b[d * stride + p];
-                        dst[(nIds[s] * dim + d) * stride + p] +=
-                            this->m_scale * density * ud;
-                        if (vIds[s] != invalid)
-                            dst[(vIds[s] * dim + d) * stride + p] +=
-                                this->m_scale *
-                                (momentum * ud +
-                                 (T(2) / 3) * energy * b[d * stride + p]);
-                        if (eIds[s] != invalid)
-                            dst[(eIds[s] * dim + d) * stride + p] +=
-                                this->m_scale * energy * ud;
-                    }
-                }
-                T ue = n[p] > 0 ? M[p] / (me * n[p]) : 0;
-                for (unsigned d = 0; d < dim; ++d)
-                    dst[(ee * dim + d) * stride + p] += this->m_scale *
-                                                        u[ee * stride + p] *
-                                                        ue * b[d * stride + p];
-                if (extra)
-                    for (unsigned f = 0; f < in.GetNumComponents(); ++f)
-                        for (unsigned d = 0; d < dim; ++d)
-                            dst[(f * dim + d) * stride + p] +=
-                                this->m_scale *
-                                (f == omegaId
-                                     ? omega[d * stride + p]
-                                     : u[f * stride + p] *
-                                           extra[(f * dim + d) * stride + p]);
-            }
-        }
+        m_ne = &ne;
+        m_Me = &Me;
+    }
+    void SetSpecies(const std::vector<unsigned> &density,
+                    const std::vector<unsigned> &momentum,
+                    const std::vector<unsigned> &energy,
+                    const std::vector<TData> &masses,
+                    const std::vector<TData> &charges)
+    {
+        this->v_SetSpecies(density, momentum, energy, masses, charges);
+    }
+    void SetElectronEnergyId(unsigned id)
+    {
+        this->v_SetElectronEnergyId(id);
     }
 
-private:
-    static constexpr unsigned invalid = std::numeric_limits<unsigned>::max();
-    unsigned dim, ee = invalid, omegaId = invalid;
-    T me            = 1;
-    Field *magnetic = nullptr, *ne = nullptr, *Me = nullptr,
-          *extraVelocity = nullptr, *omegaFlux = nullptr;
-    std::vector<unsigned> nIds, vIds, eIds;
-    std::vector<T> masses;
+protected:
+    virtual void v_SetSpecies(const std::vector<unsigned> &density,
+                              const std::vector<unsigned> &momentum,
+                              const std::vector<unsigned> &energy,
+                              const std::vector<TData> &masses,
+                              const std::vector<TData> &charges) = 0;
+    virtual void v_SetElectronEnergyId(unsigned id)              = 0;
+
+    FluxVolAdvOp(const MultiRegions::ExpListSharedPtr &expansionList,
+                 const std::vector<std::string> &components)
+        : SolverCore::AdvectionVolumeFluxOp<TData>(expansionList, components)
+    {
+    }
+    ~FluxVolAdvOp() override = default;
+
+    LibUtilities::Field<TData, FieldState::Phys> *m_ne = nullptr;
+    LibUtilities::Field<TData, FieldState::Phys> *m_Me = nullptr;
+
+    LibUtilities::Field<TData, FieldState::Phys> *extraVelocity = nullptr;
+    LibUtilities::Field<TData, FieldState::Phys> *omegaFlux     = nullptr;
+
+    LibUtilities::Field<TData, FieldState::Phys> *m_b_unit   = nullptr;
+    LibUtilities::Field<TData, FieldState::Phys> *m_friction = nullptr;
+    unsigned omegaId;
 };
 } // namespace PENKNIFE

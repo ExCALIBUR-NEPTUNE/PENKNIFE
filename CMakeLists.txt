@@ -112,13 +112,16 @@ endforeach()
 # Trace fluxes use explicit registration, matching the volume operators.
 
 # Register PENKNIFE operators without Nektar++'s internal ADD_OPERATOR macro.
-list(APPEND PENKNIFE_OPERATORS_SOURCES
-     src/BndCond/BndCondBohm/BndCondBohmFactory.cpp
-     src/MagneticField/MagneticFieldFactory.cpp
-     src/Pointwise/PlasmaPointwiseFactory.cpp
-     src/FluxVolDiff/FluxVolDiffFactory.cpp
-     src/FluxVolAdvDiff/FluxVolAdvDiffFactory.cpp
-     src/FluxTraceAdvDiv/FluxTraceAdvDiffFactory.cpp)
+list(
+  APPEND
+  PENKNIFE_OPERATORS_SOURCES
+  src/BndCond/BndCondBohm/BndCondBohmFactory.cpp
+  src/MagneticField/MagneticFieldFactory.cpp
+  src/Pointwise/PlasmaPointwiseFactory.cpp
+  src/FluxVolDiff/FluxVolDiffFactory.cpp
+  src/FluxVolAdv/FluxVolAdvFactory.cpp
+  src/FluxVolAdvDiff/FluxVolAdvDiffFactory.cpp
+  src/FluxTraceAdvDiv/FluxTraceAdvDiffFactory.cpp)
 
 set(SRC_FILES
     src/EquationSystems/PlasmaSystem.cpp
@@ -147,7 +150,7 @@ target_link_libraries(
           VANTAGE-Reactions::VANTAGE-Reactions)
 
 target_include_directories(${OBJLIB_NAME} PUBLIC ${CMAKE_CURRENT_LIST_DIR}
-                                               ${CMAKE_CURRENT_LIST_DIR}/src)
+                                                 ${CMAKE_CURRENT_LIST_DIR}/src)
 
 add_sycl_to_target(TARGET ${OBJLIB_NAME} SOURCES ${SRC_FILES})
 

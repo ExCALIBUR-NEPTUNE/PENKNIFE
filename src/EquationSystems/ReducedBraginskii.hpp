@@ -1,7 +1,7 @@
 #pragma once
+
 #include "../FluxTraceAdvDiv/FluxTraceAdvDiffOp.hpp"
 #include "../FluxVolAdv/FluxVolAdvOp.hpp"
-#include "../FluxVolDiff/FluxVolDiffOp.hpp"
 #include "PlasmaSystem.hpp"
 #include <MultiRegions/ElmtOps/PhysDeriv/PhysDerivOp.hpp>
 #include <SolverCore/AdvDiffusion/AdvWeakDGDiffusionIP/AdvWeakDGDiffusionIPOp.hpp>
@@ -32,6 +32,7 @@ protected:
     void v_InitObject(bool declareFields = true) override;
     void v_InitialiseFields() override;
     void v_InitialiseOperators() override;
+    SolverCore::TraceFluxOp<double>::ViscousTraceForm ReadViscousTraceForm();
     virtual void DoOdeRhs(PhysField &in, PhysField &out, const double &time,
                           const double &factor);
     virtual void PrepareAdvection(PhysField &in, double time);
